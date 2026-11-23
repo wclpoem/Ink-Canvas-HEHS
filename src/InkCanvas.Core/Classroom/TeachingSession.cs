@@ -61,6 +61,9 @@ public sealed class TeachingSession
 
     public List<string> ExportPaths { get; set; } = new();
 
+    /// <summary>练习结束等节点保存的板书快照路径（去重）。</summary>
+    public List<string> SnapshotPaths { get; set; } = new();
+
     public List<TeachingSessionLink> Links { get; set; } = new();
 
     public static TeachingSession Create(string name, long nowMs)
@@ -120,6 +123,7 @@ public sealed class TeachingSession
             existing.SlideId = slideId;
             existing.SlideIndex = slideIndex;
             existing.BoardPageIndex = boardPageIndex;
+            if (!string.IsNullOrWhiteSpace(note)) existing.Note = note;
             UpdatedAtMs = nowMs;
             return existing;
         }
@@ -156,6 +160,15 @@ public sealed class TeachingSession
         UpdatedAtMs = nowMs;
     }
 
+    /// <summary>记录练习结束快照路径（去重）；空路径忽略。</summary>
+    public bool RecordSnapshot(string path, long nowMs)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        if (!SnapshotPaths.Contains(path)) SnapshotPaths.Add(path);
+        UpdatedAtMs = nowMs;
+        return true;
+    }
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -175,6 +188,7 @@ public sealed class TeachingSession
             session.AiSessionIds ??= new List<string>();
             session.ExerciseIds ??= new List<string>();
             session.ExportPaths ??= new List<string>();
+            session.SnapshotPaths ??= new List<string>();
             session.Links ??= new List<TeachingSessionLink>();
             return session;
         }

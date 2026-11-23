@@ -252,6 +252,7 @@ public static class BoardPlanWriter
         "formula" => "公式",
         "wordList" => "词语",
         "poem" => "古诗",
+        "summary" => "总结",
         _ => "文本",
     };
 }

@@ -1,3 +1,4 @@
+using InkCanvas.Core.AiAssistant;
 using InkCanvas.Core.Settings;
 using System.Text.Json;
 
@@ -35,8 +36,51 @@ public sealed class ExampleEntry
     /// <summary>教师订正后的讲评文本。</summary>
     public string CorrectedText { get; set; } = "";
 
+    /// <summary>收藏时所在的 AI 课堂会话标识；旧数据为空。</summary>
+    public string AiSessionId { get; set; } = "";
+
+    /// <summary>收藏时对应的 AI 请求标识；旧数据为空。</summary>
+    public string RequestId { get; set; } = "";
+
+    /// <summary>收藏时的画板标识："main"/"side"/"overlay"/"document"/"ppt"；旧数据为空。</summary>
+    public string BoardId { get; set; } = "";
+
+    /// <summary>收藏时的页面持久标识；Guid.Empty 表示旧数据或未记录。</summary>
+    public Guid BoardPageId { get; set; }
+
+    /// <summary>AI 原生对象的 GroupId（若收藏时已贴回原生对象）；旧数据为空。</summary>
+    public string GroupId { get; set; } = "";
+
+    /// <summary>AI 原生对象 Id（若收藏时已贴回原生对象）；旧数据为空列表。</summary>
+    public List<string> ObjectIds { get; set; } = new();
+
+    /// <summary>AI 分步讲解（<see cref="AssistantStep"/> 数组 JSON）；旧数据为空串。</summary>
+    public string StepsJson { get; set; } = "";
+
+    /// <summary>AI 标注点（嵌套点数组 JSON）；旧数据为空串。</summary>
+    public string AnnotationsJson { get; set; } = "";
+
+    /// <summary>教师是否订正过该例题的讲评文本。</summary>
+    public bool TeacherEdited { get; set; }
+
+    /// <summary>最后一次更新（收藏/订正）时间；旧数据为默认值。</summary>
+    public DateTime UpdatedAt { get; set; }
+
     /// <summary>条目结构版本，用于后续增量兼容。</summary>
     public int Version { get; set; } = 1;
+
+    /// <summary>旧文件缺字段时补齐可写集合，保证调用方无需判空。</summary>
+    internal void Normalize()
+    {
+        KnowledgePoints ??= new List<string>();
+        ObjectIds ??= new List<string>();
+        AiSessionId ??= "";
+        RequestId ??= "";
+        BoardId ??= "";
+        GroupId ??= "";
+        StepsJson ??= "";
+        AnnotationsJson ??= "";
+    }
 }
 
 /// <summary>
@@ -115,7 +159,9 @@ public static class ExampleLibraryStore
                 return Array.Empty<ExampleEntry>();
             }
 
-            return file.Examples.Where(entry => entry is not null).ToList();
+            List<ExampleEntry> entries = file.Examples.Where(entry => entry is not null).ToList();
+            foreach (ExampleEntry entry in entries) entry.Normalize();
+            return entries;
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or NotSupportedException)
         {
@@ -149,6 +195,7 @@ public static class ExampleLibraryStore
             entry.CreatedAt = DateTime.Now;
         }
 
+        entry.Normalize();
         List<ExampleEntry> all = Load(directory).ToList();
         int index = all.FindIndex(item => string.Equals(item.Id, entry.Id, StringComparison.Ordinal));
         if (index >= 0)
@@ -305,5 +352,63 @@ public static class ExampleLibraryStore
         public int Version { get; set; } = CurrentVersion;
 
         public List<ExampleEntry> Examples { get; set; } = new();
+    }
+}
+/// <summary>
+/// 例题附加信息的 JSON 编解码：步骤与标注各自序列化为独立字符串字段，
+/// 旧文件缺字段时按空串读取，解析失败一律降级为空列表而不是抛异常。
+/// </summary>
+public static class ExampleEntryCodec
+{
+    private static readonly JsonSerializerOptions Options = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+    };
+
+    /// <summary>编码 AI 分步讲解；空/null 返回空串。</summary>
+    public static string EncodeSteps(IReadOnlyList<AssistantStep> steps)
+    {
+        if (steps is null || steps.Count == 0) return "";
+        return JsonSerializer.Serialize(steps, Options);
+    }
+
+    /// <summary>解码 AI 分步讲解；空串、非法 JSON 或类型不符时返回空列表。</summary>
+    public static IReadOnlyList<AssistantStep> DecodeSteps(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return Array.Empty<AssistantStep>();
+        try
+        {
+            return JsonSerializer.Deserialize<List<AssistantStep>>(json, Options) ?? (IReadOnlyList<AssistantStep>)Array.Empty<AssistantStep>();
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException)
+        {
+            return Array.Empty<AssistantStep>();
+        }
+    }
+
+    /// <summary>编码 AI 标注点（画布相对坐标的嵌套点数组）；空/null 返回空串。</summary>
+    public static string EncodeAnnotations(
+        IReadOnlyList<IReadOnlyList<IReadOnlyList<double>>> annotations)
+    {
+        if (annotations is null || annotations.Count == 0) return "";
+        return JsonSerializer.Serialize(annotations, Options);
+    }
+
+    /// <summary>解码 AI 标注点；空串、非法 JSON 或类型不符时返回空列表。</summary>
+    public static IReadOnlyList<IReadOnlyList<IReadOnlyList<double>>> DecodeAnnotations(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return Array.Empty<IReadOnlyList<IReadOnlyList<double>>>();
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<List<List<double>>>>(json, Options)
+                ?? (IReadOnlyList<IReadOnlyList<IReadOnlyList<double>>>)Array.Empty<IReadOnlyList<IReadOnlyList<double>>>();
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException)
+        {
+            return Array.Empty<IReadOnlyList<IReadOnlyList<double>>>();
+        }
     }
 }

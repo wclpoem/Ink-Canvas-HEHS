@@ -213,6 +213,7 @@ public static class AiCardEditor
             target.LineHeight = lineHeightValue;
             target.Align = alignValue;
             target.Columns = columnValue;
+            AiCardEditState.MarkTeacherEdited(target);
         }, "编辑 AI 文本");
 
         if (!updated)
@@ -274,6 +275,7 @@ public static class AiCardEditor
             target.Latex = source.Trim();
             target.FontSize = fontSizeValue;
             target.Color = string.IsNullOrWhiteSpace(color.Text) ? "#FF202024" : color.Text.Trim();
+            AiCardEditState.MarkTeacherEdited(target);
         }, "编辑 AI 公式");
 
         if (!updated)

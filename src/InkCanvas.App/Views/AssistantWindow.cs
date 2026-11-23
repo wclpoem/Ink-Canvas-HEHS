@@ -150,6 +150,12 @@ public sealed class AssistantWindow : Window
     private string _sourcePresentation = "";
     private int _sourceSlideId;
     private int _sourceBoardPage;
+    private string _sourceSessionId = "";
+    private string _sourceRequestId = "";
+    private string _sourceBoardId = "";
+    private Guid _sourceBoardPageId;
+    private string _sourceGroupId = "";
+    private IReadOnlyList<string> _sourceObjectIds = Array.Empty<string>();
 
     public new event Action Closed;
 
@@ -1236,6 +1242,31 @@ public sealed class AssistantWindow : Window
         _sourceBoardPage = boardPage;
     }
 
+    /// <summary>
+    /// 收藏为例题的完整来源：除课件/页码外记录课堂会话、请求、画板/页标识，
+    /// 便于「再讲一次」「贴回白板」还原上下文。空值按未记录处理，旧调用点保持兼容。
+    /// </summary>
+    public void SetFavoriteContext(
+        string sessionId, string requestId, string boardId, Guid boardPageId,
+        string groupId, IReadOnlyList<string> objectIds)
+    {
+        _sourceSessionId = sessionId ?? "";
+        _sourceRequestId = requestId ?? "";
+        _sourceBoardId = boardId ?? "";
+        _sourceBoardPageId = boardPageId;
+        _sourceGroupId = groupId ?? "";
+        _sourceObjectIds = objectIds is { Count: > 0 } ? objectIds.ToArray() : Array.Empty<string>();
+    }
+
+    /// <summary>AI 板书写入后记录原生对象分组，下一次收藏时一并写入例题关联。</summary>
+    public void SetFavoriteObjects(string groupId, IReadOnlyList<Guid> objectIds)
+    {
+        _sourceGroupId = groupId ?? "";
+        _sourceObjectIds = objectIds is { Count: > 0 }
+            ? objectIds.Select(id => id.ToString("N")).ToArray()
+            : Array.Empty<string>();
+    }
+
     private void FavoriteExample()
     {
         AssistantSession session = _lastSession;
@@ -1257,6 +1288,15 @@ public sealed class AssistantWindow : Window
                 BoardPage = _sourceBoardPage,
                 CorrectedText = "",
                 CreatedAt = DateTime.Now,
+                AiSessionId = _sourceSessionId,
+                RequestId = _sourceRequestId,
+                BoardId = _sourceBoardId,
+                BoardPageId = _sourceBoardPageId,
+                GroupId = _sourceGroupId,
+                ObjectIds = new List<string>(_sourceObjectIds),
+                StepsJson = ExampleEntryCodec.EncodeSteps(session.Steps),
+                AnnotationsJson = ExampleEntryCodec.EncodeAnnotations(session.Annotations),
+                UpdatedAt = DateTime.Now,
             };
 
             bool added = ExampleLibraryStore.Add(entry, settings: _features);
@@ -1427,6 +1467,24 @@ public sealed class AssistantWindow : Window
         HorizontalContentAlignment = HorizontalAlignment.Center,
         VerticalContentAlignment = VerticalAlignment.Center,
     };
+
+    /// <summary>
+    /// 预填追问框（例题「再讲一次」）：只填入文本、不自动提交，避免在识别流未完成时抢占会话。
+    /// </summary>
+    public void PrefillFollowUp(string question)
+    {
+        if (string.IsNullOrWhiteSpace(question)) return;
+        _followUp.Text = question.Trim();
+        _followUp.Focus(FocusState.Programmatic);
+    }
+
+    /// <summary>提交一条追问：复用现有 <see cref="FollowUpRequested"/> 通道，不新建教学模式。</summary>
+    public void SubmitFollowUp(string question)
+    {
+        if (string.IsNullOrWhiteSpace(question)) return;
+        _followUp.Text = question.Trim();
+        SendFollowUp();
+    }
 
     private void SendFollowUp()
     {

@@ -376,6 +376,7 @@ public sealed class AssistantBoardPlan
             "formula" => "formula",
             "wordlist" => "wordlist",
             "poem" => "poem",
+            "summary" => "summary",
             _ => "text",
         };
     }

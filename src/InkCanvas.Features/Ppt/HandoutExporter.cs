@@ -83,6 +83,56 @@ public sealed class HandoutExportResult
 
 public static class HandoutComposer
 {
+    /// <summary>导出前预览页数：PPT 页与画板页（含总结页）分别统计，不渲染、不改原课件。</summary>
+    public sealed record PreviewSummary(int PresentationPages, int BoardPages, int SummaryPages)
+    {
+        /// <summary>总页数 = PPT 页 + 板书页（总结页已包含在板书页内，不重复累加）。</summary>
+        public int TotalPages => PresentationPages + BoardPages;
+
+        public string Describe()
+            => SummaryPages > 0
+                ? $"PPT {PresentationPages} 页 + 板书 {BoardPages} 页（其中总结 {SummaryPages} 页），共 {TotalPages} 页"
+                : $"PPT {PresentationPages} 页 + 板书 {BoardPages} 页，共 {TotalPages} 页";
+    }
+
+    /// <summary>画板页的预览元数据：是否有内容、是否为总结页。</summary>
+    public sealed record BoardPageInfo(int Index, bool HasContent, bool IsSummary);
+
+    /// <summary>
+    /// 按导出选项统计预览页数：PPT 页遵循选页/仅批注筛选，板书页按真实内容页统计，
+    /// 总结页是板书页的子集，只用于来源说明。
+    /// </summary>
+    public static PreviewSummary Summarize(
+        SlideContentIndex index, HandoutOptions options, IReadOnlyList<BoardPageInfo> boardPages)
+    {
+        int presentation = 0;
+        bool hasSelection = options?.SelectedSlideIds is { Count: > 0 };
+        if (index?.Slides is { Count: > 0 })
+        {
+            foreach (SlideContentEntry entry in index.Slides)
+            {
+                if (entry is null) continue;
+                if (hasSelection && !options.SelectedSlideIds.Contains(entry.SlideId)) continue;
+                if (options?.Content == HandoutContentMode.AnnotationsOnly && !entry.HasInk) continue;
+                presentation++;
+            }
+        }
+
+        int board = 0;
+        int summary = 0;
+        if (boardPages is { Count: > 0 })
+        {
+            foreach (BoardPageInfo page in boardPages)
+            {
+                if (page is null || !page.HasContent) continue;
+                board++;
+                if (page.IsSummary) summary++;
+            }
+        }
+
+        return new PreviewSummary(presentation, board, summary);
+    }
+
     /// <summary>按「全部 / 仅批注 / 选中页」筛选页，保持原页序。</summary>
     public static IReadOnlyList<HandoutPageSource> Select(
         IReadOnlyList<HandoutPageSource> pages, HandoutOptions options)

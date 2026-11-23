@@ -39,6 +39,50 @@ public sealed class ExampleLibraryUiContractTests
     }
 
     [Fact]
+    public void AssistantWindow_Favorite_WritesAiAssociation()
+    {
+        string source = ReadSource("src/InkCanvas.App/Views/AssistantWindow.cs");
+
+        Assert.Contains("AiSessionId = _sourceSessionId", source);
+        Assert.Contains("RequestId = _sourceRequestId", source);
+        Assert.Contains("BoardId = _sourceBoardId", source);
+        Assert.Contains("BoardPageId = _sourceBoardPageId", source);
+        Assert.Contains("ObjectIds = new List<string>(_sourceObjectIds)", source);
+        Assert.Contains("StepsJson = ExampleEntryCodec.EncodeSteps", source);
+        Assert.Contains("AnnotationsJson = ExampleEntryCodec.EncodeAnnotations", source);
+        Assert.Contains("SetFavoriteObjects", source);
+    }
+
+    [Fact]
+    public void ExampleLibraryWindow_ExposesStage3AActions()
+    {
+        string source = ReadSource("src/InkCanvas.App/Views/ExampleLibraryWindow.cs");
+
+        Assert.Contains("IExampleLibraryHost", source);
+        Assert.Contains("再讲一次", source);
+        Assert.Contains("贴回白板", source);
+        Assert.Contains("编辑订正", source);
+        Assert.Contains("ReExplainExample", source);
+        Assert.Contains("PasteExampleToBoardAsync", source);
+        Assert.Contains("TeacherEdited = true", source);
+        Assert.Contains("UpdatedAt = DateTime.Now", source);
+    }
+
+    [Fact]
+    public void ShellController_ImplementsExampleHostAndSummaryPage()
+    {
+        string source = ReadSource("src/InkCanvas.App/Services/ShellController.cs");
+
+        Assert.Contains("IExampleLibraryHost", source);
+        Assert.Contains("ExampleReExplainPrompt.Build", source);
+        Assert.Contains("ExampleBoardPlanFactory", source);
+        Assert.Contains("SummaryBoardPolicy.IsSummary", source);
+        Assert.Contains("SummaryPageName", source);
+        Assert.Contains("SetFavoriteObjects", source);
+        Assert.Contains("HandoutComposer.Summarize", source);
+    }
+
+    [Fact]
     public void ToolkitWindow_ExposesExampleLibraryEntry()
     {
         string source = ReadSource("src/InkCanvas.App/Views/ToolkitWindow.cs");

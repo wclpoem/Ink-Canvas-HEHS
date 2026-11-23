@@ -124,10 +124,32 @@ public sealed class SessionCheckpoint
 }
 
 /// <summary>
+/// 章节书签的来源常量，避免各处散落字符串字面量。
+/// <para><see cref="Practice"/> 表示练习结束（倒计时带 practice 载荷或「练习结束」信号）。</para>
+/// </summary>
+public static class SessionBookmarkKind
+{
+    public const string Page = "page";
+
+    public const string Cleared = "cleared";
+
+    public const string Ppt = "ppt";
+
+    public const string Roster = "roster";
+
+    public const string Timer = "timer";
+
+    public const string Practice = "practice";
+
+    public const string Manual = "manual";
+}
+
+/// <summary>
 /// 统一课堂会话时间轴上的章节书签。
 /// <para>
 /// <see cref="Auto"/> 为 true 表示由时间轴规则自动生成；用户重命名后转为手动书签，不再被自动规则覆盖。
-/// <see cref="Kind"/> 记录来源（page / cleared / ppt / roster / timer / manual）。
+/// <see cref="Kind"/> 记录来源（page / cleared / ppt / roster / timer / practice / manual），
+/// 其中 practice 表示练习结束（含练习场景的倒计时结束或时光机练习结束信号）。
 /// </para>
 /// </summary>
 public sealed class SessionBookmark

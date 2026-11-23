@@ -200,6 +200,32 @@ public sealed class AiCardEditState
             .Where(line => line.Length > 0)
             .ToList();
 
+    /// <summary>
+    /// 教师修改原生文本后标记来源：Source 置为 teacher（旧对象默认 ai），
+    /// Instruction 追加固定前缀，保存/导出/回放都能区分 AI 原文与教师订正。
+    /// </summary>
+    public static void MarkTeacherEdited(Board.AiObjects.BoardTextObject text)
+    {
+        if (text is null) return;
+        text.Source = InkCanvas.Ink.BoardObjectProvenance.TeacherSource;
+        text.Instruction = WithTeacherPrefix(text.Instruction);
+    }
+
+    /// <summary>教师修改原生公式后标记来源，规则与文本对象一致。</summary>
+    public static void MarkTeacherEdited(Board.AiObjects.BoardFormulaObject formula)
+    {
+        if (formula is null) return;
+        formula.Source = InkCanvas.Ink.BoardObjectProvenance.TeacherSource;
+        formula.Instruction = WithTeacherPrefix(formula.Instruction);
+    }
+
+    private static string WithTeacherPrefix(string instruction)
+    {
+        const string prefix = InkCanvas.Ink.BoardObjectProvenance.TeacherInstructionPrefix;
+        string value = instruction ?? "";
+        return value.StartsWith(prefix, StringComparison.Ordinal) ? value : prefix + value;
+    }
+
     public static string NormalizeKind(string kind) => (kind ?? "").Trim().ToLowerInvariant() switch
     {
         "formula" => "formula",
