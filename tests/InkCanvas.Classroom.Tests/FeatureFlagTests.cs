@@ -16,6 +16,7 @@ public sealed class FeatureFlagTests
         Assert.True(features.EnableExerciseFlow);
         Assert.True(features.EnableExampleLibrary);
         Assert.True(features.EnableResourceBundle);
+        Assert.True(features.UnifiedContext);
     }
 
     [Fact]
@@ -53,6 +54,38 @@ public sealed class FeatureFlagTests
         Assert.True(settings.Features.EnableExerciseFlow);
         Assert.True(settings.Features.EnableExampleLibrary);
         Assert.True(settings.Features.EnableResourceBundle);
+        Assert.True(settings.Features.UnifiedContext);
+    }
+
+    [Fact]
+    public void LegacyFeaturesNodeWithoutUnifiedContextKey_DefaultsToEnabled()
+    {
+        const string legacyJson = """
+            {
+              "features": { "enableAiTeaching": false, "enableExerciseFlow": false }
+            }
+            """;
+
+        var settings = JsonSerializer.Deserialize<AppSettings>(legacyJson);
+
+        Assert.NotNull(settings);
+        Assert.False(settings!.Features.EnableAiTeaching);
+        Assert.False(settings.Features.EnableExerciseFlow);
+        Assert.True(settings.Features.UnifiedContext);
+    }
+
+    [Fact]
+    public void SerializeRoundTrip_PreservesDisabledUnifiedContext()
+    {
+        var settings = new AppSettings();
+        settings.Features.UnifiedContext = false;
+
+        var json = JsonSerializer.Serialize(settings);
+
+        Assert.Contains("unifiedContext", json);
+        var restored = JsonSerializer.Deserialize<AppSettings>(json);
+        Assert.NotNull(restored);
+        Assert.False(restored!.Features.UnifiedContext);
     }
 
     [Fact]

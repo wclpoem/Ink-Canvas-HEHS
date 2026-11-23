@@ -10,6 +10,8 @@ namespace InkCanvas.App.Services;
 public sealed partial class ShellController
 {
     private IDocumentWorkspace _documentWorkspace;
+    /// <summary>当前文档页的统一上下文页身份；Attach 时生成，文档翻页（ControllerChanged）时重新生成。</summary>
+    private Guid _documentPageId;
     private readonly List<Window> _documentWindows = new();
     private bool _documentFocused;
     private bool DocumentActive => _documentWorkspace is not null && _documentFocused && _board is null;
@@ -45,6 +47,7 @@ public sealed partial class ShellController
         _replay?.Close(); _palette?.Close(); _shapePicker?.Close(); _bar?.ClosePanels();
         _selectionToolbar?.Hide();
         _documentWorkspace = workspace;
+        _documentPageId = Guid.NewGuid();
         _documentFocused = true;
         _lastSlideShowState = false;
         _bar?.Bar.SetPptModeVisible(false);
@@ -116,6 +119,8 @@ public sealed partial class ShellController
     private void OnDocumentPageChanged()
     {
         if (!DocumentActive) return;
+        // 文档翻页即换页身份：旧页的上下文不再满足写回页校验。
+        _documentPageId = Guid.NewGuid();
         _replay?.Close(); _palette?.Close(); _shapePicker?.Close();
         BindBoardController(_documentWorkspace.Controller);
         BindToolbar(_documentWorkspace.Controller);
@@ -131,6 +136,7 @@ public sealed partial class ShellController
         StopDocumentForegroundTracking();
         _documentWorkspace = null;
         _documentFocused = false;
+        _documentPageId = Guid.Empty;
         _replay?.Close(); _palette?.Close(); _shapePicker?.Close();
         BindBoardController(_board?.CurrentController);
         BindToolbar(ActiveController);

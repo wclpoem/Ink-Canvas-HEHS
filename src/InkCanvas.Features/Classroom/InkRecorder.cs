@@ -1,3 +1,4 @@
+using InkCanvas.Core.AiAssistant;
 using InkCanvas.Core.Classroom;
 using InkCanvas.Core.Ink;
 using InkCanvas.Features.AiAssistant;
@@ -24,9 +25,11 @@ public sealed class InkRecorder : IDisposable
 
     private readonly BoardService _board;
     private readonly int _boardId;
+    private readonly bool _persistOnStop;
     private readonly Stopwatch _clock = new();
     private readonly object _gate = new();
     private InkController _controller;
+    private ClassroomContext _aiContext;
     private HashSet<string> _knownIds = new();
     private int _lastUndoCount;
     private int _lastRedoCount;
@@ -41,10 +44,16 @@ public sealed class InkRecorder : IDisposable
     private const int DedupeSignaturePrefixLength = 64;
 
 
-    public InkRecorder(BoardService board, int boardId = 0)
+    /// <param name="boardId">画板归属：0 = 主展板，1 = 板中板。</param>
+    /// <param name="persistOnStop">
+    /// 停止时是否把会话保存为正式录制。子板录制由 Shell 合并进主会话，应传 <c>false</c>：
+    /// 此时 <see cref="Stop"/> 只关闭增量日志并清理恢复产物，不额外落盘。
+    /// </param>
+    public InkRecorder(BoardService board, int boardId = 0, bool persistOnStop = true)
     {
         _board = board ?? throw new ArgumentNullException(nameof(board));
         _boardId = boardId;
+        _persistOnStop = persistOnStop;
     }
 
     public ClassroomSession Session { get; private set; }
@@ -55,6 +64,75 @@ public sealed class InkRecorder : IDisposable
     public bool IsPaused { get; private set; }
 
     public InkTimeline Timeline => _timeline;
+
+    /// <summary>
+    /// 当前已捕获事件的只读副本（会话尚未创建时为空数组）。
+    /// 返回副本，避免外部直接修改录制器内部的事件列表。
+    /// </summary>
+    public IReadOnlyList<TimelineEvent> CapturedEvents
+        => Session?.Events?.ToArray() ?? Array.Empty<TimelineEvent>();
+
+    /// <summary>
+    /// 绑定当前 AI 请求的统一上下文；<c>null</c> 表示清除。
+    /// 按画板归属过滤：子板上下文只对 boardId=1 的录制器生效，
+    /// 其余画布种类只对 boardId=0 的录制器生效；不匹配时按未绑定处理。
+    /// </summary>
+    public void SetAiContext(ClassroomContext context)
+    {
+        ClassroomContext accepted;
+        lock (_gate)
+        {
+            accepted = FilterAiContext(context);
+            if (ReferenceEquals(accepted, _aiContext)) return;
+            _aiContext = accepted;
+        }
+
+        Log(accepted is null
+            ? $"[AI] 录制器 AI 上下文已清除：boardId={_boardId}"
+            : $"[AI] 录制器绑定 AI 上下文：boardId={_boardId},kind={accepted.Kind},"
+                + $"slide={accepted.SlideId?.ToString() ?? "none"},source={accepted.Source},"
+                + $"request={accepted.RequestId ?? ""}");
+    }
+
+    /// <summary>
+    /// 把另一路录制（子板）的事件并入当前会话：忽略 null 事件，按
+    /// <see cref="TimelineEvent.TimeMs"/> 稳定排序后重建时间轴。
+    /// 子板事件序号独立从 1 起，合并后按最终顺序重新编号，避免与主会话的
+    /// <see cref="TimelineEvent.Seq"/> 冲突影响同毫秒先后与检查点锚定。
+    /// </summary>
+    public void MergeEvents(IEnumerable<TimelineEvent> events)
+    {
+        lock (_gate)
+        {
+            if (Session is null)
+            {
+                Log($"[AI] 合并子板事件被忽略：录制器没有会话，boardId={_boardId}");
+                return;
+            }
+
+            List<TimelineEvent> incoming = events?.Where(item => item is not null).ToList();
+            if (incoming is null || incoming.Count == 0) return;
+
+            var merged = Session.Events ??= new List<TimelineEvent>();
+            foreach (TimelineEvent ev in incoming)
+            {
+                // 归属统一按主会话重写，避免复合会话里残留子会话 id。
+                ev.SessionId = Session.Id;
+                merged.Add(ev);
+                // 合并发生在主录制器停止之前：同步写入增量日志，异常恢复时也不丢子板事件。
+                _journal?.Append(ev);
+            }
+
+            SortEventsByTimeStable(merged);
+            RenumberEvents(merged);
+            // 合并后事件索引整体位移，旧检查点已失效，必须清空重建。
+            Session.Checkpoints?.Clear();
+            _timeline = new InkTimeline(Session);
+            MaybeSaveSnapshot();
+
+            Log($"[AI] 子板事件已合并：boardId={_boardId},incoming={incoming.Count},total={merged.Count}");
+        }
+    }
 
     /// <summary>录制中用于异常恢复的增量日志；未启用时为 null。</summary>
     public SessionJournal Journal => _journal;
@@ -200,6 +278,23 @@ public sealed class InkRecorder : IDisposable
         try { journal.Close(); }
         catch { /* 已尽量刷盘 */ }
 
+        // 子板录制（persistOnStop=false）只关闭增量日志并清理恢复产物：
+        // 事件由 Shell 合并进主会话并随主会话落盘，避免产生一份独立录制文件。
+        if (!_persistOnStop)
+        {
+            try
+            {
+                ClassroomSessionStore.DeleteRecoveryArtifacts(Session.Id, SessionDirectory);
+            }
+            catch
+            {
+                // 清理失败不影响合并与主会话保存。
+            }
+
+            Log($"[AI] 子板录制不落盘：已关闭增量日志并清理恢复产物，session={Session.Id},boardId={_boardId}");
+            return;
+        }
+
         bool saved = false;
         try
         {
@@ -212,6 +307,33 @@ public sealed class InkRecorder : IDisposable
         }
 
         if (saved) ClassroomSessionStore.DeleteRecoveryArtifacts(Session.Id, SessionDirectory);
+    }
+
+    /// <summary>按画板归属过滤 AI 上下文：子板只匹配 boardId=1，其余只匹配 boardId=0。</summary>
+    private ClassroomContext FilterAiContext(ClassroomContext context)
+    {
+        if (context is null) return null;
+        bool matches = context.Kind == BoardCanvasKind.SideBoard ? _boardId == 1 : _boardId == 0;
+        return matches ? context : null;
+    }
+
+    /// <summary>按 <see cref="TimelineEvent.TimeMs"/> 稳定排序：同毫秒保持入列先后。</summary>
+    private static void SortEventsByTimeStable(List<TimelineEvent> events)
+    {
+        var indexed = events.Select((ev, index) => (Event: ev, Index: index)).ToList();
+        indexed.Sort((left, right) =>
+        {
+            int byTime = left.Event.TimeMs.CompareTo(right.Event.TimeMs);
+            return byTime != 0 ? byTime : left.Index.CompareTo(right.Index);
+        });
+        for (int i = 0; i < indexed.Count; i++) events[i] = indexed[i].Event;
+    }
+
+    /// <summary>合并后按最终顺序重新编号，保证 <see cref="TimelineEvent.Seq"/> 会话内唯一递增。</summary>
+    private void RenumberEvents(List<TimelineEvent> events)
+    {
+        for (int i = 0; i < events.Count; i++) events[i].Seq = i + 1;
+        _nextSeq = events.Count + 1;
     }
 
     private void SaveSnapshot()
@@ -439,7 +561,14 @@ public sealed class InkRecorder : IDisposable
             if (formula is not null) natives.Add(ToNativeFormulaObject(formula, page));
         if (images.Count + natives.Count == 0) return;
 
-        string payload = AiObjectPayloadCodec.Encode(change.Action, page, _boardId, images, natives);
+        ClassroomContext ai;
+        lock (_gate) { ai = _aiContext; }
+
+        // 记录 AI 请求的统一上下文元数据：幻灯片、内容来源与请求标识。
+        // 未绑定上下文时按旧行为传 null（schema=3 但字段留空）。
+        string payload = AiObjectPayloadCodec.Encode(
+            change.Action, page, _boardId, images, natives,
+            ai?.SlideId, ai?.Source.ToString(), ai?.RequestId);
         if (string.IsNullOrEmpty(payload)) return;
         AddEvent(TimelineEventKind.AiStep, page, payload: payload);
     }
@@ -458,6 +587,7 @@ public sealed class InkRecorder : IDisposable
             Width = text.Width,
             Height = text.Height,
             LayerOrder = text.LayerOrder,
+            Transform = text.TransformMatrix is { Length: 6 } ? text.TransformMatrix.ToArray() : null,
             Content = content,
             Title = text.Title ?? "",
             Author = text.Author ?? "",
@@ -487,6 +617,7 @@ public sealed class InkRecorder : IDisposable
         Width = formula.Width,
         Height = formula.Height,
         LayerOrder = formula.LayerOrder,
+        Transform = formula.TransformMatrix is { Length: 6 } ? formula.TransformMatrix.ToArray() : null,
         Latex = formula.Latex ?? "",
         FontFamily = formula.FontFamily ?? "Cambria Math",
         FontSize = formula.FontSize,
@@ -520,6 +651,7 @@ public sealed class InkRecorder : IDisposable
             Width = image.Width,
             Height = image.Height,
             LayerOrder = image.LayerOrder,
+            Transform = image.Transform is { Length: 6 } ? image.Transform.ToArray() : null,
             Latex = metadata?.Latex ?? "",
             Text = metadata?.Text ?? "",
             Lines = metadata is null ? Array.Empty<string>() : metadata.Lines,

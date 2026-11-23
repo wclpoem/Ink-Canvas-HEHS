@@ -581,6 +581,8 @@ internal static class SideBoardRegression
             if (item.Stroke is { } stroke) bounds = bounds.Union(stroke.Bounds);
             else if (item.Element is IImageSelectionElement { ImageData.Length: > 0 } image)
                 bounds = bounds.Union(image.Bounds);
+            else if (item.Element is IBoardTextElement or IBoardFormulaElement)
+                bounds = bounds.Union(item.Element.Bounds);
         }
         return bounds;
     }

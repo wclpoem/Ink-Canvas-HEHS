@@ -29,6 +29,10 @@ public interface ITimeMachineHost
     Window Owner { get; }
     int Theme { get; }
     BoardService Board { get; }
+    /// <summary>板中板画板；未接入子板录制时返回 null。</summary>
+    BoardService SideBoard => null;
+    /// <summary>当前 AI 请求的统一上下文；未接入时返回 null。</summary>
+    InkCanvas.Core.AiAssistant.ClassroomContext AiContext => null;
     InkController ActiveController { get; }
     bool BoardOpen { get; }
     PptInkSession Ppt { get; }

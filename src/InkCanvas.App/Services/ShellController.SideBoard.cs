@@ -25,6 +25,7 @@ public sealed partial class ShellController
             var window = new SideBoardWindow(Services, this, _board);
             window.Closed += OnSideBoardClosed;
             window.SideBoardVisibilityChanged += OnSideBoardVisibilityChanged;
+            window.SideBoardPageChanged += NotifySideBoardPageChanged;
             _sideBoard = window;
             NotifyWindowOpened(window);
         }
@@ -46,8 +47,34 @@ public sealed partial class ShellController
             + $"belongs={AssistantBelongsToSideBoard}，hiddenFlag={_aiHiddenWithSideBoard}，"
             + $"target={AssistantTargetPolicy.Describe(_aiTarget)}",
             Core.Diagnostics.LogType.Info);
+        // 显示时把输入/AI 目标切到子板控制器，收回时回到主展板；ActiveController 由 IsShown 决定。
+        BindBoardController(visible ? _sideBoard?.CurrentController : Services.Board.Current);
+        BindToolbar(ActiveController);
         if (visible) ShowAssistantForSideBoard();
         else HideAssistantForSideBoard();
+    }
+
+    /// <summary>
+    /// 子板翻页后刷新统一上下文与 AI 浮窗锚点：只在上下文锚定子板时更新页身份，
+    /// 过期提示由后续流式/写回校验按需触发，这里不逐次弹窗。
+    /// </summary>
+    internal void NotifySideBoardPageChanged()
+    {
+        if (UnifiedContextEnabled && _aiContext?.Kind == BoardCanvasKind.SideBoard)
+        {
+            _aiContext = _aiContext with
+            {
+                PageId = Services.SideBoard.CurrentPageId,
+                PageIndex = Services.SideBoard.CurrentIndex,
+            };
+            SyncRecorderContext();
+        }
+
+        Assistant?.NotifyBoardChanged();
+        Core.Diagnostics.FileLog.WriteLogToFile(
+            $"{ClassroomContextPolicy.Describe(_aiContext)} 子板翻页：board=side，page={Services.SideBoard.CurrentIndex}，"
+            + $"pageId={Services.SideBoard.CurrentPageId}",
+            Core.Diagnostics.LogType.Info);
     }
 
     private void OnSideBoardClosed(object sender, WindowEventArgs args)
@@ -55,6 +82,7 @@ public sealed partial class ShellController
         if (_sideBoard is null || !ReferenceEquals(sender, _sideBoard)) return;
         CloseAssistantForSideBoard();
         _sideBoard.SideBoardVisibilityChanged -= OnSideBoardVisibilityChanged;
+        _sideBoard.SideBoardPageChanged -= NotifySideBoardPageChanged;
         _sideBoard.Closed -= OnSideBoardClosed;
         _sideBoard = null;
     }
@@ -74,6 +102,7 @@ public sealed partial class ShellController
         CloseAssistantForSideBoard();
         _sideBoard = null;
         window.SideBoardVisibilityChanged -= OnSideBoardVisibilityChanged;
+        window.SideBoardPageChanged -= NotifySideBoardPageChanged;
         window.Closed -= OnSideBoardClosed;
         window.Close();
     }

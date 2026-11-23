@@ -38,7 +38,7 @@ namespace InkCanvas.App.Services;
 /// Owns the windows and implements the shell actions the floating bar invokes. Keeps App.xaml.cs
 /// down to startup wiring.
 /// </summary>
-public sealed partial class ShellController : IShellActions, IDisposable
+public sealed partial class ShellController : IShellActions, IExampleLibraryHost, IDisposable
 {
     private readonly DispatcherQueue _dispatcher;
     private readonly DispatcherQueueTimer _pollTimer;
@@ -109,6 +109,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private bool _presentationKeyFailureLogged;
     private bool _exiting;
     private InkRecorder _recorder;
+    /// <summary>子板录制器：与主录制器同一时钟起点，停止时事件并入主会话（BoardId=1）。</summary>
+    private InkRecorder _sideBoardRecorder;
     private InfoWindow _guide;
     private AssistantWindow _aiAssistant;
     private AiStreamHandle _aiStream;
@@ -117,6 +119,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private AssistantTarget _aiTarget;
     private bool _aiHiddenWithSideBoard;
     private bool _aiAssistantFromSideBoard;
+    /// <summary>例题「再讲一次」待发送追问；标准识别流完成后自动提交，不新建教学模式。</summary>
+    private string _aiPendingExamplePrompt = "";
     private AssistantRect _aiAnchor;
     private AiClient _aiClient;
     private string _aiThumb = "";
@@ -139,6 +143,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private AssistantBoardPlan _aiBoardPlan;
     private string _aiBoardInstruction = "";
     private string _aiBoardIntent = "";
+    /// <summary>发起 AI 请求时的统一课堂上下文快照；Flag 关闭时仅记录、不参与判定。</summary>
+    private ClassroomContext _aiContext;
     private bool _aiBoardRequestPending;
     private bool _lastSlideShowState;
     private bool _lastAutoFoldRequested;
@@ -423,6 +429,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
 
         if (Services.Settings.Startup.IsAutoUpdate)
             _ = Updater.CheckAsync(interactive: false);
+
+        _ = RestorePendingRecordingsAsync();
     }
 
     /// <summary>
@@ -571,12 +579,22 @@ public sealed partial class ShellController : IShellActions, IDisposable
     }
 
     private Task NotifyAsync(string title, string message)
+        => ShowNoticeAsync(title, message);
+
+    /// <summary>
+    /// 创建/复用置顶通知窗口：按标题+正文去重，随后居中到 owner、登记并置顶。
+    /// 传入 <paramref name="actions"/> 时窗口底部额外渲染动作按钮（点击后先关闭窗口再执行）；
+    /// actions 为空时与旧 <c>NotifyAsync</c> 行为完全一致。
+    /// </summary>
+    private Task<bool> ShowNoticeAsync(string title, string message, IReadOnlyList<NoticeAction> actions = null)
     {
-        if (_disposed || _exiting) return Task.CompletedTask;
+        if (_disposed || _exiting) return Task.FromResult(false);
         _bar?.ClosePanels();
-        var notice = _notices.FirstOrDefault(window => window.Title == title && window.Message == message);
-        if (notice is not null) { notice.Activate(); return notice.Completion; }
-        notice = new NoticeWindow(title, message, EffectiveTheme);
+        var notice = actions is null
+            ? _notices.FirstOrDefault(window => window.Title == title && window.Message == message)
+            : null;
+        if (notice is not null) { notice.Activate(); return AwaitNoticeCompletionAsync(notice.Completion); }
+        notice = new NoticeWindow(title, message, EffectiveTheme, actions);
         _notices.Add(notice);
         notice.Closed += (_, _) => _notices.Remove(notice);
         var owner = DocumentActive ? _documentWorkspace.Window : (Window)_board ?? _bar;
@@ -584,7 +602,13 @@ public sealed partial class ShellController : IShellActions, IDisposable
         NotifyWindowOpened(notice);
         notice.Activate();
         WindowChrome.EnsureAbove(notice, Overlay.Window.Handle);
-        return notice.Completion;
+        return AwaitNoticeCompletionAsync(notice.Completion);
+    }
+
+    private static async Task<bool> AwaitNoticeCompletionAsync(Task completion)
+    {
+        await completion;
+        return true;
     }
 
     private async Task<bool> AskAsync(string title, string message, string primary)
@@ -600,6 +624,92 @@ public sealed partial class ShellController : IShellActions, IDisposable
             XamlRoot = root.XamlRoot,
         };
         return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
+
+    /// <summary>
+    /// 启动期扫描未完成录制的增量日志：存在时提示「恢复 / 放弃」，并顺带按保留天数清理旧会话。
+    /// 恢复走 <see cref="ClassroomSessionRecovery"/>，把结果登记到课堂会话目录（复用既有 JSON 格式）。
+    /// </summary>
+    private async Task RestorePendingRecordingsAsync()
+    {
+        IReadOnlyList<PendingRecording> pending;
+        try
+        {
+            pending = await Task.Run(() => ClassroomSessionRecovery.ScanPending());
+        }
+        catch (Exception error)
+        {
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[AI] 课堂录制恢复扫描失败：{error.Message}", Core.Diagnostics.LogType.Error);
+            return;
+        }
+
+        // 启动期按保留天数清理旧会话：最近 20 条永不自动删除，只删超龄且不在最近范围内的。
+        try
+        {
+            int pruned = await Task.Run(() => ClassroomSessionStore.DeleteExpiredSessions());
+            if (pruned > 0)
+                Core.Diagnostics.FileLog.WriteLogToFile(
+                    $"[AI] 课堂会话按保留天数清理：removed={pruned}", Core.Diagnostics.LogType.Trace);
+        }
+        catch (Exception error)
+        {
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[AI] 课堂会话保留清理失败：{error.Message}", Core.Diagnostics.LogType.Trace);
+        }
+
+        if (pending.Count == 0) return;
+        if (_disposed || _exiting) return;
+
+        // 让浮动栏先完成首帧，再弹恢复提示，避免启动瞬间被模态窗遮挡。
+        await Task.Delay(TimeSpan.FromSeconds(1.5));
+        if (_disposed || _exiting) return;
+
+        List<string> ids = pending.Select(item => item.Id).ToList();
+        var lines = pending.Take(3).Select(item =>
+            "· " + item.Name + "（" + item.EventCount + " 个事件，约 " + FormatDuration(item.PlaybackLength) + "）").ToList();
+        if (pending.Count > 3) lines.Add("· 以及另外 " + (pending.Count - 3) + " 个录制");
+        string message = "检测到 " + pending.Count + " 个未完成的课堂录制（上次异常退出）：\n"
+            + string.Join("\n", lines)
+            + "\n\n恢复会合并最后的快照与增量日志，并加入课堂会话列表；放弃会删除这些恢复残留，不影响已保存的录制。";
+
+        Core.Diagnostics.FileLog.WriteLogToFile(
+            "[AI] 课堂录制恢复提示：count=" + pending.Count + ",ids=" + string.Join(",", ids),
+            Core.Diagnostics.LogType.Info);
+
+        await ShowNoticeAsync("课堂录制恢复", message, new[]
+        {
+            new NoticeAction
+            {
+                Label = "恢复",
+                Invoke = async () =>
+                {
+                    int recovered = await Task.Run(() => ClassroomSessionRecovery.RecoverAll(ids));
+                    await NotifyAsync("课堂录制", recovered > 0
+                        ? "已恢复 " + recovered + " 个未完成录制，可在课堂会话列表中查看。"
+                        : "没有可恢复的录制内容，已清理恢复残留。");
+                },
+            },
+            new NoticeAction
+            {
+                Label = "放弃",
+                Invoke = async () =>
+                {
+                    int discarded = await Task.Run(() => ClassroomSessionRecovery.DiscardAll(ids));
+                    await NotifyAsync("课堂录制", discarded > 0
+                        ? "已放弃 " + discarded + " 个未完成录制，删除的只是恢复残留。"
+                        : "没有需要清理的恢复残留。");
+                },
+            },
+        });
+    }
+
+    private static string FormatDuration(TimeSpan length)
+    {
+        if (length <= TimeSpan.Zero) return "未知时长";
+        if (length.TotalMinutes < 1) return Math.Max(1, (int)length.TotalSeconds) + " 秒";
+        if (length.TotalHours < 1) return (int)length.TotalMinutes + " 分钟";
+        return (int)length.TotalHours + " 小时 " + length.Minutes + " 分钟";
     }
 
     private void OnPptPresentationNotice(PptPresentationNotice notice)
@@ -1086,6 +1196,13 @@ public sealed partial class ShellController : IShellActions, IDisposable
             _board.CurrentPageChanged += OnBoardPageChanged;
             _recorder = new InkRecorder(Services.Board);
             _recorder.Start();
+            // 子板与主展板同一时钟起点录制，停止时把子板事件并入主会话（BoardId=1）。
+            if (!ReferenceEquals(Services.SideBoard, Services.Board))
+            {
+                _sideBoardRecorder = new InkRecorder(Services.SideBoard, boardId: 1, persistOnStop: false);
+                _sideBoardRecorder.Start();
+            }
+            SyncRecorderContext();
             if (_bar is not null) _bar.Bar.Controller = _board.CurrentController;
             WindowChrome.ApplyTheme(_board, Services.Settings.Appearance.Theme);
 
@@ -1159,6 +1276,21 @@ public sealed partial class ShellController : IShellActions, IDisposable
         _board.CurrentPageChanged -= OnBoardPageChanged;
         StopRecording();
         CloseSideBoardWithBoard();
+        if ((_aiTarget?.Kind == AssistantCanvasKind.MainBoard
+             || (UnifiedContextEnabled && _aiContext?.Kind == BoardCanvasKind.MainBoard))
+            && _aiAssistant is not null)
+        {
+            // 主板已关闭：作废本代响应，停掉主流与局部纠错流，再关浮窗（Close 会触发 OnAiWindowClosed 完成清理）。
+            _aiGate.Invalidate();
+            _aiStream?.Abort();
+            _aiStream = null;
+            _aiRegionStream?.Abort();
+            _aiRegionStream = null;
+            _aiAssistant.Close();
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                "[AI] 主板已关闭，终止主板 AI 流并关闭浮窗",
+                Core.Diagnostics.LogType.Info);
+        }
         _board = null;
         Services.BoardModeActive = false;
         Services.ConfigureController(Services.OverlayInk);
@@ -1203,38 +1335,69 @@ public sealed partial class ShellController : IShellActions, IDisposable
 
     private void StopRecording()
     {
-        if (_recorder is null) return;
-        _recorder.Stop();
-
-        try { _recorder.Save(); }
-        catch { /* 磁盘问题不应影响关闭流程 */ }
-        _recorder.Dispose();
+        InkRecorder sideRecorder = _sideBoardRecorder;
+        _sideBoardRecorder = null;
+        InkRecorder recorder = _recorder;
         _recorder = null;
+
+        // 子板先停：其事件按 BoardId=1 并入主会话，回放与总结仍只读主会话。
+        if (sideRecorder is not null)
+        {
+            try
+            {
+                sideRecorder.Stop();
+                int sideEvents = sideRecorder.CapturedEvents.Count;
+                int mainEvents = recorder?.CapturedEvents.Count ?? 0;
+                if (recorder?.Session is not null && sideEvents > 0)
+                    recorder.MergeEvents(sideRecorder.CapturedEvents);
+                Core.Diagnostics.FileLog.WriteLogToFile(
+                    $"[AI] 子板录制合并：recordedSideEvents={sideEvents}，recordedMainEvents={mainEvents}",
+                    Core.Diagnostics.LogType.Info);
+            }
+            catch (Exception ex)
+            {
+                Core.Diagnostics.FileLog.WriteLogToFile(
+                    $"[AI] 子板录制合并失败：{ex.Message}", Core.Diagnostics.LogType.Info);
+            }
+            finally { sideRecorder.Dispose(); }
+        }
+
+        if (recorder is null) return;
+        recorder.Stop();
+        try { recorder.Save(); }
+        catch { /* 磁盘问题不应影响关闭流程 */ }
+        recorder.Dispose();
     }
 
     /// <summary>暂停录制（仅录制中有效）；暂停期间事件不入时间轴，计时扣除暂停时长。</summary>
     public void PauseRecording()
     {
-        var recorder = _recorder;
-        if (recorder is null || !recorder.IsRecording || recorder.IsPaused) return;
-        recorder.Pause();
+        _recorder?.Pause();
+        _sideBoardRecorder?.Pause();
     }
 
     /// <summary>继续录制（仅录制中有效）。</summary>
     public void ResumeRecording()
     {
-        var recorder = _recorder;
-        if (recorder is null || !recorder.IsRecording || !recorder.IsPaused) return;
-        recorder.Resume();
+        _recorder?.Resume();
+        _sideBoardRecorder?.Resume();
     }
 
-    /// <summary>浮条入口：在暂停 / 继续之间切换；未在录制时静默忽略。</summary>
+    /// <summary>浮条入口：在暂停 / 继续之间切换；未在录制时静默忽略。以主录制器状态为准，同时切换子板。</summary>
     public void ToggleRecordingPause()
     {
         var recorder = _recorder;
         if (recorder is null || !recorder.IsRecording) return;
-        if (recorder.IsPaused) recorder.Resume();
-        else recorder.Pause();
+        if (recorder.IsPaused)
+        {
+            recorder.Resume();
+            _sideBoardRecorder?.Resume();
+        }
+        else
+        {
+            recorder.Pause();
+            _sideBoardRecorder?.Pause();
+        }
     }
 
     public void OpenSettings() => OpenSettingsPage(null);
@@ -1423,27 +1586,45 @@ public sealed partial class ShellController : IShellActions, IDisposable
         if (practice is not null)
         {
             PracticeFinishRecord record = PracticeFinishPolicy.Plan(
-                practice, _recorder?.IsRecording == true, !string.IsNullOrEmpty(screenshot));
-            record.FinishedAtMs = Environment.TickCount64;
-            record.SnapshotPath = screenshot ?? "";
+                practice,
+                _recorder?.IsRecording == true,
+                !string.IsNullOrEmpty(screenshot),
+                screenshot ?? "",
+                Environment.TickCount64);
+            long finishedAtMs = record.FinishedAtMs;
+
             _teachingSession?.Link(
                 "practice", practice.Id, _aiSlideId, _aiSlideIndex, pageIndex,
-                record.BookmarkName, record.FinishedAtMs);
+                PracticeLinkNote.Build(
+                    practice.AiSessionId, practice.BoardPageId, practice.GroupId, record.SnapshotPath),
+                finishedAtMs);
+            if (record.SnapshotSaved)
+                _teachingSession?.RecordSnapshot(record.SnapshotPath, finishedAtMs);
+            SaveTeachingSession();
+
             _activePractice = null;
             RaiseClassroomSignal(ClassroomSignalKind.PracticeFinished, "练习结束");
-            _ = NotifyAsync("随堂练习",
-                string.IsNullOrEmpty(record.SnapshotPath)
-                    ? "练习结束，板书快照保存失败。"
-                    : "练习结束，已保存板书快照。");
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[AI] 练习结束：exercise={practice.Id}，snapshotSaved={record.SnapshotSaved}，"
+                + $"group={practice.GroupId}，recording={_recorder?.IsRecording == true}",
+                Core.Diagnostics.LogType.Event);
+            _ = ShowPracticeFinishMenuAsync(record, practice);
         }
 
         var recorder = _recorder;
         if (recorder is not null && recorder.IsRecording && recorder.Session is not null)
         {
             long timeMs = recorder.ElapsedMs;
-            string payload = string.IsNullOrEmpty(screenshot)
-                ? "倒计时结束"
-                : JsonSerializer.Serialize(new { screenshot });
+            string payload = practice is not null
+                ? JsonSerializer.Serialize(new
+                {
+                    screenshot,
+                    practice = true,
+                    exerciseId = practice.ExerciseId,
+                })
+                : string.IsNullOrEmpty(screenshot)
+                    ? "倒计时结束"
+                    : JsonSerializer.Serialize(new { screenshot });
 
             try
             {
@@ -1456,7 +1637,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
                 });
 
                 if (practice is not null)
-                    recorder.Timeline.AddBookmark(timeMs, practice.BookmarkName, "practice");
+                    recorder.Timeline.AddBookmark(timeMs, practice.BookmarkName, SessionBookmarkKind.Practice);
             }
             catch (Exception ex)
             {
@@ -1464,7 +1645,125 @@ public sealed partial class ShellController : IShellActions, IDisposable
                     $"Timeline/TimerEnded: {ex.Message}", Core.Diagnostics.LogType.Error);
             }
         }
-        RaiseClassroomSignal(ClassroomSignalKind.TimerEnded, "倒计时结束");
+        RaiseClassroomSignal(ClassroomSignalKind.TimerEnded, practice is not null ? "练习结束" : "倒计时结束");
+    }
+
+    /// <summary>
+    /// 练习结束动作浮窗：先按快照结果给文案，再按纯逻辑策略清单渲染
+    /// 「再来一题（变式）/ 收题（返回画板）/ 导出本次练习」三项；只有变式需要联网。
+    /// </summary>
+    private async Task ShowPracticeFinishMenuAsync(PracticeFinishRecord record, PracticePlan plan)
+    {
+        if (_disposed || _exiting) return;
+
+        string message = record.SnapshotSaved
+            ? "练习结束，已保存板书快照。"
+            : "练习结束，板书快照保存失败，可用「导出本次练习」手动保存。";
+        bool aiAvailable = !string.IsNullOrWhiteSpace(AiConfig.ReadFromEnvironment().Endpoint);
+
+        var actions = new List<NoticeAction>();
+        foreach (PracticeFinishAction action in PracticeFinishActionPolicy.Build(aiAvailable, record.SnapshotSaved))
+        {
+            PracticeFinishActionKind kind = action.Kind;
+            actions.Add(new NoticeAction
+            {
+                Label = action.Label,
+                IsEnabled = true,
+                Invoke = () => RunPracticeFinishActionAsync(kind, record, plan),
+            });
+        }
+
+        Core.Diagnostics.FileLog.WriteLogToFile(
+            $"[AI] 练习结束浮窗：snapshotSaved={record.SnapshotSaved}，aiAvailable={aiAvailable}，"
+            + $"actions={actions.Count}，group={plan?.GroupId}",
+            Core.Diagnostics.LogType.Event);
+
+        await ShowNoticeAsync("随堂练习", message, actions);
+    }
+
+    /// <summary>执行练习结束动作；动作在通知窗口关闭后触发，失败统一兜底提示。</summary>
+    private async Task RunPracticeFinishActionAsync(
+        PracticeFinishActionKind kind, PracticeFinishRecord record, PracticePlan plan)
+    {
+        try
+        {
+            switch (kind)
+            {
+                case PracticeFinishActionKind.NextVariant:
+                    await RunNextVariantFromFinishAsync();
+                    break;
+
+                case PracticeFinishActionKind.Collect:
+                    await CollectPracticeBoardAsync(plan);
+                    break;
+
+                case PracticeFinishActionKind.Export:
+                    await ExportPracticeFinishAsync();
+                    break;
+
+                default:
+                    Core.Diagnostics.FileLog.WriteLogToFile(
+                        $"[AI] 未知的练习结束动作：kind={kind}", Core.Diagnostics.LogType.Info);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[AI] 练习结束动作失败：kind={kind}，error={ex.GetBaseException().Message}",
+                Core.Diagnostics.LogType.Error);
+            await NotifyAsync("随堂练习", "动作执行失败：" + ex.GetBaseException().Message);
+        }
+    }
+
+    /// <summary>「再来一题（变式）」：离线直接提示；无框选原题时先要求框选，不复制生成逻辑。</summary>
+    private async Task RunNextVariantFromFinishAsync()
+    {
+        if (string.IsNullOrWhiteSpace(AiConfig.ReadFromEnvironment().Endpoint))
+        {
+            await NotifyAsync("随堂练习", "离线不可生成变式题，请联网后再试。");
+            return;
+        }
+
+        if (_aiProblem is null || _aiProblem.IsEmpty)
+        {
+            await NotifyAsync("随堂练习", "请先在画布上框选原题，再生成变式题。");
+            return;
+        }
+
+        StartVariantRequest();
+        await Task.CompletedTask;
+    }
+
+    /// <summary>「收题（返回画板）」：停止倒计时并回到练习页；不改变课堂场景 preset。</summary>
+    private async Task CollectPracticeBoardAsync(PracticePlan plan)
+    {
+        _countdown?.StopCountdown();
+
+        if (plan is not null
+            && plan.BoardPageIndex >= 0
+            && plan.BoardPageIndex < Services.Board.PageCount)
+            Services.Board.GoTo(plan.BoardPageIndex);
+
+        if (_board is not null) _board.Activate();
+        else ToggleBoard();
+
+        await Task.CompletedTask;
+    }
+
+    /// <summary>「导出本次练习」：整屏截图落盘并与课堂会话导出记录关联。</summary>
+    private async Task ExportPracticeFinishAsync()
+    {
+        string path = await CaptureScreenshotToFileAsync();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            await NotifyAsync("随堂练习", "导出失败，请稍后重试。");
+            return;
+        }
+
+        _teachingSession?.RecordExport(path, Environment.TickCount64);
+        SaveTeachingSession();
+        await NotifyAsync("随堂练习", "本次练习已导出：" + path);
     }
 
     private void OnLotteryPicked(string name)
@@ -1670,7 +1969,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
             return;
         }
 
-        var window = new ExampleLibraryWindow(Services.Settings, Services.Settings.Appearance.Theme);
+        var window = new ExampleLibraryWindow(Services.Settings, Services.Settings.Appearance.Theme, this);
         _exampleLibrary = window;
         window.Closed += (_, _) =>
         {
@@ -1693,7 +1992,11 @@ public sealed partial class ShellController : IShellActions, IDisposable
         }
 
         var window = new ResourceBundleWindow(Services.Settings.Features, Services.Settings.Appearance.Theme,
-            Core.Settings.ArchivePolicy.ResolveDirectory(Services.Settings.Archive.DefaultDirectory));
+            Core.Settings.ArchivePolicy.ResolveDirectory(Services.Settings.Archive.DefaultDirectory),
+            pptAnnotationRoot: Services.Settings.Automation.AutoSavedStrokesLocation,
+            exampleLibraryDirectory: ExampleLibraryStore.DefaultDirectory,
+            recordingDirectory: Path.Combine(Services.Store.Directory, "PluginData",
+                "inkcanvas.time-machine", "Recordings"));
         _resourceBundle = window;
         window.Closed += (_, _) =>
         {
@@ -1703,6 +2006,193 @@ public sealed partial class ShellController : IShellActions, IDisposable
     }
 
     // ---- 课堂场景 / 分组积分 / 讲义导出 / 聚焦贴图 -----------------------
+
+    /// <summary>
+    /// 例题「再讲一次」：切回记录的画板页/课件页，复用 <see cref="OpenAiAssistant"/> 打开浮窗，
+    /// 预填追问并在首次识别完成后自动提交；不新建教学模式、不修改原例题。
+    /// </summary>
+    public void ReExplainExample(ExampleEntry entry)
+    {
+        if (entry is null) return;
+
+        try
+        {
+            RestoreExampleBoardPage(entry);
+            OpenAiAssistant();
+            if (_aiAssistant is null) return;
+
+            ApplyExampleSlide(entry);
+            ApplyFavoriteContext(_aiAssistant, entry.SourcePresentation, entry.SourceSlideId,
+                entry.BoardPage);
+
+            string prompt = ExampleReExplainPrompt.Build(entry);
+            if (string.IsNullOrWhiteSpace(prompt)) return;
+
+            _aiPendingExamplePrompt = prompt;
+            _aiAssistant.PrefillFollowUp(prompt);
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[AI] 再讲一次：title={entry.Title}，slide={entry.SourceSlideId}，boardPage={entry.BoardPage}，"
+                + $"session={entry.AiSessionId}，objectIds={entry.ObjectIds?.Count ?? 0}",
+                Core.Diagnostics.LogType.Event);
+        }
+        catch (Exception ex)
+        {
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[AI] 再讲一次失败：{ex.Message}", Core.Diagnostics.LogType.Error);
+            _aiAssistant?.ShowNotice("再讲失败：" + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// 例题「贴回白板」：优先用记录步骤生成原生文本/公式对象（<see cref="BoardPlanWriter"/>），
+    /// 无步骤时退化为旧 AI 卡片 PNG（<see cref="AiPasteMetadata"/> 兼容路径）。
+    /// 不修改原例题，不触发 AI 请求。
+    /// </summary>
+    public async Task<bool> PasteExampleToBoardAsync(ExampleEntry entry)
+    {
+        if (entry is null) return false;
+
+        try
+        {
+            BoardService board = ExampleTargetBoard(entry);
+            if (board is null)
+            {
+                if (_board is null) ToggleBoard();
+                board = Services.Board;
+            }
+            if (board is null) return false;
+
+            AssistantBoardPlan plan = ExampleBoardPlanFactory.Create(entry);
+            if (!plan.IsEmpty)
+                return PasteExampleNativeObjects(board, entry, plan);
+
+            List<string> lines = ExampleBoardPlanFactory.LegacyLines(entry);
+            if (lines.Count == 0) return false;
+
+            string metadata = new AiPasteMetadata
+            {
+                Kind = AiPasteKind.BoardPlan,
+                Text = string.Join("\n", lines),
+                Lines = new List<string>(lines),
+                Instruction = "[例题贴回] " + (entry.Title ?? ""),
+                Title = entry.Title ?? "",
+            }.Serialize();
+
+            bool pasted = await PasteCardToBoardAsync(board, "例题贴回", lines, metadata);
+            if (pasted && ReferenceEquals(board, Services.Board) && _board is null) ToggleBoard();
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[AI] 例题贴回（旧卡片）：title={entry.Title}，lines={lines.Count}，success={pasted}",
+                Core.Diagnostics.LogType.Event);
+            return pasted;
+        }
+        catch (Exception ex)
+        {
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[AI] 例题贴回失败：{ex.Message}", Core.Diagnostics.LogType.Error);
+            return false;
+        }
+    }
+
+    private bool PasteExampleNativeObjects(BoardService board, ExampleEntry entry, AssistantBoardPlan plan)
+    {
+        BoardPlanNativeResult created = BoardPlanWriter.Create(plan, "[例题贴回] " + (entry.Title ?? ""));
+        if (!created.Success)
+        {
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[AI] 例题贴回原生对象失败：{created.Error}", Core.Diagnostics.LogType.Error);
+            return false;
+        }
+
+        var sizes = new List<BoardCardSize>(created.Count);
+        foreach (var text in created.Texts) sizes.Add(new BoardCardSize(text.Width, text.Height));
+        foreach (var formula in created.Formulas) sizes.Add(new BoardCardSize(formula.Width, formula.Height));
+
+        var content = board.GetContentBounds();
+        var contentBounds = new AssistantRect(content.Left, content.Top, content.Right, content.Bottom);
+        BoardLayoutPlan layout = BoardContentLayoutPlanner.Plan(
+            contentBounds, sizes, BoardViewportRect(board), safeInsets: BoardSafeInsetsFor(board));
+        if (!layout.IsComplete)
+        {
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[AI] 例题贴回未写入：status={layout.Status}，message={layout.Message}",
+                Core.Diagnostics.LogType.Info);
+            return false;
+        }
+
+        for (int index = 0; index < created.Texts.Count; index++)
+        {
+            BoardCardPlacement placement = layout.Placements[index];
+            created.Texts[index].Left = (float)placement.Left;
+            created.Texts[index].Top = (float)placement.Top;
+            created.Texts[index].Width = (float)placement.Width;
+            created.Texts[index].Height = (float)placement.Height;
+        }
+        for (int index = 0; index < created.Formulas.Count; index++)
+        {
+            BoardCardPlacement placement = layout.Placements[created.Texts.Count + index];
+            created.Formulas[index].Left = (float)placement.Left;
+            created.Formulas[index].Top = (float)placement.Top;
+            created.Formulas[index].Width = (float)placement.Width;
+            created.Formulas[index].Height = (float)placement.Height;
+        }
+
+        string groupId = Guid.NewGuid().ToString("N");
+        IReadOnlyList<Guid> objectIds = board.AddAiObjectsAtomic(
+            created.Texts, created.Formulas, "例题贴回", groupId);
+        if (objectIds.Count == 0) return false;
+
+        SelectAiBoardGroup(board, groupId);
+        if (ReferenceEquals(board, Services.Board) && _board is null) ToggleBoard();
+        Core.Diagnostics.FileLog.WriteLogToFile(
+            $"[AI] 例题贴回（原生对象）：title={entry.Title}，texts={created.Texts.Count}，"
+            + $"formulas={created.Formulas.Count}，group={groupId}，ids={string.Join(",", objectIds)}",
+            Core.Diagnostics.LogType.Event);
+        return true;
+    }
+
+    /// <summary>例题所属画板：side 且子板存在时优先子板，其余回退主展板。</summary>
+    private BoardService ExampleTargetBoard(ExampleEntry entry)
+        => string.Equals(entry?.BoardId, "side", StringComparison.OrdinalIgnoreCase)
+           && _sideBoard is not null
+            ? Services.SideBoard
+            : Services.Board;
+
+    /// <summary>例题再讲/贴回时切到记录的画板页；页序号越界时保持当前页。</summary>
+    private void RestoreExampleBoardPage(ExampleEntry entry)
+    {
+        if (entry is null || entry.BoardPage < 0) return;
+
+        BoardService board = ExampleTargetBoard(entry);
+        if (board is null)
+        {
+            if (_board is null) ToggleBoard();
+            board = Services.Board;
+        }
+        if (board is null || entry.BoardPage >= board.Pages.Count) return;
+        board.GoTo(entry.BoardPage);
+    }
+
+    /// <summary>设置再讲使用的幻灯片身份；当前放映课件与记录不一致时保留现状，仅提示来源在追问里。</summary>
+    private void ApplyExampleSlide(ExampleEntry entry)
+    {
+        if (entry is null || entry.SourceSlideId <= 0) return;
+
+        string current = CurrentPresentationName();
+        if (!string.IsNullOrWhiteSpace(entry.SourcePresentation)
+            && !string.IsNullOrWhiteSpace(current)
+            && !string.Equals(current, entry.SourcePresentation, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        _aiSlideId = entry.SourceSlideId;
+        if (_slideIndex?.Slides is { Count: > 0 })
+        {
+            SlideContentEntry slide = _slideIndex.Slides
+                .FirstOrDefault(item => item is not null && item.SlideId == entry.SourceSlideId);
+            if (slide is not null) _aiSlideIndex = slide.Index;
+        }
+    }
 
     public void CyclePreset()
     {
@@ -1759,6 +2249,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
 
         Services.Settings.Classroom.CustomPresets =
             ClassroomPresetLibrary.Serialize(presets);
+        Services.Settings.Classroom.PresetsVersion = ClassroomPreset.CurrentVersion;
         Services.SaveSettings();
     }
 
@@ -1992,6 +2483,27 @@ public sealed partial class ShellController : IShellActions, IDisposable
         }
 
         var content = new StackPanel { Spacing = 8 };
+        string summaryPageName = SummaryBoardPolicy.ResolvePageName(
+            Services.Settings.Classroom.SummaryPageName);
+        var boardPageInfos = new List<HandoutComposer.BoardPageInfo>();
+        for (int pageIndex = 0; pageIndex < Services.Board.PageCount; pageIndex++)
+        {
+            boardPageInfos.Add(new HandoutComposer.BoardPageInfo(
+                pageIndex,
+                Services.Board.PageHasContent(pageIndex),
+                string.Equals(Services.Board.PageName(pageIndex), summaryPageName, StringComparison.Ordinal)));
+        }
+        HandoutComposer.PreviewSummary summary = HandoutComposer.Summarize(
+            index,
+            new HandoutOptions { Content = HandoutContentMode.AnnotationsWithTeacherNotes },
+            boardPageInfos);
+        content.Children.Add(new TextBlock
+        {
+            Text = "预计导出：" + summary.Describe() + "（原课件不会被修改）",
+            FontSize = 12,
+            Opacity = 0.8,
+            TextWrapping = TextWrapping.Wrap,
+        });
         content.Children.Add(new TextBlock { Text = "导出前预览（第一页）", FontSize = 12, Opacity = 0.75 });
         content.Children.Add(preview);
         content.Children.Add(mode);
@@ -2239,6 +2751,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private async Task StartAssistantFromRegionAsync(ScreenRect rect)
     {
         _aiTarget = CaptureAssistantTarget();
+        _aiContext = CaptureClassroomContext();
+        SyncRecorderContext();
         string thumb = await AssistantCapture.CapturePngBase64Async(
             rect.X, rect.Y, rect.Width, rect.Height);
         double dpi = CurrentDpi() > 0 ? CurrentDpi() : 1.0;
@@ -3302,6 +3816,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private void OpenAiAssistantCore()
     {
         _aiTarget = CaptureAssistantTarget();
+        _aiContext = CaptureClassroomContext();
+        SyncRecorderContext();
         var controller = ActiveController;
         IReadOnlyList<InkStroke> sourceStrokes = controller.Selection;
         var bounds = controller.SelectionBounds;
@@ -3393,6 +3909,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
         try
         {
             _aiTarget = CaptureAssistantTarget();
+            _aiContext = CaptureClassroomContext();
+            SyncRecorderContext();
             _aiThumb = "";
             _aiAnchor = CenterAnchor();
             _aiSession = AssistantMachine.CreateSession(AssistantMode.Auto, "");
@@ -3610,7 +4128,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         window.RegionSelectionEnabled =
             Services.Settings.Ai.EnableLocalCorrection && !(_aiProblem is { Count: > 1 });
         window.ApplyProblem(_aiProblem);
-        window.SetFavoriteSource(
+        ApplyFavoriteContext(window,
             CurrentPresentationName(),
             _aiSlideId > 0 ? _aiSlideId : _aiProblem?.SlideId ?? 0,
             AiFavoriteBoardPage());
@@ -3728,10 +4246,11 @@ public sealed partial class ShellController : IShellActions, IDisposable
         _aiAssistant?.SetBusy(true);
 
         // 翻页后复用同一浮窗时刷新收藏来源，避免把新页讲评记到旧 slideId。
-        _aiAssistant?.SetFavoriteSource(
-            CurrentPresentationName(),
-            _aiSlideId > 0 ? _aiSlideId : _aiProblem?.SlideId ?? 0,
-            AiFavoriteBoardPage());
+        if (_aiAssistant is not null)
+            ApplyFavoriteContext(_aiAssistant,
+                CurrentPresentationName(),
+                _aiSlideId > 0 ? _aiSlideId : _aiProblem?.SlideId ?? 0,
+                AiFavoriteBoardPage());
 
         _aiTwoStage = request.Purpose == "board_write"
             ? false
@@ -3756,6 +4275,22 @@ public sealed partial class ShellController : IShellActions, IDisposable
         }
 
         int generation = _aiGate.Begin(request.SessionId);
+
+        if (UnifiedContextEnabled)
+        {
+            // 请求发起时补齐会话/请求/代数，后续显示与写回都以此快照为准。
+            _aiContext = (_aiContext ?? CaptureClassroomContext()) with
+            {
+                SessionId = _aiSession?.SessionId ?? "",
+                RequestId = "req-" + Guid.NewGuid().ToString("N"),
+                Generation = generation,
+                CreatedAtMs = Environment.TickCount64,
+            };
+            SyncRecorderContext();
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"{ClassroomContextPolicy.Describe(_aiContext)} 请求发起",
+                Core.Diagnostics.LogType.Info);
+        }
 
         try
         {
@@ -4083,6 +4618,25 @@ public sealed partial class ShellController : IShellActions, IDisposable
             _variantPending = false;
             if (AiTargetStillCurrent(writeBack: true)) _ = PreviewVariantAsync(_aiSession);
         }
+
+        FlushPendingExamplePrompt();
+    }
+
+    /// <summary>
+    /// 例题「再讲一次」：标准识别流完成后自动提交预置追问，复用同一会话与浮窗，
+    /// 不创建新的教学模式；未完成或已关闭时保持预填，等教师手动发送。
+    /// </summary>
+    private void FlushPendingExamplePrompt()
+    {
+        if (string.IsNullOrEmpty(_aiPendingExamplePrompt)) return;
+        if (_aiSession?.State != AssistantState.Done || _aiAssistant is null) return;
+
+        string prompt = _aiPendingExamplePrompt;
+        _aiPendingExamplePrompt = "";
+        Core.Diagnostics.FileLog.WriteLogToFile(
+            $"[AI] 再讲一次：自动提交追问，promptChars={prompt.Length}，session={_aiSession.SessionId}",
+            Core.Diagnostics.LogType.Event);
+        _aiAssistant.SubmitFollowUp(prompt);
     }
 
     /// <summary>把 AI 讲解按 slideId 归档到课件页索引，翻回该页可回查并导出讲义。</summary>
@@ -4137,6 +4691,10 @@ public sealed partial class ShellController : IShellActions, IDisposable
 
     private void OnAiStopRequested()
     {
+        // 先作废本代响应并停掉局部纠错流，避免停止后仍有迟到回调写回。
+        _aiGate.Invalidate();
+        _aiRegionStream?.Abort();
+        _aiRegionStream = null;
         if (!AiTargetStillCurrent(writeBack: false)) return;
         _aiStream?.Abort();
         _aiStream = null;
@@ -4190,6 +4748,17 @@ public sealed partial class ShellController : IShellActions, IDisposable
         }
 
         _variantDifficulty = advanced ? ExerciseDifficulty.Advanced : ExerciseDifficulty.Basic;
+        StartVariantRequest();
+    }
+
+    /// <summary>
+    /// 变式题请求的唯一构造点：AI 浮窗入口与练习结束浮窗共用，
+    /// 只负责置位待预览标记并发出请求，不复制生成/贴回实现。
+    /// </summary>
+    private void StartVariantRequest()
+    {
+        if (_aiProblem is null) return;
+
         _variantPending = true;
 
         AssistantRequest request = ExerciseFlowPolicy.BuildRequest(
@@ -4227,6 +4796,13 @@ public sealed partial class ShellController : IShellActions, IDisposable
             Height = 150,
             FontSize = 13,
         };
+        var knowledgeBox = new TextBox
+        {
+            Text = ExerciseFlowPolicy.NormalizeKnowledgePoints(draft.KnowledgePoint),
+            Height = 34,
+            FontSize = 13,
+            PlaceholderText = "多个知识点用逗号分隔",
+        };
         var answerBox = new TextBox
         {
             Text = draft.Answer,
@@ -4245,6 +4821,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
         });
         content.Children.Add(new TextBlock { Text = "题目", FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
         content.Children.Add(textBox);
+        content.Children.Add(new TextBlock { Text = "知识点", FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        content.Children.Add(knowledgeBox);
         content.Children.Add(new TextBlock { Text = "参考答案", FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
         content.Children.Add(answerBox);
 
@@ -4262,6 +4840,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         if (result == ContentDialogResult.None) return;
 
         draft.Text = textBox.Text?.Trim() ?? "";
+        draft.KnowledgePoint = ExerciseFlowPolicy.NormalizeKnowledgePoints(knowledgeBox.Text);
         draft.Answer = answerBox.Text?.Trim() ?? "";
         if (!ExerciseFlowPolicy.CanStart(draft))
         {
@@ -4290,13 +4869,83 @@ public sealed partial class ShellController : IShellActions, IDisposable
         int pageIndex = Services.Board.CurrentIndex;
         Services.Board.RenamePage(pageIndex, Services.Settings.Classroom.PracticePageName);
 
+        Guid pageId = Services.Board.CurrentPageId;
+        string practiceGroupId = Guid.NewGuid().ToString("N");
+        string aiSessionId = _aiSession?.SessionId ?? draft.SourceSessionId ?? "";
+
+        AssistantBoardPlan boardPlan = ExerciseFlowPolicy.BuildPracticeBoardPlan(
+            draft, Services.Settings.Classroom.PracticePageName);
+        BoardPlanNativeResult created = BoardPlanWriter.Create(
+            boardPlan, "随堂练习", Environment.TickCount64);
+
+        int objectCount = 0;
+        if (created.Success)
+        {
+            ExerciseFlowPolicy.LayoutPracticeObjects(created.Texts);
+            IReadOnlyList<Guid> objectIds = Services.Board.AddAiObjectsAtomic(
+                created.Texts, created.Formulas, "随堂练习", pageId, practiceGroupId);
+            objectCount = objectIds.Count;
+        }
+        else
+        {
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[AI] 随堂练习原生对象不可用：error={created.Error}，回退旧卡片",
+                Core.Diagnostics.LogType.Info);
+        }
+
+        bool nativeWritten = objectCount > 0;
+        if (!nativeWritten)
+        {
+            bool cardAdded = await AddPracticeCardPngAsync(draft);
+            if (!cardAdded) return;
+        }
+
+        Core.Diagnostics.FileLog.WriteLogToFile(
+            $"[AI] 随堂练习：page={pageIndex}，pageId={pageId}，texts={created.Texts.Count}，"
+            + $"formulas={created.Formulas.Count}，objects={objectCount}，"
+            + $"fallbackPng={!nativeWritten}，group={practiceGroupId}",
+            Core.Diagnostics.LogType.Event);
+
+        PracticePlan plan = ExerciseFlowPolicy.Plan(
+            draft, pageIndex, Services.Settings.Classroom.CountdownMinutes,
+            aiSessionId: aiSessionId, boardPageId: pageId, groupId: practiceGroupId);
+        _activePractice = plan;
+
+        ApplyPreset(ClassroomPresetLibrary.ForId("practice"));
+        if (startTimer)
+        {
+            OpenTimer();
+            _countdown?.StartCountdown(TimeSpan.FromMinutes(plan.CountdownMinutes));
+        }
+
+        string note = PracticeLinkNote.Build(aiSessionId, pageId, practiceGroupId);
+        _teachingSession?.Link(
+            "practice", draft.Id, _aiSlideId, _aiSlideIndex, pageIndex, note, Environment.TickCount64);
+        if (_teachingSession is not null && !_teachingSession.ExerciseIds.Contains(draft.Id))
+            _teachingSession.ExerciseIds.Add(draft.Id);
+        SaveTeachingSession();
+
+        string practiceContent = nativeWritten
+            ? "已写入可编辑练习（题目/知识点/答案）到第 " + (pageIndex + 1) + " 页"
+            : "已贴入第 " + (pageIndex + 1) + " 页";
+        await NotifyAsync("随堂练习",
+            practiceContent
+            + (startTimer ? "，倒计时已开始（" + plan.CountdownMinutes + " 分钟）。" : "。"));
+    }
+
+    /// <summary>
+    /// 旧卡片路径（原生对象写入不可用时的回退）：渲染「随堂练习」PNG 并按 DPI 居中贴入当前新页。
+    /// 返回 false 时已向教师提示失败原因，调用方应停止后续倒计时与关联写入。
+    /// </summary>
+    private async Task<bool> AddPracticeCardPngAsync(VariantQuestionDraft draft)
+    {
         IReadOnlyList<string> lines = ExerciseFlowPolicy.BuildPasteLines(draft);
         var (width, height) = PasteCardLayout.Estimate(lines);
         byte[] png = await PasteCardRenderer.RenderPngAsync("随堂练习", lines, width, height);
         if (png.Length == 0)
         {
             await NotifyAsync("随堂练习", "练习卡片渲染失败，已保留新页。");
-            return;
+            return false;
         }
 
         var work = ScreenService.WorkArea;
@@ -4328,28 +4977,10 @@ public sealed partial class ShellController : IShellActions, IDisposable
         if (!added)
         {
             await NotifyAsync("随堂练习", "练习卡片贴入失败，已保留空的新页。");
-            return;
+            return false;
         }
 
-        PracticePlan plan = ExerciseFlowPolicy.Plan(
-            draft, pageIndex, Services.Settings.Classroom.CountdownMinutes);
-        _activePractice = plan;
-
-        ApplyPreset(ClassroomPresetLibrary.ForId("practice"));
-        if (startTimer)
-        {
-            OpenTimer();
-            _countdown?.StartCountdown(TimeSpan.FromMinutes(plan.CountdownMinutes));
-        }
-
-        _teachingSession?.Link(
-            "exercise", draft.Id, draft.SlideId, draft.SlideIndex, pageIndex, draft.Text,
-            Environment.TickCount64);
-        SaveTeachingSession();
-
-        await NotifyAsync("随堂练习",
-            "已贴入第 " + (pageIndex + 1) + " 页"
-            + (startTimer ? "，倒计时已开始（" + plan.CountdownMinutes + " 分钟）。" : "。"));
+        return true;
     }
 
 
@@ -4798,7 +5429,48 @@ public sealed partial class ShellController : IShellActions, IDisposable
         bool newPage = false;
         BoardLayoutPlan writeLayout = layout;
 
-        if (layout.Status is BoardLayoutStatus.NeedsShrink
+        // 课堂总结固定写到新页：InsertPageAfterCurrent + RenamePage，再写入原生对象。
+        // 与随堂练习页一致：对象可一次撤销，页本身保留（页级撤销单独记录）。
+        bool summaryWrite = SummaryBoardPolicy.IsSummary(selectedPlan, instruction);
+        if (summaryWrite)
+        {
+            if (!board.InsertPageAfterCurrent())
+            {
+                window.SetBoardPlanBusy(false);
+                window.SetBusy(false);
+                window.ShowNotice("新建总结页失败，已保留计划，可重试。");
+                return;
+            }
+
+            newPage = true;
+            writePageIndex = board.CurrentIndex;
+            string summaryPageName = SummaryBoardPolicy.ResolvePageName(
+                Services.Settings.Classroom.SummaryPageName);
+            board.RenamePage(writePageIndex, summaryPageName);
+            writeLayout = BoardContentLayoutPlanner.Plan(
+                new AssistantRect(0, 0, 0, 0), sizes, BoardViewportRect(board),
+                safeInsets: BoardSafeInsetsFor(board));
+
+            if (!writeLayout.IsComplete)
+            {
+                board.RemovePage(writePageIndex);
+                window.SetBoardPlanBusy(false);
+                window.SetBusy(false);
+                window.ShowNotice("总结页也无法排下当前内容，已保留计划。");
+                Core.Diagnostics.FileLog.WriteLogToFile(
+                    $"[AI] 总结写入取消：总结页仍无法排下，status={writeLayout.Status}，"
+                    + $"message={writeLayout.Message}",
+                    Core.Diagnostics.LogType.Info);
+                return;
+            }
+
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[AI] 总结页就绪：page={writePageIndex}，name={summaryPageName}，"
+                + $"blocks={selectedPlan.Blocks.Count}，blocksKind="
+                + $"{string.Join(",", selectedPlan.Blocks.Select(block => block.Kind))}",
+                Core.Diagnostics.LogType.Event);
+        }
+        else if (layout.Status is BoardLayoutStatus.NeedsShrink
             or BoardLayoutStatus.NeedsMove or BoardLayoutStatus.NeedsNewPage)
         {
             BoardLayoutChoice choice = await ShowBoardLayoutDialogAsync(window, layout);
@@ -4844,6 +5516,20 @@ public sealed partial class ShellController : IShellActions, IDisposable
             }
         }
 
+        // 弹窗期间用户可能切板/切页/翻课件；写入前统一复检，新页选择也按当前上下文校验。
+        // 总结写入会主动新建页，页身份必然变化：只要求会话与画板未变。
+        bool contextStillCurrent = summaryWrite
+            ? ClassroomContextBoardStillCurrent()
+            : ClassroomContextStillCurrent(writeBack: true);
+        if (UnifiedContextEnabled && !contextStillCurrent)
+        {
+            if (newPage) board.RemovePage(writePageIndex);
+            window.SetBoardPlanBusy(false);
+            window.SetBusy(false);
+            window.ShowNotice("板书目标在弹窗期间已变化（画板/页/课件页已切换），本次未写入；请回到原页重试。");
+            return;
+        }
+
         if (!writeLayout.IsComplete)
         {
             window.SetBoardPlanBusy(false);
@@ -4863,6 +5549,23 @@ public sealed partial class ShellController : IShellActions, IDisposable
             window.ShowNotice("目标页已存在相同指令的 AI 板书对象，请先选中修改或清空后再写入；未重复插入。");
             Core.Diagnostics.FileLog.WriteLogToFile(
                 $"[AI] 板书写入已阻止：同页已有相同 Instruction，instruction={instruction}",
+                Core.Diagnostics.LogType.Info);
+            return;
+        }
+
+        // 写入前最后确认目标板当前页仍是请求快照里的那一页（新页分支已在上面按新页写入，跳过）。
+        // 文档/PPT 的 PageId 是文档页/课件页身份，不是主展板页 Id，不能直接比，交给上面的上下文复检。
+        if (UnifiedContextEnabled && !newPage && _aiContext is { } writeContext
+            && writeContext.HasPageIdentity
+            && writeContext.Kind is (BoardCanvasKind.MainBoard
+                or BoardCanvasKind.SideBoard or BoardCanvasKind.Overlay)
+            && board.CurrentPageId != writeContext.PageId)
+        {
+            window.SetBoardPlanBusy(false);
+            window.SetBusy(false);
+            window.ShowNotice("板书目标页已变化，本次未写入；请回到原页重试。");
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[AI] 板书写入已阻止：上下文页标识不匹配，expected={writeContext.PageId}，actual={board.CurrentPageId}",
                 Core.Diagnostics.LogType.Info);
             return;
         }
@@ -4926,6 +5629,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
         }
 
         SelectAiBoardGroup(board, groupId);
+        // 收藏为例题时带上本次原生对象分组，便于再讲/回放定位。
+        window.SetFavoriteObjects(groupId, objectIds);
 
         if (newPage)
         {
@@ -4938,6 +5643,17 @@ public sealed partial class ShellController : IShellActions, IDisposable
                 PageIndex = board.CurrentIndex,
                 SessionId = _aiSession?.SessionId ?? "",
             };
+            if (_aiContext is not null)
+            {
+                // 新页写入成功后把上下文页身份迁移到新页，避免后续复检仍指向旧页。
+                _aiContext = _aiContext with
+                {
+                    PageId = board.CurrentPageId,
+                    PageIndex = board.CurrentIndex,
+                    Generation = _aiGate.Generation,
+                };
+                SyncRecorderContext();
+            }
         }
 
         if (board == Services.Board && _board is null) ToggleBoard();
@@ -4961,12 +5677,38 @@ public sealed partial class ShellController : IShellActions, IDisposable
         window.SetPasted(true);
 
         string scaleNote = string.IsNullOrEmpty(writeLayout.Message) ? "" : writeLayout.Message;
-        string actionNote = newPage
-            ? "已写入新的一页（原生对象）；页面保留，可用 Ctrl+Z 撤销。"
-            : removedStrokes > 0
-                ? $"已替换原板书（删除 {removedStrokes} 笔），原生对象可 Ctrl+Z 一次撤销。"
-                : "已写入展板（原生对象），可 Ctrl+Z 整体撤销。";
-        window.ShowNotice(scaleNote + actionNote);
+        string actionNote = summaryWrite
+            ? "已写入「" + SummaryBoardPolicy.ResolvePageName(Services.Settings.Classroom.SummaryPageName)
+              + "」新页（原生对象）；总结页保留，对象可 Ctrl+Z 一次撤销。"
+            : newPage
+                ? "已写入新的一页（原生对象）；页面保留，可用 Ctrl+Z 撤销。"
+                : removedStrokes > 0
+                    ? $"已替换原板书（删除 {removedStrokes} 笔），原生对象可 Ctrl+Z 一次撤销。"
+                    : "已写入展板（原生对象），可 Ctrl+Z 整体撤销。";
+        ClassroomContext noticeContext = _aiContext;
+        if (UnifiedContextEnabled && noticeContext is not null
+            && noticeContext.Kind is (BoardCanvasKind.Overlay
+                or BoardCanvasKind.PptOverlay or BoardCanvasKind.Document))
+        {
+            // 覆层/课件/文档请求实际写入主展板，提示里点明目标画布，避免教师误以为是当前页。
+            string targetNote = noticeContext.Kind switch
+            {
+                BoardCanvasKind.PptOverlay => "PPT",
+                BoardCanvasKind.Document => "文档",
+                _ => "悬浮层",
+            };
+            window.ShowNotice("已写入主展板第 " + (writePageIndex + 1)
+                + " 页（目标画布：" + targetNote + "）。" + scaleNote + actionNote);
+        }
+        else
+        {
+            window.ShowNotice(scaleNote + actionNote);
+        }
+        // 写回成功后记录一次上下文与目标的对应关系，便于排查串写。
+        Core.Diagnostics.FileLog.WriteLogToFile(
+            $"[AI] 写回完成：boardId={AiTargetBoardId()}，kind={AiTargetContextKind()}，page={writePageIndex}，"
+            + $"pageId={board.CurrentPageId}，context=({ClassroomContextPolicy.Describe(_aiContext)})",
+            Core.Diagnostics.LogType.Info);
     }
 
     /// <summary>写入后选中同一次 AI 写入的全部原生对象，便于整体移动/缩放与取消分组。</summary>
@@ -5131,40 +5873,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
         var window = _aiAssistant;
         AssistantSession session = _aiSession;
         List<string> lines = BuildPasteLines(session);
-        var (width, height) = PasteCardLayout.Estimate(lines);
 
         window.SetBusy(true);
-        byte[] png = await PasteCardRenderer.RenderPngAsync("AI 助教", lines, width, height);
-        if (!ReferenceEquals(_aiAssistant, window)) return;
-        if (!AiTargetStillCurrent(writeBack: true))
-        {
-            window.SetBusy(false);
-            return;
-        }
-
-        if (png is null || png.Length == 0)
-        {
-            window.SetBusy(false);
-            AssistantMachine.Fail(session, "贴回失败");
-            window.Apply(session, _aiThumb);
-            return;
-        }
-
-        var (work, dpi, _, _) = AssistantTarget();
-        double viewWidth = work.Width / dpi;
-        double viewHeight = work.Height / dpi;
-        if (_aiTarget?.Kind == AssistantCanvasKind.SideBoard && _sideBoard is not null)
-        {
-            ScreenRect client = WindowChrome.GetClientBounds(WindowChrome.GetHwnd(_sideBoard));
-            if (client.Width > 0 && client.Height > 0)
-            {
-                viewWidth = client.Width / dpi;
-                viewHeight = client.Height / dpi;
-            }
-        }
-        var (left, top, w, h) = PasteCardLayout.Place(
-            _aiAnchor, width, height, viewWidth, viewHeight);
-
         string metadata = "";
         if (Services.Settings.Ai.EnableEditablePaste)
         {
@@ -5180,17 +5890,23 @@ public sealed partial class ShellController : IShellActions, IDisposable
         }
 
         BoardService targetBoard = AiTargetBoard();
-        bool added = targetBoard.AddImage(new BoardImageAsset
+        var (rendered, added) = await RenderAndPlacePasteCardAsync(
+            targetBoard, "AI 助教", lines, metadata, _aiAnchor);
+        if (!ReferenceEquals(_aiAssistant, window)) return;
+        if (!AiTargetStillCurrent(writeBack: true))
         {
-            Name = "AI 助教",
-            Data = png,
-            ContentType = "image/png",
-            Left = (float)left,
-            Top = (float)top,
-            Width = (float)w,
-            Height = (float)h,
-            Metadata = metadata,
-        });
+            window.SetBusy(false);
+            return;
+        }
+
+        if (!rendered)
+        {
+            window.SetBusy(false);
+            AssistantMachine.Fail(session, "贴回失败");
+            window.Apply(session, _aiThumb);
+            return;
+        }
+
         if (!added)
         {
             window.SetBusy(false);
@@ -5202,6 +5918,56 @@ public sealed partial class ShellController : IShellActions, IDisposable
 
         window.SetBusy(false);
         window.SetPasted(true);
+    }
+
+    /// <summary>
+    /// AI 卡片贴回的共用实现：渲染 PNG、按浮窗锚点换算落点并写入目标画板。
+    /// 返回 (是否渲染成功, 是否写入成功)，供浮窗贴回与例题旧卡片兼容路径复用。
+    /// </summary>
+    private async Task<(bool Rendered, bool Added)> RenderAndPlacePasteCardAsync(
+        BoardService targetBoard, string name, IReadOnlyList<string> lines,
+        string metadata, AssistantRect anchor)
+    {
+        if (targetBoard is null) return (false, false);
+
+        var (width, height) = PasteCardLayout.Estimate(lines);
+        byte[] png = await PasteCardRenderer.RenderPngAsync(name, lines, width, height);
+        if (png is null || png.Length == 0) return (false, false);
+
+        var (work, dpi, _, _) = AssistantTarget();
+        double viewWidth = work.Width / dpi;
+        double viewHeight = work.Height / dpi;
+        if (ReferenceEquals(targetBoard, Services.SideBoard) && _sideBoard is not null)
+        {
+            ScreenRect client = WindowChrome.GetClientBounds(WindowChrome.GetHwnd(_sideBoard));
+            if (client.Width > 0 && client.Height > 0)
+            {
+                viewWidth = client.Width / dpi;
+                viewHeight = client.Height / dpi;
+            }
+        }
+        var (left, top, w, h) = PasteCardLayout.Place(anchor, width, height, viewWidth, viewHeight);
+
+        bool added = targetBoard.AddImage(new BoardImageAsset
+        {
+            Name = name,
+            Data = png,
+            ContentType = "image/png",
+            Left = (float)left,
+            Top = (float)top,
+            Width = (float)w,
+            Height = (float)h,
+            Metadata = metadata,
+        });
+        return (true, added);
+    }
+
+    private async Task<bool> PasteCardToBoardAsync(
+        BoardService targetBoard, string name, IReadOnlyList<string> lines, string metadata)
+    {
+        var (rendered, added) = await RenderAndPlacePasteCardAsync(
+            targetBoard, name, lines, metadata, CenterAnchor());
+        return rendered && added;
     }
 
     private void OnAiFollowUpRequested(string question)
@@ -5216,6 +5982,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
             Viewport = new AssistantViewport { Scale = 1.0, Rect = _aiAnchor },
             Mode = AssistantMode.Chat,
             SessionId = _aiSession.SessionId,
+            Question = question ?? "",
+            SlideContext = BuildSlideContext(),
         };
         StartAssistantStream(request, followUp: true, question: question);
     }
@@ -5230,8 +5998,18 @@ public sealed partial class ShellController : IShellActions, IDisposable
         _aiRegionStream?.Abort();
         _aiRegionStream = null;
         ResetAiPreStage();
+        // 浮窗关闭即会话结束：统一上下文、旧目标与会话缓存一并清空，避免下一轮误用旧身份。
+        _aiContext = null;
+        SyncRecorderContext();
+        _aiTarget = null;
+        _aiSession = null;
+        _aiProblem = null;
+        _aiThumb = "";
+        _aiBoardPlan = null;
+        _aiBoardInstruction = "";
         _aiAssistantFromSideBoard = false;
         _aiHiddenWithSideBoard = false;
+        _aiPendingExamplePrompt = "";
         _aiAssistant = null;
     }
 
@@ -5391,6 +6169,230 @@ public sealed partial class ShellController : IShellActions, IDisposable
         }
     }
 
+    /// <summary>统一课堂上下文开关；关闭时沿用旧 <see cref="AssistantTarget"/> 路由与文案。</summary>
+    private bool UnifiedContextEnabled => Services.Settings.Features.UnifiedContext;
+
+    /// <summary>把当前 AI 请求上下文按画板归属分发给主/子板录制器（BoardId 0/1）。</summary>
+    private void SyncRecorderContext()
+    {
+        if (!UnifiedContextEnabled || _aiContext is null)
+        {
+            _recorder?.SetAiContext(null);
+            _sideBoardRecorder?.SetAiContext(null);
+            return;
+        }
+        _recorder?.SetAiContext(_aiContext.Kind == BoardCanvasKind.SideBoard ? null : _aiContext);
+        _sideBoardRecorder?.SetAiContext(_aiContext.Kind == BoardCanvasKind.SideBoard ? _aiContext : null);
+    }
+
+    /// <summary>
+    /// 按当前真实状态构建统一课堂上下文。这里不写 SessionId/RequestId/Generation，
+    /// 由请求发起处补全；纯读取状态，不修改画板内容。
+    /// </summary>
+    private ClassroomContext CaptureClassroomContext(bool includeSelection = true)
+    {
+        long now = Environment.TickCount64;
+        ClassroomContext context;
+
+        if (_sideBoard is { IsShown: true } && ReferenceEquals(ActiveController, _sideBoard.CurrentController))
+        {
+            BoardService board = Services.SideBoard;
+            InkController controller = board.Current;
+            context = new ClassroomContext
+            {
+                Kind = BoardCanvasKind.SideBoard,
+                BoardId = "side",
+                PageId = board.CurrentPageId,
+                PageIndex = board.CurrentIndex,
+                SelectionId = includeSelection ? DescribeSelectionId(controller) : "",
+                StrokeIds = includeSelection ? CaptureSelectedStrokeIds(controller) : Array.Empty<string>(),
+                GroupId = includeSelection ? CaptureSelectedGroupId(controller) : "",
+                ObjectIds = includeSelection ? CaptureSelectedObjectIds(controller) : Array.Empty<string>(),
+                Source = ContentSource.UserInk,
+                CreatedAtMs = now,
+            };
+        }
+        else if (_board is not null && ReferenceEquals(ActiveController, _board.CurrentController))
+        {
+            BoardService board = Services.Board;
+            InkController controller = board.Current;
+            context = new ClassroomContext
+            {
+                Kind = BoardCanvasKind.MainBoard,
+                BoardId = "main",
+                PageId = board.CurrentPageId,
+                PageIndex = board.CurrentIndex,
+                SelectionId = includeSelection ? DescribeSelectionId(controller) : "",
+                StrokeIds = includeSelection ? CaptureSelectedStrokeIds(controller) : Array.Empty<string>(),
+                GroupId = includeSelection ? CaptureSelectedGroupId(controller) : "",
+                ObjectIds = includeSelection ? CaptureSelectedObjectIds(controller) : Array.Empty<string>(),
+                Source = ContentSource.UserInk,
+                CreatedAtMs = now,
+            };
+        }
+        else if (DocumentActive)
+        {
+            // 文档工作区没有对外暴露页索引，页身份用文档页 Guid 承载；索引按 0 记录。
+            if (_documentPageId == Guid.Empty) _documentPageId = Guid.NewGuid();
+            context = new ClassroomContext
+            {
+                Kind = BoardCanvasKind.Document,
+                BoardId = "document",
+                PageId = _documentPageId,
+                PageIndex = 0,
+                PresentationKey = null,
+                Source = ContentSource.UserInk,
+                CreatedAtMs = now,
+            };
+        }
+        else if (_pptSession?.Snapshot?.IsSlideShowRunning == true
+                 && _pptSession.Snapshot.Presentation is not null)
+        {
+            PptSnapshot snapshot = _pptSession.Snapshot;
+            string presentationKey = snapshot.Presentation.Identity;
+            int slideId = snapshot.Slide?.SlideId ?? _aiSlideId;
+            int? slideIndex = snapshot.Slide?.Index;
+            if (!slideIndex.HasValue && _aiSlideIndex > 0) slideIndex = _aiSlideIndex;
+            Guid pageId = ClassroomContextFactory.DeterministicPageId(presentationKey, slideId);
+            if (pageId == Guid.Empty) pageId = Services.Board.CurrentPageId;
+            // 课件放映写在主展板页上（素材/批注落点仍是主展板），但身份按课件页区分。
+            context = new ClassroomContext
+            {
+                Kind = BoardCanvasKind.PptOverlay,
+                BoardId = "ppt",
+                PresentationKey = presentationKey,
+                SlideId = snapshot.Slide?.SlideId ?? _aiSlideId,
+                SlideIndex = slideIndex,
+                AnimationStep = snapshot.IsSlideShowRunning ? Services.Ppt.GetAnimationStep() : 0,
+                PageId = pageId,
+                PageIndex = slideIndex ?? Services.Board.CurrentIndex,
+                Source = ContentSource.UserInk,
+                CreatedAtMs = now,
+            };
+        }
+        else
+        {
+            // 桌面/窗口覆层：没有独立页面身份，写回落到主展板当前页。
+            context = new ClassroomContext
+            {
+                Kind = BoardCanvasKind.Overlay,
+                BoardId = "overlay",
+                PageId = Services.Board.CurrentPageId,
+                PageIndex = Services.Board.CurrentIndex,
+                Source = ContentSource.UserInk,
+                CreatedAtMs = now,
+            };
+        }
+
+        return ClassroomContextFactory.Normalize(context);
+    }
+
+    /// <summary>
+    /// 按已记录的上下文重建当前快照：画布/页/课件/选区按真实状态重取，
+    /// 会话、请求与代数沿用发起请求时的记录（显示/写回校验都看这份快照）。
+    /// </summary>
+    private ClassroomContext SnapshotClassroomContext(bool includeSelection = true)
+    {
+        if (_aiContext is null) return null;
+        ClassroomContext current = CaptureClassroomContext(includeSelection);
+        if (current is null) return null;
+        return current with
+        {
+            SessionId = _aiGate.SessionId,
+            RequestId = _aiContext.RequestId,
+            Generation = _aiGate.Generation,
+            CreatedAtMs = Environment.TickCount64,
+        };
+    }
+
+    /// <summary>
+    /// 统一上下文过期校验。writeBack=true（贴回/局部纠错）要求同板、同页、同课件页、
+    /// 同选区与同请求代数；流式显示只要求同板同页。未记录上下文时保持旧路径行为（视为有效）。
+    /// </summary>
+    private bool ClassroomContextStillCurrent(bool writeBack)
+    {
+        if (_aiContext is null) return true;
+        ClassroomContext current = SnapshotClassroomContext(includeSelection: writeBack);
+        bool ok = writeBack
+            ? ClassroomContextPolicy.CanWriteBack(_aiContext, current)
+            : ClassroomContextPolicy.IsCurrentForDisplay(_aiContext, current);
+        if (ok) return true;
+
+        string notice = ClassroomContextPolicy.StaleNotice(_aiContext, current);
+        bool crossBoard = !ClassroomContextPolicy.SameBoard(_aiContext, current);
+        Core.Diagnostics.FileLog.WriteLogToFile(
+            $"{ClassroomContextPolicy.Describe(_aiContext)} 丢弃过期上下文：writeBack={writeBack}，"
+            + $"current={ClassroomContextPolicy.Describe(current)}，notice={notice}",
+            Core.Diagnostics.LogType.Info);
+        if (writeBack || crossBoard) _aiAssistant?.ShowNotice(notice);
+        return false;
+    }
+
+    /// <summary>
+    /// 总结写入专用复检：主动新建页后页身份必然变化，只校验会话与画板未切换，
+    /// 避免把「按设计新建总结页」误判为目标过期。
+    /// </summary>
+    private bool ClassroomContextBoardStillCurrent()
+    {
+        if (_aiContext is null) return true;
+        ClassroomContext current = SnapshotClassroomContext(includeSelection: false);
+        if (current is null) return false;
+
+        bool ok = ClassroomContextPolicy.SameSession(_aiContext, current)
+                  && ClassroomContextPolicy.SameBoard(_aiContext, current);
+        if (ok) return true;
+
+        Core.Diagnostics.FileLog.WriteLogToFile(
+            $"{ClassroomContextPolicy.Describe(_aiContext)} 总结写入丢弃过期上下文："
+            + $"current={ClassroomContextPolicy.Describe(current)}",
+            Core.Diagnostics.LogType.Info);
+        return false;
+    }
+
+    /// <summary>选区稳定短描述：笔画与元素 Id 排序后取 SHA256 前 8 字节，仅用于判定选区是否变化。</summary>
+    private static string DescribeSelectionId(InkController controller)
+    {
+        if (controller is null || !controller.HasSelection) return "";
+        var ids = controller.Selection.Select(stroke => stroke.Id.ToString())
+            .Concat(controller.SelectedElements.Select(element => element.Id.ToString()))
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+        if (ids.Count == 0) return "";
+        byte[] hash = System.Security.Cryptography.SHA256.HashData(
+            Encoding.UTF8.GetBytes(string.Join(",", ids)));
+        return "sel-" + Convert.ToHexString(hash, 0, 8).ToLowerInvariant();
+    }
+
+    /// <summary>选中笔画 Id；元素选区（图片/AI 对象）不把整页笔画当作选区内容，由 ObjectIds 表达。</summary>
+    private static IReadOnlyList<string> CaptureSelectedStrokeIds(InkController controller)
+    {
+        if (controller is null) return Array.Empty<string>();
+        if (controller.Selection.Count > 0)
+            return controller.Selection.Select(stroke => stroke.Id.ToString()).ToList();
+        return Array.Empty<string>();
+    }
+
+    /// <summary>选中元素里第一个非空分组 Id；没有分组时返回空字符串。</summary>
+    private static string CaptureSelectedGroupId(InkController controller)
+    {
+        if (controller is null) return "";
+        foreach (ISelectionElement element in controller.SelectedElements)
+        {
+            if (element is IGroupedSelectionElement grouped
+                && !string.IsNullOrWhiteSpace(grouped.SelectionGroupId))
+            {
+                return grouped.SelectionGroupId;
+            }
+        }
+
+        return "";
+    }
+
+    /// <summary>当前选中元素 Id（含 AI 原生对象与图片）；无元素选区时为空集合。</summary>
+    private static IReadOnlyList<string> CaptureSelectedObjectIds(InkController controller)
+        => controller?.SelectedElements.Select(element => element.Id.ToString()).ToList()
+           ?? (IReadOnlyList<string>)Array.Empty<string>();
+
     /// <summary>按当前激活画布（子板优先 → 主展板 → overlay）记录本次 AI 请求目标。</summary>
     private AssistantTarget CaptureAssistantTarget()
     {
@@ -5409,7 +6411,22 @@ public sealed partial class ShellController : IShellActions, IDisposable
             canvas = Services.Board;
             pageIndex = Services.Board.CurrentIndex;
         }
-        if (canvas is BoardService board && pageIndex >= 0 && pageIndex < board.Pages.Count)
+        else if (DocumentActive)
+        {
+            kind = AssistantCanvasKind.Document;
+            canvas = null;
+            page = _documentWorkspace?.Controller;
+            pageIndex = 0;
+        }
+        else if (_pptSession?.Snapshot?.IsSlideShowRunning == true
+                 && _pptSession.Snapshot.Presentation is not null)
+        {
+            kind = AssistantCanvasKind.PptOverlay;
+            canvas = Services.Board;
+            page = Services.Board.Current;
+            pageIndex = Services.Board.CurrentIndex;
+        }
+        if (page is null && canvas is BoardService board && pageIndex >= 0 && pageIndex < board.Pages.Count)
             page = board.Pages[pageIndex];
         return new AssistantTarget
         {
@@ -5426,10 +6443,16 @@ public sealed partial class ShellController : IShellActions, IDisposable
         {
             AssistantCanvasKind.SideBoard => Services.SideBoard,
             AssistantCanvasKind.MainBoard => Services.Board,
+            AssistantCanvasKind.PptOverlay => Services.Board,
             _ => null,
         };
-        int index = board?.CurrentIndex ?? 0;
-        object page = board is not null && index >= 0 && index < board.Pages.Count ? board.Pages[index] : null;
+        int index = _aiTarget.Kind == AssistantCanvasKind.Document ? 0 : board?.CurrentIndex ?? 0;
+        object page = _aiTarget.Kind switch
+        {
+            AssistantCanvasKind.Document => _documentWorkspace?.Controller,
+            AssistantCanvasKind.PptOverlay => Services.Board.Current,
+            _ => board is not null && index >= 0 && index < board.Pages.Count ? board.Pages[index] : null,
+        };
         return new AssistantTarget
         {
             Canvas = board, Page = page, Kind = _aiTarget.Kind, PageIndex = index,
@@ -5438,15 +6461,18 @@ public sealed partial class ShellController : IShellActions, IDisposable
     }
 
     /// <summary>
-    /// 异步响应目标校验。writeBack=true（贴回/局部纠错等写操作）要求同板、同页、
-    /// 同页对象与同会话；流式显示只要求同板同会话，避免切页时浮窗卡在生成中。
+    /// 异步响应目标校验。Flag 开启且已记录统一上下文时走 <see cref="ClassroomContextPolicy"/>；
+    /// 否则沿用旧 <see cref="AssistantTargetPolicy"/> 逻辑（不再回写 requested.SessionId，
+    /// 会话身份统一由当前快照提供，避免把过期会话伪装成当前会话）。
     /// 失败一律写日志，写回失败与跨板失败额外用浮窗提示用户。
     /// </summary>
     private bool AiTargetStillCurrent(bool writeBack)
     {
+        if (UnifiedContextEnabled && _aiContext is not null)
+            return ClassroomContextStillCurrent(writeBack);
+
         AssistantTarget requested = _aiTarget;
         if (requested is null) return true; // 聚焦区域/课件回看等旧路径保持原行为
-        requested.SessionId = _aiSession?.SessionId ?? requested.SessionId;
         AssistantTarget current = SnapshotAssistantTarget();
         bool sameCanvas = AssistantTargetPolicy.SameCanvas(requested, current);
         bool sameSession = AssistantTargetPolicy.SameSession(requested, current);
@@ -5472,6 +6498,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
         {
             AssistantCanvasKind.SideBoard => _sideBoard is not null,
             AssistantCanvasKind.MainBoard => _board is not null,
+            AssistantCanvasKind.Document => _documentWorkspace is not null,
+            AssistantCanvasKind.PptOverlay => _pptSession?.Snapshot?.IsSlideShowRunning == true,
             _ => true,
         };
     }
@@ -5491,9 +6519,55 @@ public sealed partial class ShellController : IShellActions, IDisposable
             _ => _board is null ? -1 : Services.Board.CurrentIndex,
         };
 
+    /// <summary>
+    /// 刷新浮窗的收藏来源：课件页 + 画板页 + 统一课堂上下文（会话/请求/画板/页标识）。
+    /// 未记录上下文时降级为空值，收藏仍可进行，只是缺少 AI 关联。
+    /// </summary>
+    private void ApplyFavoriteContext(
+        AssistantWindow window, string presentation, int slideId, int boardPage)
+    {
+        if (window is null) return;
+
+        window.SetFavoriteSource(presentation, slideId, boardPage);
+        ClassroomContext context = _aiContext;
+        window.SetFavoriteContext(
+            _aiSession?.SessionId ?? context?.SessionId ?? "",
+            context?.RequestId ?? "",
+            context?.BoardId ?? AiTargetBoardId(),
+            context?.PageId ?? Guid.Empty,
+            context?.GroupId ?? "",
+            context?.ObjectIds);
+    }
+
     /// <summary>贴回等写操作的目标板；overlay/未记录目标回退主展板，保持既有行为。</summary>
     private BoardService AiTargetBoard()
         => _aiTarget?.Kind == AssistantCanvasKind.SideBoard ? Services.SideBoard : Services.Board;
+
+    /// <summary>供日志与提示使用的画板标识：Flag 开启时取统一上下文，否则按旧目标推断。</summary>
+    private string AiTargetBoardId()
+        => UnifiedContextEnabled && _aiContext is not null
+            ? _aiContext.BoardId
+            : _aiTarget?.Kind switch
+            {
+                AssistantCanvasKind.SideBoard => "side",
+                AssistantCanvasKind.MainBoard => "main",
+                AssistantCanvasKind.Document => "document",
+                AssistantCanvasKind.PptOverlay => "ppt",
+                _ => "overlay",
+            };
+
+    /// <summary>供日志与提示使用的画布种类：Flag 开启时取统一上下文，否则按旧目标推断。</summary>
+    private BoardCanvasKind AiTargetContextKind()
+        => UnifiedContextEnabled && _aiContext is not null
+            ? _aiContext.Kind
+            : _aiTarget?.Kind switch
+            {
+                AssistantCanvasKind.SideBoard => BoardCanvasKind.SideBoard,
+                AssistantCanvasKind.MainBoard => BoardCanvasKind.MainBoard,
+                AssistantCanvasKind.Document => BoardCanvasKind.Document,
+                AssistantCanvasKind.PptOverlay => BoardCanvasKind.PptOverlay,
+                _ => BoardCanvasKind.Overlay,
+            };
 
     /// <summary>目标画布窗口：子板优先，其次主展板，overlay 返回 null。</summary>
     private Window TargetCanvasWindow()
@@ -5501,6 +6575,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
         {
             AssistantCanvasKind.SideBoard => _sideBoard,
             AssistantCanvasKind.MainBoard => _board,
+            AssistantCanvasKind.Document => _documentWorkspace?.Window,
+            AssistantCanvasKind.PptOverlay => null,
             _ => null,
         };
 

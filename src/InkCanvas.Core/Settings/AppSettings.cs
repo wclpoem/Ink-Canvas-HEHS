@@ -232,6 +232,9 @@ public sealed class FeatureSettings
     [JsonPropertyName("enableExerciseFlow")] public bool EnableExerciseFlow { get; set; } = true;
     [JsonPropertyName("enableExampleLibrary")] public bool EnableExampleLibrary { get; set; } = true;
     [JsonPropertyName("enableResourceBundle")] public bool EnableResourceBundle { get; set; } = true;
+
+    /// <summary>统一课堂上下文（画板/页面/课件/选区快照与写回校验）；默认开启，关闭即回退旧路由。</summary>
+    [JsonPropertyName("unifiedContext")] public bool UnifiedContext { get; set; } = true;
 }
 
 /// <summary>
@@ -528,7 +531,16 @@ public sealed class ClassroomSettings
 
     [JsonPropertyName("practicePageName")] public string PracticePageName { get; set; } = "随堂练习";
 
+    /// <summary>AI 写入课堂总结时新建页的页名；为空时使用「课堂总结」。</summary>
+    [JsonPropertyName("summaryPageName")] public string SummaryPageName { get; set; } = "课堂总结";
+
     [JsonPropertyName("customPresets")] public string CustomPresets { get; set; } = "";
+
+    /// <summary>
+    /// 个人教学预设的扩展字段版本：0 表示旧设置文件（只有 v1 预设，扩展字段按 null 读取）；
+    /// 保存含笔色 / 背景 / 模板 / AI 指令 / 练习时长的预设时写当前版本。
+    /// </summary>
+    [JsonPropertyName("presetsVersion")] public int PresetsVersion { get; set; }
 
     [JsonPropertyName("groupSplitMode")] public string GroupSplitMode { get; set; } = "groupCount";
 

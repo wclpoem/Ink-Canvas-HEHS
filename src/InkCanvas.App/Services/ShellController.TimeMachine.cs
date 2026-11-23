@@ -28,6 +28,8 @@ public sealed partial class ShellController
         public Window Owner => shell.DocumentActive ? shell._documentWorkspace.Window : (Window)shell._board ?? shell._bar;
         public int Theme => shell.EffectiveTheme;
         public BoardService Board => shell.Services.Board;
+        public BoardService SideBoard => shell.Services.SideBoard;
+        public InkCanvas.Core.AiAssistant.ClassroomContext AiContext => shell._aiContext;
         public InkController ActiveController => shell.ActiveController;
         public bool BoardOpen => shell._board is not null;
         public PptInkSession Ppt => shell._pptSession;

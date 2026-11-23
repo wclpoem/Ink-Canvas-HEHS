@@ -91,7 +91,8 @@ _media[index].Select(media => media.Copy(copyData: false)).ToList(), _papers[_pa
             _states[index].Name, ToTransformArray(_pages[index].ViewTransform),
             _textObjects[index].Select(text => text.Copy()).ToList(),
             _formulaObjects[index].Select(formula => formula.Copy()).ToList())
-            { Viewport = new[] { _pages[index].ViewCenter.X * 2, _pages[index].ViewCenter.Y * 2 } }).ToList(),
+            { Viewport = new[] { _pages[index].ViewCenter.X * 2, _pages[index].ViewCenter.Y * 2 },
+              PageId = ResolvePageId(index) }).ToList(),
         metadata ?? ArchiveMetadata,
         new Dictionary<string, byte[]>(_extensions, StringComparer.Ordinal));
     }
@@ -105,6 +106,8 @@ _media[index].Select(media => media.Copy(copyData: false)).ToList(), _papers[_pa
 
     private static BoardPageFile ToPageFile(PreparedPage page) => new()
     {
+        PageId = page.PageId == Guid.Empty ? null : page.PageId,
+        ObjectsVersion = page.ObjectsVersion,
         Name = page.Name,
         Background = page.Paper.Background.ToString(), GridSpacing = page.Paper.GridSpacing,
         ViewTransform = page.ViewTransform,

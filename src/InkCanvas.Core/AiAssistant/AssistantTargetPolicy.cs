@@ -15,6 +15,12 @@ public enum AssistantCanvasKind
 
     /// <summary>板中板画布。</summary>
     SideBoard,
+
+    /// <summary>文档（PDF/Word 等）工作区画布，写回落主展板。</summary>
+    Document = 3,
+
+    /// <summary>PowerPoint 放映覆层，写回落主展板。</summary>
+    PptOverlay = 4,
 }
 
 /// <summary>

@@ -1,4 +1,5 @@
-﻿using InkCanvas.Core.Classroom;
+﻿using InkCanvas.Core.AiAssistant;
+using InkCanvas.Core.Classroom;
 using InkCanvas.Core.Ink;
 using InkCanvas.Features.AiAssistant;
 using InkCanvas.Features.Board;
@@ -9,6 +10,11 @@ using InkCanvas.Ink;
 using Microsoft.UI.Xaml;
 using System.Diagnostics;
 using System.Numerics;
+
+// 与 Core 契约同名但不同程序集的两套时间轴模型：本模块自带一份（含 Screenshot），
+// 对 Shell 暴露的合并接口统一使用 Core 版本，这里用别名避免与本命名空间的类型冲突。
+using CoreTimelineEvent = InkCanvas.Core.Classroom.TimelineEvent;
+using CoreTimelineEventKind = InkCanvas.Core.Classroom.TimelineEventKind;
 
 namespace InkCanvas.Modules.TimeMachine;
 
@@ -37,6 +43,7 @@ public class TimeMachineRecorder : IDisposable
     private int _lastUndoCount;
     private int _lastRedoCount;
     private InkTimeline _timeline;
+    private ClassroomContext _aiContext;
     private int _nextSeq = 1;
     private bool _disposed;
     private readonly List<Task> _pendingCaptures = new();
@@ -57,6 +64,76 @@ public class TimeMachineRecorder : IDisposable
     public bool IsRecording { get; private set; }
 
     public InkTimeline Timeline => _timeline;
+
+    /// <summary>
+    /// 当前已捕获事件的只读副本（Core 契约版本；会话尚未创建时为空数组）。
+    /// 返回副本，避免外部直接修改录制器内部的事件列表。
+    /// </summary>
+    public IReadOnlyList<CoreTimelineEvent> CapturedEvents
+        => Session?.Events?.Select(ToCoreEvent).ToArray() ?? Array.Empty<CoreTimelineEvent>();
+
+    /// <summary>
+    /// 绑定当前 AI 请求的统一上下文；<c>null</c> 表示清除。
+    /// 按画板归属过滤：子板上下文只对 boardId=1 的录制器生效，
+    /// 其余画布种类只对 boardId=0 的录制器生效；不匹配时按未绑定处理。
+    /// </summary>
+    public void SetAiContext(ClassroomContext context)
+    {
+        ClassroomContext accepted;
+        lock (_gate)
+        {
+            accepted = FilterAiContext(context);
+            if (ReferenceEquals(accepted, _aiContext)) return;
+            _aiContext = accepted;
+        }
+
+        LogTrace(accepted is null
+            ? $"[AI] 录制器 AI 上下文已清除：boardId={_boardId}"
+            : $"[AI] 录制器绑定 AI 上下文：boardId={_boardId},kind={accepted.Kind},"
+                + $"slide={accepted.SlideId?.ToString() ?? "none"},source={accepted.Source},"
+                + $"request={accepted.RequestId ?? ""}");
+    }
+
+    /// <summary>
+    /// 把另一路录制（子板）的事件并入当前会话：忽略 null 事件，按
+    /// <see cref="TimelineEvent.TimeMs"/> 稳定排序后重建时间轴。
+    /// 子板事件序号独立从 1 起，合并后按最终顺序重新编号，避免与主会话的
+    /// <see cref="TimelineEvent.Seq"/> 冲突影响同毫秒先后与检查点锚定。
+    /// 入参使用 Core 契约事件，内部转换为本模块模型后入列。
+    /// </summary>
+    public void MergeEvents(IEnumerable<CoreTimelineEvent> events)
+    {
+        lock (_gate)
+        {
+            if (Session is null)
+            {
+                LogTrace($"[AI] 合并子板事件被忽略：录制器没有会话，boardId={_boardId}");
+                return;
+            }
+
+            List<TimelineEvent> incoming = events?
+                .Where(item => item is not null)
+                .Select(ToLocalEvent)
+                .ToList();
+            if (incoming is null || incoming.Count == 0) return;
+
+            var merged = Session.Events ??= new List<TimelineEvent>();
+            foreach (TimelineEvent ev in incoming)
+            {
+                // 归属统一按主会话重写，避免复合会话里残留子会话 id。
+                ev.SessionId = Session.Id;
+                merged.Add(ev);
+            }
+
+            SortEventsByTimeStable(merged);
+            RenumberEvents(merged);
+            // 合并后事件索引整体位移，旧检查点已失效，必须清空重建。
+            Session.Checkpoints?.Clear();
+            _timeline = new InkTimeline(Session);
+
+            LogTrace($"[AI] 子板事件已合并：boardId={_boardId},incoming={incoming.Count},total={merged.Count}");
+        }
+    }
 
     /// <summary>笔画提交时的抽稀容差（DIP）。默认 0.8，设为 0 表示不抽稀。</summary>
     public double SimplificationTolerance { get; set; } = StrokeSimplifier.DefaultTolerance;
@@ -423,17 +500,31 @@ public class TimeMachineRecorder : IDisposable
                 });
                 break;
             case ClassroomSignalKind.TimerEnded:
-            case ClassroomSignalKind.PracticeFinished:
-                var ended = new TimelineEvent
+            {
+                var timerEnded = new TimelineEvent
                 {
                     PageIndex = CurrentPageIndex(),
                     Kind = TimelineEventKind.TimerEnded,
+                    Payload = string.IsNullOrWhiteSpace(signal.Label) ? "倒计时结束" : signal.Label,
+                };
+                Append(timerEnded);
+                // 倒计时结束与点名同为自动书签来源；按规范要求，结束时刻补一张课堂截图。
+                RequestCapture(timerEnded);
+                break;
+            }
+            case ClassroomSignalKind.PracticeFinished:
+            {
+                var practiceEnded = new TimelineEvent
+                {
+                    PageIndex = CurrentPageIndex(),
+                    Kind = TimelineEventKind.TimerEnded,
+                    // 保留「练习结束」载荷，供自动书签识别为 practice 类别。
                     Payload = string.IsNullOrWhiteSpace(signal.Label) ? "练习结束" : signal.Label,
                 };
-                Append(ended);
-                // 倒计时结束与点名同为自动书签来源；按规范要求，结束时刻补一张课堂截图。
-                RequestCapture(ended);
+                Append(practiceEnded);
+                RequestCapture(practiceEnded);
                 break;
+            }
         }
     }
 
@@ -442,6 +533,78 @@ public class TimeMachineRecorder : IDisposable
     private int CurrentPageIndex() => _host.Board?.CurrentIndex ?? 0;
 
     private string CurrentBackgroundName() => _host.Board?.Background.ToString() ?? "Black";
+
+    /// <summary>按画板归属过滤 AI 上下文：子板只匹配 boardId=1，其余只匹配 boardId=0。</summary>
+    private ClassroomContext FilterAiContext(ClassroomContext context)
+    {
+        if (context is null) return null;
+        bool matches = context.Kind == BoardCanvasKind.SideBoard ? _boardId == 1 : _boardId == 0;
+        return matches ? context : null;
+    }
+
+    /// <summary>
+    /// 取本录制器可用的 AI 上下文：优先使用 Shell 显式绑定的上下文；
+    /// 未绑定时回退宿主当前上下文，并同样按画板归属过滤。
+    /// </summary>
+    private ClassroomContext ResolveAiContext()
+    {
+        lock (_gate)
+        {
+            if (_aiContext is not null) return _aiContext;
+            return FilterAiContext(_host.AiContext);
+        }
+    }
+
+    /// <summary>按 <see cref="TimelineEvent.TimeMs"/> 稳定排序：同毫秒保持入列先后。</summary>
+    private static void SortEventsByTimeStable(List<TimelineEvent> events)
+    {
+        var indexed = events.Select((ev, index) => (Event: ev, Index: index)).ToList();
+        indexed.Sort((left, right) =>
+        {
+            int byTime = left.Event.TimeMs.CompareTo(right.Event.TimeMs);
+            return byTime != 0 ? byTime : left.Index.CompareTo(right.Index);
+        });
+        for (int i = 0; i < indexed.Count; i++) events[i] = indexed[i].Event;
+    }
+
+    /// <summary>合并后按最终顺序重新编号，保证 <see cref="TimelineEvent.Seq"/> 会话内唯一递增。</summary>
+    private void RenumberEvents(List<TimelineEvent> events)
+    {
+        for (int i = 0; i < events.Count; i++) events[i].Seq = i + 1;
+        _nextSeq = events.Count + 1;
+    }
+
+    /// <summary>本模块模型 → Core 契约模型；两套枚举成员一一对应，其余字段同名对齐。</summary>
+    private static CoreTimelineEvent ToCoreEvent(TimelineEvent source) => new()
+    {
+        SessionId = source.SessionId,
+        Seq = source.Seq,
+        TimeMs = source.TimeMs,
+        PageIndex = source.PageIndex,
+        BoardId = source.BoardId,
+        PptSlideId = source.PptSlideId,
+        Kind = (CoreTimelineEventKind)(int)source.Kind,
+        StrokeId = source.StrokeId,
+        StrokeJson = source.StrokeJson,
+        StrokeIds = source.StrokeIds,
+        Payload = source.Payload,
+    };
+
+    /// <summary>Core 契约模型 → 本模块模型；Screenshot 仅模块侧存在，合并场景（子板）无截图。</summary>
+    private static TimelineEvent ToLocalEvent(CoreTimelineEvent source) => new()
+    {
+        SessionId = source.SessionId,
+        Seq = source.Seq,
+        TimeMs = source.TimeMs,
+        PageIndex = source.PageIndex,
+        BoardId = source.BoardId,
+        PptSlideId = source.PptSlideId,
+        Kind = (TimelineEventKind)(int)source.Kind,
+        StrokeId = source.StrokeId,
+        StrokeJson = source.StrokeJson,
+        StrokeIds = source.StrokeIds,
+        Payload = source.Payload,
+    };
 
     private void SyncHistoryCounts()
     {
@@ -527,7 +690,13 @@ public class TimeMachineRecorder : IDisposable
             if (formula is not null) natives.Add(ToNativeFormulaObject(formula, page));
         if (images.Count + natives.Count == 0) return;
 
-        string payload = AiObjectPayloadCodec.Encode(change.Action, page, _boardId, images, natives);
+        ClassroomContext ai = ResolveAiContext();
+
+        // 记录 AI 请求的统一上下文元数据：幻灯片、内容来源与请求标识。
+        // 未绑定（且宿主未提供）上下文时按旧行为传 null（schema=3 但字段留空）。
+        string payload = AiObjectPayloadCodec.Encode(
+            change.Action, page, _boardId, images, natives,
+            ai?.SlideId, ai?.Source.ToString(), ai?.RequestId);
         if (string.IsNullOrEmpty(payload)) return;
         AddEvent(TimelineEventKind.AiStep, page, payload: payload);
     }
@@ -546,6 +715,7 @@ public class TimeMachineRecorder : IDisposable
             Width = text.Width,
             Height = text.Height,
             LayerOrder = text.LayerOrder,
+            Transform = text.TransformMatrix is { Length: 6 } ? text.TransformMatrix.ToArray() : null,
             Content = content,
             Title = text.Title ?? "",
             Author = text.Author ?? "",
@@ -575,6 +745,7 @@ public class TimeMachineRecorder : IDisposable
         Width = formula.Width,
         Height = formula.Height,
         LayerOrder = formula.LayerOrder,
+        Transform = formula.TransformMatrix is { Length: 6 } ? formula.TransformMatrix.ToArray() : null,
         Latex = formula.Latex ?? "",
         FontFamily = formula.FontFamily ?? "Cambria Math",
         FontSize = formula.FontSize,
@@ -608,6 +779,7 @@ public class TimeMachineRecorder : IDisposable
             Width = image.Width,
             Height = image.Height,
             LayerOrder = image.LayerOrder,
+            Transform = image.Transform is { Length: 6 } ? image.Transform.ToArray() : null,
             Latex = metadata?.Latex ?? "",
             Text = metadata?.Text ?? "",
             Lines = metadata is null ? Array.Empty<string>() : metadata.Lines,

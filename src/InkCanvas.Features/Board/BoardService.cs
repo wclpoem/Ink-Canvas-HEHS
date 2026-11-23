@@ -58,6 +58,12 @@ public sealed class BoardImageAsset
     public float Height { get; set; }
     public float Opacity { get; set; } = 1;
 
+    /// <summary>统一字符串分组标识（与原生文本/公式共用）；空串表示未分组。</summary>
+    public string GroupId { get; set; } = "";
+
+    /// <summary>对象结构版本；旧文件缺字段时按 1 读取。</summary>
+    public int Version { get; set; } = 1;
+
 
     /// <summary>
     /// Cumulative canvas-space transform, the port of the WPF element RenderTransform
@@ -81,6 +87,8 @@ public sealed class BoardImageAsset
         Height = Height,
 
         Opacity = Opacity,
+        GroupId = GroupId,
+        Version = Version,
         Transform = Transform?.ToArray(),
     };
 }
@@ -104,6 +112,12 @@ public sealed class BoardMediaAsset
     public float Width { get; set; } = 360;
     public float Height { get; set; } = 240;
 
+    /// <summary>统一字符串分组标识（与原生文本/公式共用）；空串表示未分组。</summary>
+    public string GroupId { get; set; } = "";
+
+    /// <summary>对象结构版本；旧文件缺字段时按 1 读取。</summary>
+    public int Version { get; set; } = 1;
+
     /// <inheritdoc cref="BoardImageAsset.Transform"/>
     public float[] Transform { get; set; }
 
@@ -112,6 +126,7 @@ public sealed class BoardMediaAsset
         Id = preserveId ? Id : Guid.NewGuid(), LayerOrder = LayerOrder, Name = Name, Data = copyData ? Data.ToArray() : Data, ContentType = ContentType,
         PosterData = copyData ? PosterData.ToArray() : PosterData, NaturalWidth = NaturalWidth, NaturalHeight = NaturalHeight,
         Left = Left, Top = Top, Width = Width, Height = Height,
+        GroupId = GroupId, Version = Version,
         Transform = Transform?.ToArray(),
     };
 
@@ -203,6 +218,10 @@ public sealed partial class BoardService
     };
 
     private readonly List<InkController> _pages = new();
+
+    /// <summary>与 <see cref="_pages"/> 并行的页身份列表，用于写回时校验同索引换页 ≠ 同页。</summary>
+    private readonly List<Guid> _pageIds = new();
+
     private readonly UndoStack _pageHistory = new(100);
     private int _nextPageNumber = 2;
     private sealed record BoardPaper(BoardBackground Background = BoardBackground.Black, float GridSpacing = 40f, string Name = null);
@@ -222,9 +241,57 @@ public sealed partial class BoardService
     {
         var page = initialController ?? new InkController();
         _pages.Add(page);
+        _pageIds.Add(Guid.NewGuid());
         _papers.Add(page, new(Name: "页面 1"));
-        page.GetSelectableElements = () => GetSelectionElements(page);
+        BindPage(page);
         ImagesChanged += () => Current.NotifyElementsChanged();
+    }
+
+    /// <summary>
+    /// 绑定页面控制器：元素选择源 + 元素删除/恢复事件。删除事件统一转成板级对象变更，
+    /// 让时间轴录制（AiStep remove/add）与图片变更共用同一事件源。
+    /// </summary>
+    private void BindPage(InkController page)
+    {
+        if (page is null) return;
+        page.GetSelectableElements = () => GetSelectionElements(page);
+        page.SelectionElementsPresenceChanged += (elements, present)
+            => NotifySelectionElementsPresenceChanged(page, elements, present);
+    }
+
+    /// <summary>
+    /// 选区元素被删除/恢复后，把可录制的对象（图片、文本、公式）汇总成一次对象变更。
+    /// 媒体没有 AiStep 载荷，仅触发图片变更刷新；笔画仍走录制器的 id 差异推断。
+    /// </summary>
+    private void NotifySelectionElementsPresenceChanged(
+        InkController page, IReadOnlyList<ISelectionElement> elements, bool present)
+    {
+        if (elements is null || elements.Count == 0) return;
+        int index = _pages.IndexOf(page);
+        if (index < 0) return;
+
+        var images = new List<BoardImageAsset>();
+        var texts = new List<BoardTextObject>();
+        var formulas = new List<BoardFormulaObject>();
+        foreach (ISelectionElement element in elements)
+        {
+            switch (element)
+            {
+                case BoardSelectionElement selection when selection.Image is not null:
+                    images.Add(selection.Image);
+                    break;
+                case BoardTextObject text:
+                    texts.Add(text);
+                    break;
+                case BoardFormulaObject formula:
+                    formulas.Add(formula);
+                    break;
+            }
+        }
+
+        ImagesChanged?.Invoke();
+        if (images.Count + texts.Count + formulas.Count == 0) return;
+        RaiseAiObjectsChanged(present ? "add" : "remove", index, images, null, texts, formulas);
     }
 
     public IEnumerable<ISelectionElement> GetSelectionElements() => GetSelectionElements(Current);
@@ -288,6 +355,16 @@ public sealed partial class BoardService
 
     public int PageCount => _pages.Count;
     public long PageStructureVersion { get; private set; }
+
+    /// <summary>
+    /// 页身份，用于写回时校验同索引换页 ≠ 同页；缺失时进程内生成。
+    /// 越界返回 <see cref="Guid.Empty"/>，否则返回该索引页面的稳定 Id。
+    /// </summary>
+    public Guid ResolvePageId(int pageIndex)
+        => pageIndex >= 0 && pageIndex < _pageIds.Count ? _pageIds[pageIndex] : Guid.Empty;
+
+    /// <summary>页身份，用于写回时校验同索引换页 ≠ 同页；缺失时进程内生成。</summary>
+    public Guid CurrentPageId => ResolvePageId(CurrentIndex);
 
     public BoardPageInfo GetPageInfo(int index)
     {
@@ -550,10 +627,12 @@ public sealed partial class BoardService
         var paper = new BoardPaper(sourceState.Background, sourceState.GridSpacing);
 
         int insertAt = source + 1;
-        controller.GetSelectableElements = () => GetSelectionElements(controller);
+        Guid copiedPageId = Guid.NewGuid();
+        BindPage(controller);
         foreach (BoardTextObject text in texts) text.Attach(this, controller);
         foreach (BoardFormulaObject formula in formulas) formula.Attach(this, controller);
         _pages.Insert(insertAt, controller);
+        _pageIds.Insert(insertAt, copiedPageId);
         _images.Insert(insertAt, images);
         _media.Insert(insertAt, media);
         _textObjects.Insert(insertAt, texts);
@@ -567,6 +646,7 @@ public sealed partial class BoardService
             () =>
             {
                 _pages.Insert(insertAt, controller);
+                _pageIds.Insert(insertAt, copiedPageId);
                 _images.Insert(insertAt, images);
                 _media.Insert(insertAt, media);
                 _textObjects.Insert(insertAt, texts);
@@ -583,6 +663,7 @@ public sealed partial class BoardService
                 int at = _pages.IndexOf(controller);
                 if (at < 0) return;
                 _pages.RemoveAt(at);
+                _pageIds.RemoveAt(at);
                 _images.RemoveAt(at);
                 _media.RemoveAt(at);
                 _textObjects.RemoveAt(at);
@@ -687,6 +768,7 @@ public sealed partial class BoardService
         {
             var controller = page.Ink;
             _pages.Insert(insertAt, controller);
+            _pageIds.Insert(insertAt, Guid.NewGuid());
             _images.Insert(insertAt, page.Images.ToList());
             _media.Insert(insertAt, new List<BoardMediaAsset>());
             _textObjects.Insert(insertAt, new List<BoardTextObject>());
@@ -699,7 +781,7 @@ public sealed partial class BoardService
                 ViewTransform = controller.ViewTransform,
             });
             _papers.Add(controller, paper);
-            controller.GetSelectableElements = () => GetSelectionElements(controller);
+            BindPage(controller);
             insertAt++;
         }
         PageStructureVersion++;
@@ -857,9 +939,11 @@ public sealed partial class BoardService
         var formulas = _formulaObjects[index];
         var state = _states[index];
         var paper = _papers.TryGetValue(controller, out var existingPaper) ? existingPaper : new BoardPaper(state.Background, state.GridSpacing);
+        Guid removedPageId = _pageIds[index];
         foreach (var id in images.Select(image => image.Id).Concat(media.Select(item => item.Id))) _selectionElements.Remove(id);
 
         _pages.RemoveAt(index);
+        _pageIds.RemoveAt(index);
         _images.RemoveAt(index);
         _media.RemoveAt(index);
         _textObjects.RemoveAt(index);
@@ -878,6 +962,7 @@ public sealed partial class BoardService
                 int at = _pages.IndexOf(controller);
                 if (at < 0) return;
                 _pages.RemoveAt(at);
+                _pageIds.RemoveAt(at);
                 _images.RemoveAt(at);
                 _media.RemoveAt(at);
                 _textObjects.RemoveAt(at);
@@ -894,6 +979,7 @@ public sealed partial class BoardService
             () =>
             {
                 _pages.Insert(index, controller);
+                _pageIds.Insert(index, removedPageId);
                 _images.Insert(index, images);
                 _media.Insert(index, media);
                 _textObjects.Insert(index, texts);
@@ -925,6 +1011,20 @@ public sealed partial class BoardService
             () => { pageImages.Remove(image); ImagesChanged?.Invoke(); }));
         ImagesChanged?.Invoke();
         return true;
+    }
+
+    /// <summary>
+    /// 页令牌校验：不匹配拒绝写入，返回 false。用于 AI 写回时避免把内容写到同索引但已换页的页面。
+    /// </summary>
+    public bool AddImage(BoardImageAsset image, Guid expectedPageId)
+    {
+        if (expectedPageId != Guid.Empty && expectedPageId != CurrentPageId)
+        {
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[AI] 拒绝写入图片：页令牌不匹配 expected={expectedPageId} actual={CurrentPageId}", Core.Diagnostics.LogType.Info);
+            return false;
+        }
+        return AddImage(image);
     }
 
     /// <summary>
@@ -968,6 +1068,20 @@ public sealed partial class BoardService
         ImagesChanged?.Invoke();
         RaiseAiObjectsChanged("add", pageIndex, inserted);
         return Enumerable.Range(start, inserted.Length).ToArray();
+    }
+
+    /// <summary>
+    /// 页令牌校验：不匹配拒绝写入，返回空。用于 AI 批量写回时避免把内容写到同索引但已换页的页面。
+    /// </summary>
+    public IReadOnlyList<int> AddImagesAtomic(IReadOnlyList<BoardImageAsset> images, string actionName, Guid expectedPageId)
+    {
+        if (expectedPageId != Guid.Empty && expectedPageId != CurrentPageId)
+        {
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[AI] 拒绝写入图片批次：页令牌不匹配 expected={expectedPageId} actual={CurrentPageId}", Core.Diagnostics.LogType.Info);
+            return Array.Empty<int>();
+        }
+        return AddImagesAtomic(images, actionName);
     }
 
     /// <summary>
@@ -1054,6 +1168,29 @@ public sealed partial class BoardService
         RaiseAiObjectsChanged("add", pageIndex, Array.Empty<BoardImageAsset>(),
             null, insertedTexts, insertedFormulas);
         return insertedTexts.Select(text => text.Id).Concat(insertedFormulas.Select(formula => formula.Id)).ToArray();
+    }
+
+    /// <summary>
+    /// 页令牌校验：不匹配拒绝写入，返回空。用于 AI 文本/公式写回时避免把内容写到同索引但已换页的页面。
+    /// 参数顺序为 texts、formulas、actionName、expectedPageId（必填页令牌）、groupId（可选，末尾默认 null），
+    /// 将 expectedPageId 置于必填位以避免与四参数的文本/公式写入重载产生调用二义性；
+    /// 页令牌语义：expectedPageId 为 Guid.Empty 时跳过校验，否则必须与当前页 Id 一致才写入，
+    /// 不一致时写 [AI] 日志并返回空集合；校验通过则委托给不带页令牌的重载执行实际插入。
+    /// </summary>
+    public IReadOnlyList<Guid> AddAiObjectsAtomic(
+        IReadOnlyList<BoardTextObject> texts,
+        IReadOnlyList<BoardFormulaObject> formulas,
+        string actionName,
+        Guid expectedPageId,
+        string groupId = null)
+    {
+        if (expectedPageId != Guid.Empty && expectedPageId != CurrentPageId)
+        {
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[AI] 拒绝写入板书对象：页令牌不匹配 expected={expectedPageId} actual={CurrentPageId}", Core.Diagnostics.LogType.Info);
+            return Array.Empty<Guid>();
+        }
+        return AddAiObjectsAtomic(texts, formulas, actionName, groupId);
     }
 
     /// <summary>
@@ -1355,38 +1492,12 @@ public sealed partial class BoardService
     }
 
     /// <summary>
-    /// 清除同一次 AI 写入的分组 Id，使组内对象可以独立选择/移动。整体作为一次撤销步骤，
+    /// 清除同一次写入的分组 Id，使组内对象可以独立选择/移动。整体作为一次撤销步骤，
     /// 撤销恢复原 GroupId；返回被取消分组的对象数量。
+    /// 阶段 2A 起为 <see cref="UngroupObjects"/> 的薄包装：文本/公式/图片/媒体共用 string GroupId。
     /// </summary>
     public int UngroupAiObjects(string groupId)
-    {
-        if (string.IsNullOrWhiteSpace(groupId)) return 0;
-        var page = Current;
-        int pageIndex = CurrentIndex;
-        var texts = _textObjects[CurrentIndex].Where(text => text.GroupId == groupId).ToArray();
-        var formulas = _formulaObjects[CurrentIndex].Where(formula => formula.GroupId == groupId).ToArray();
-        if (texts.Length + formulas.Length == 0) return 0;
-
-        void Clear()
-        {
-            foreach (BoardTextObject text in texts) text.GroupId = "";
-            foreach (BoardFormulaObject formula in formulas) formula.GroupId = "";
-            ImagesChanged?.Invoke();
-            RaiseAiObjectsChanged("update", pageIndex, Array.Empty<BoardImageAsset>(), null, texts, formulas);
-        }
-
-        void Restore()
-        {
-            foreach (BoardTextObject text in texts) text.GroupId = groupId;
-            foreach (BoardFormulaObject formula in formulas) formula.GroupId = groupId;
-            ImagesChanged?.Invoke();
-            RaiseAiObjectsChanged("update", pageIndex, Array.Empty<BoardImageAsset>(), null, texts, formulas);
-        }
-
-        Clear();
-        page.History.Push(new DelegateAction("取消 AI 对象分组", Clear, Restore));
-        return texts.Length + formulas.Length;
-    }
+        => UngroupObjects(CurrentPageId, groupId, "取消 AI 对象分组");
 
     /// <summary>
     /// 用图片原子替换原笔画：一次 <see cref="DelegateAction"/> 内删除 <paramref name="strokesToRemove"/>
@@ -1819,6 +1930,7 @@ public sealed partial class BoardService
     {
         foreach (var page in _pages) page.Dispose();
         _pages.Clear();
+        _pageIds.Clear();
         _papers.Clear();
         _pageHistory.Clear();
         _nextPageNumber = 1;
@@ -1832,10 +1944,11 @@ public sealed partial class BoardService
         {
             var controller = new InkController();
             var viewTransform = FromTransformArray(page.ViewTransform);
-            controller.GetSelectableElements = () => GetSelectionElements(controller);
+            BindPage(controller);
             controller.Document.AddRange(page.Strokes);
             controller.ViewTransform = viewTransform;
             _pages.Add(controller);
+            _pageIds.Add(page.PageId != Guid.Empty ? page.PageId : Guid.NewGuid());
             _papers.Add(controller, page.Paper with { Name = page.Paper.Name ?? $"页面 {_nextPageNumber}" });
             _nextPageNumber++;
             controller.ViewTransform = page.View;
@@ -1870,6 +1983,12 @@ private sealed record PreparedPage(List<InkStroke> Strokes, List<BoardImageAsset
         public Matrix3x2 View { get; init; } = Matrix3x2.Identity;
 
         public float[] Viewport { get; init; }
+
+        /// <summary>页身份，用于写回时校验同索引换页 ≠ 同页；缺失时进程内生成。</summary>
+        public Guid PageId { get; init; } = Guid.Empty;
+
+        /// <summary>页内对象版本号；旧文件缺失时为 0，由对象增删改接线方递增。</summary>
+        public int ObjectsVersion { get; init; }
     }
 
     private static PreparedPage PreparePage(BoardPageFile page, BoardPaper fallback)
@@ -1890,7 +2009,9 @@ private sealed record PreparedPage(List<InkStroke> Strokes, List<BoardImageAsset
         return new(strokes, (page.Images ?? new()).Where(IsValidImage).ToList(),
             (page.Media ?? new()).Where(IsValidMedia).ToList(), paper,
             string.IsNullOrWhiteSpace(page.Name) ? null : page.Name.Trim(), page.ViewTransform, texts, formulas)
-        { View = ReadViewTransform(page.ViewTransform), Viewport = page.Viewport };
+        { View = ReadViewTransform(page.ViewTransform), Viewport = page.Viewport,
+            PageId = page.PageId is Guid id && id != Guid.Empty ? id : Guid.NewGuid(),
+            ObjectsVersion = Math.Max(0, page.ObjectsVersion) };
     }
 
     private static BoardPaper ReadPaper(string background, float? spacing, BoardPaper fallback) => new(
@@ -1907,6 +2028,7 @@ private sealed record PreparedPage(List<InkStroke> Strokes, List<BoardImageAsset
     private void ReplacePage(int index, PreparedPage page)
     {
         var controller = _pages[index];
+        if (page.PageId != Guid.Empty && index < _pageIds.Count) _pageIds[index] = page.PageId;
         controller.CancelLassoErase(); controller.ClearSelection();
         controller.Document.Clear();
         controller.History.Clear();
@@ -1937,8 +2059,9 @@ private sealed record PreparedPage(List<InkStroke> Strokes, List<BoardImageAsset
 
         var basis = _states[Math.Clamp(CurrentIndex, 0, _states.Count - 1)];
         var page = new InkController();
-        page.GetSelectableElements = () => GetSelectionElements(page);
+        BindPage(page);
         _pages.Insert(index, page);
+        _pageIds.Insert(index, Guid.NewGuid());
         _images.Insert(index, new List<BoardImageAsset>());
         _media.Insert(index, new List<BoardMediaAsset>());
         _textObjects.Insert(index, new List<BoardTextObject>());
@@ -1957,8 +2080,11 @@ private sealed record PreparedPage(List<InkStroke> Strokes, List<BoardImageAsset
     private void MovePageCore(int fromIndex, int toIndex)
     {
         var page = _pages[fromIndex];
+        var pageId = _pageIds[fromIndex];
         _pages.RemoveAt(fromIndex);
         _pages.Insert(toIndex, page);
+        _pageIds.RemoveAt(fromIndex);
+        _pageIds.Insert(toIndex, pageId);
 
         var images = _images[fromIndex];
         _images.RemoveAt(fromIndex);
@@ -2198,6 +2324,12 @@ private static bool IsValidMedia(BoardMediaAsset media)
 
         /// <summary>Optional since v4: absent in older files, treated as empty.</summary>
         public List<BoardFormulaObjectFile> FormulaObjects { get; set; } = new();
+
+        /// <summary>v4 可选字段：页身份，用于写回时校验同索引换页 ≠ 同页；缺失时加载阶段生成。</summary>
+        public Guid? PageId { get; set; }
+
+        /// <summary>v4 可选字段：页内对象版本号，由对象增删改接线方递增；旧文件缺失时为 0。</summary>
+        public int ObjectsVersion { get; set; }
     }
 
     private sealed class BoardSideFile

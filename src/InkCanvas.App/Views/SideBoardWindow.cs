@@ -168,6 +168,9 @@ BindPage();
     /// <summary>子板可见性变化（true=已显示，false=开始收回）；供 Shell 统一联动浮窗。</summary>
     public event Action<bool> SideBoardVisibilityChanged;
 
+    /// <summary>子板翻页完成；供 Shell 刷新统一课堂上下文（不直接引用 ShellController 类型）。</summary>
+    internal event Action SideBoardPageChanged;
+
     /// <summary>窗口内「收回」等入口统一走这里，由 Shell 通过 SideBoardVisibilityChanged 联动。</summary>
     public void RequestHide() => HideBoard();
 
@@ -382,6 +385,8 @@ BindPage();
         _services.ApplySettings();
         BindPage();
         RefreshBackground();
+        // 子板翻页后通知 Shell 刷新统一上下文与 AI 浮窗锚点（窗口自身不知道 AI 会话）。
+        SideBoardPageChanged?.Invoke();
     }
 
     private void OnControllerInvalidated()
@@ -827,16 +832,13 @@ BindPage();
         return true;
     }
 
-    private static Rect CurrentPageContentBounds(InkController controller)
+    private Rect CurrentPageContentBounds(InkController controller)
     {
-        Rect bounds = Rect.Empty;
-        foreach (var item in controller.DrawingObjects)
-        {
-            if (item.Stroke is { } stroke) bounds = bounds.Union(stroke.Bounds);
-            else if (item.Element is IImageSelectionElement { ImageData.Length: > 0 } image)
-                bounds = bounds.Union(image.Bounds);
-        }
-        return bounds;
+        // 与讲义/画布同源的完整包围盒：笔画 + 图片/媒体（含旋转外接框）+ 原生文本/公式。
+        // 旧实现只统计笔画与图片，导致含文本/公式的子板页贴回时被裁掉。
+        if (_board is null) return Rect.Empty;
+        int index = _board.CurrentIndex;
+        return BoardPageComposer.ContentBounds(_board, index);
     }
 
     private static async Task<byte[]> RenderPagePngAsync(InkController controller, Rect bounds)
@@ -852,7 +854,7 @@ BindPage();
         int pixelWidth = Math.Max(1, (int)Math.Round(dipWidth * scale));
         int pixelHeight = Math.Max(1, (int)Math.Round(dipHeight * scale));
 
-        var device = CanvasDevice.GetSharedDevice();
+        var device = BoardPageComposer.GetDevice();
         using var target = new CanvasRenderTarget(device, pixelWidth, pixelHeight, 96);
         using var renderer = new InkSceneRenderer { ShowSelectionOutline = false };
         await renderer.Images.PrepareAsync(device, controller);
@@ -861,11 +863,7 @@ BindPage();
         using (var session = target.CreateDrawingSession())
         {
             session.Clear(Windows.UI.Color.FromArgb(0, 0, 0, 0));
-            foreach (var item in controller.DrawingObjects)
-            {
-                if (item.Stroke is null && item.Element is not IImageSelectionElement { ImageData.Length: > 0 }) continue;
-                renderer.DrawObject(session, controller, item, view);
-            }
+            BoardPageComposer.DrawContent(session, renderer, controller, view);
         }
 
         using var stream = new InMemoryRandomAccessStream();
