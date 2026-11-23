@@ -2,13 +2,23 @@ using System.Numerics;
 using InkCanvas.Core.Classroom;
 using InkCanvas.Core.Ink;
 using InkCanvas.Core.Selection;
+using InkCanvas.Features.Board;
 using InkCanvas.Ink;
 
 namespace InkCanvas.Features.Classroom;
 
-/// <summary>Read-only replay adapter for a structured native AI object snapshot.</summary>
+/// <summary>
+/// Read-only replay adapter for a structured native AI object snapshot.
+/// <para>
+/// The recorded 6-element <see cref="TimelineAiObject.Transform"/> is applied through the element
+/// frame exactly like a live board object, so rotate / flip / move deltas replay identically.
+/// schema=2 snapshots without a transform fall back to identity and never crash.
+/// </para>
+/// </summary>
 public abstract class TimelineNativeElementBase : ISelectionElement
 {
+    private readonly float[] _transformArray;
+
     protected TimelineNativeElementBase(TimelineAiObject item)
     {
         Left = (float)item.Left;
@@ -17,6 +27,8 @@ public abstract class TimelineNativeElementBase : ISelectionElement
         Height = (float)Math.Max(1, item.Height);
         LayerOrder = item.LayerOrder;
         Id = Guid.TryParse(item.Id, out Guid id) ? id : Guid.Empty;
+        _transformArray = item.HasTransform ? item.Transform.ToArray() : null;
+        TransformMatrix = BoardElementMath.Read(_transformArray);
     }
 
     public Guid Id { get; }
@@ -31,9 +43,14 @@ public abstract class TimelineNativeElementBase : ISelectionElement
 
     public float Height { get; }
 
-    public Rect Bounds => new(Left, Top, Left + Width, Top + Height);
+    /// <summary>Replay transform resolved from the snapshot; identity for legacy schema=2 objects.</summary>
+    public Matrix3x2 TransformMatrix { get; }
 
-    public SelectionFrame Frame => new(Bounds, Matrix3x2.Identity);
+    /// <summary>Axis-aligned hull of the transformed object, matching live board objects.</summary>
+    public Rect Bounds => BoardElementMath.TransformedBounds(Left, Top, Width, Height, _transformArray);
+
+    public SelectionFrame Frame => new(
+        new Rect(Left, Top, Left + Width, Top + Height), TransformMatrix);
 
     public bool IsPresent => true;
 

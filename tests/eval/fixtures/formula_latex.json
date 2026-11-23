@@ -1,0 +1,30 @@
+{
+  "source": "synthetic-formula-fixture",
+  "note": "LaTeX 结构解析与方程代入自检；纯离线，不代表真实模型识别准确率。",
+  "cases": [
+    {
+      "id": "fraction",
+      "latex": "\\frac{1}{2}",
+      "expectedStruct": true,
+      "expectedVerification": "Unverified"
+    },
+    {
+      "id": "quadratic-with-roots",
+      "latex": "x^2 - 5x + 6 = 0",
+      "expectedStruct": true,
+      "expectedVerification": "Verified"
+    },
+    {
+      "id": "linear-equation",
+      "latex": "2x = 4",
+      "expectedStruct": true,
+      "expectedVerification": "Verified"
+    },
+    {
+      "id": "malformed-fraction",
+      "latex": "\\frac{1}",
+      "expectedStruct": false,
+      "expectedVerification": "Unverified"
+    }
+  ]
+}

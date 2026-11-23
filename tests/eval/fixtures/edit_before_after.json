@@ -1,0 +1,34 @@
+{
+  "source": "synthetic-edit-fixture",
+  "note": "教师编辑前后文本；通过 AiCardEditState 往返计算改动比例，不代表真实课堂采用率。",
+  "cases": [
+    {
+      "id": "no-op",
+      "kind": "text",
+      "before": "因式分解",
+      "after": "因式分解",
+      "expectedChangedRatio": 0.0
+    },
+    {
+      "id": "full-rewrite",
+      "kind": "text",
+      "before": "春季",
+      "after": "落叶",
+      "expectedChangedRatio": 1.0
+    },
+    {
+      "id": "partial-append",
+      "kind": "text",
+      "before": "因式分解",
+      "after": "因式分解法",
+      "expectedChangedRatio": 0.2
+    },
+    {
+      "id": "formula-append",
+      "kind": "formula",
+      "before": "x^2",
+      "after": "x^2-5x+6",
+      "expectedChangedRatio": 0.625
+    }
+  ]
+}

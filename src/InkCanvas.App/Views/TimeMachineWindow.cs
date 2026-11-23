@@ -837,10 +837,19 @@ public sealed class TimeMachineWindow : Window
                 ? CreateObjectImage(item)
                 : CreateObjectPlaceholder(item);
 
-            visual.Width = Math.Max(1, item.Width * scale);
-            visual.Height = Math.Max(1, item.Height * scale);
-            Canvas.SetLeft(visual, item.Left * scale + tx);
-            Canvas.SetTop(visual, item.Top * scale + ty);
+            // 旧 PNG 卡片：元素保持世界尺寸，由 RenderTransform 一次性合成
+            // 「对象变换 × 回放视图」，与原生文本/公式的 frame.Transform * view 同源。
+            Matrix3x2 world = BoardElementMath.Read(item.HasTransform ? item.Transform : null);
+            Matrix3x2 render = Matrix3x2.CreateTranslation((float)item.Left, (float)item.Top) * world * view;
+            visual.Width = Math.Max(1, item.Width);
+            visual.Height = Math.Max(1, item.Height);
+            visual.RenderTransformOrigin = new Windows.Foundation.Point(0, 0);
+            visual.RenderTransform = new MatrixTransform
+            {
+                Matrix = new Matrix(render.M11, render.M12, render.M21, render.M22, render.M31, render.M32),
+            };
+            Canvas.SetLeft(visual, 0);
+            Canvas.SetTop(visual, 0);
             _objectLayer.Children.Add(visual);
         }
     }
@@ -950,11 +959,18 @@ public sealed class TimeMachineWindow : Window
                 .Append(',').Append(item.Top.ToString("0.##"))
                 .Append(',').Append(item.Width.ToString("0.##"))
                 .Append(',').Append(item.Height.ToString("0.##"))
+                .Append(':').Append(FormatTransform(item))
                 .Append(':').Append(item.RenderPngBase64.Length)
                 .Append(item.RenderMissing ? "m" : "p");
         }
 
         return builder.ToString();
+    }
+
+    private static string FormatTransform(TimelineAiObject item)
+    {
+        if (!item.HasTransform) return "identity";
+        return string.Join(",", item.Transform.Select(value => value.ToString("0.###")));
     }
 
     private static string BuildNativeKey(IReadOnlyList<TimelineAiObject> objects, ClassroomScene scene)
@@ -983,7 +999,8 @@ public sealed class TimeMachineWindow : Window
                 .Append(',').Append(item.Top.ToString("0.##"))
                 .Append(',').Append(item.Width.ToString("0.##"))
                 .Append(',').Append(item.Height.ToString("0.##"))
-                .Append(',').Append(item.LayerOrder?.ToString() ?? "");
+                .Append(',').Append(item.LayerOrder?.ToString() ?? "")
+                .Append(':').Append(FormatTransform(item));
         }
 
         return builder.ToString();

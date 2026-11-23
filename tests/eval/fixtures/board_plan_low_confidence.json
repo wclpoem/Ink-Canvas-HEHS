@@ -1,0 +1,33 @@
+{
+  "type": "board_plan",
+  "schema": 2,
+  "intent": "solve",
+  "originals": ["x^2 - 5x + 6 = 0", "x1 = 2", "x2 = 3"],
+  "confidence": 0.72,
+  "warnings": ["第 1 块置信度偏低，请复核", "原文疑似笔误：x1 应为 x_1"],
+  "blocks": [
+    {
+      "id": "b1",
+      "kind": "formula",
+      "latex": "x^2 - 5x + 6 = 0",
+      "confidence": 0.7,
+      "note": "符号疑似笔误"
+    },
+    {
+      "id": "b2",
+      "kind": "text",
+      "text": "因式分解",
+      "confidence": 0.93
+    }
+  ],
+  "expected": {
+    "blockKinds": ["formula", "text"],
+    "originalLines": ["x^2 - 5x + 6 = 0", "x1 = 2", "x2 = 3"],
+    "confidence": 0.72,
+    "needsReview": true,
+    "warnings": 2,
+    "selectedIds": ["b2"],
+    "selectedRatio": 0.5,
+    "verifiedFormula": "Verified"
+  }
+}

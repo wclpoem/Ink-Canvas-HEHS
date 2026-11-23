@@ -665,6 +665,18 @@ public sealed partial class InkController : IDisposable
 
     public event Action SelectionChanged;
 
+    /// <summary>
+    /// 选区元素（图片/文本/公式等非笔画对象）被删除或恢复时触发；<c>present=false</c> 为删除，
+    /// <c>present=true</c> 为撤销恢复。宿主据此把对象变更写入时间轴（AiStep remove/add）。
+    /// </summary>
+    public event Action<IReadOnlyList<ISelectionElement>, bool> SelectionElementsPresenceChanged;
+
+    private void RaiseSelectionElementsPresenceChanged(IReadOnlyList<ISelectionElement> elements, bool present)
+    {
+        if (elements is null || elements.Count == 0) return;
+        SelectionElementsPresenceChanged?.Invoke(elements, present);
+    }
+
     public void ConfigureGestures(bool zoom, bool translate, bool rotate)
     {
         _manipulator.AllowZoom = zoom;
@@ -1884,8 +1896,19 @@ private void EndMarquee(Vector2 endWorld)
         Document.RemoveAll(removed);
         foreach (var e in elements) e.SetPresent(false);
         History.Push(new DelegateAction("delete",
-            () => { Document.RemoveAll(removed); foreach (var e in elements) e.SetPresent(false); },
-            () => { Document.AddRange(removed); for (int i = elements.Count - 1; i >= 0; i--) elements[i].SetPresent(true); }));
+            () =>
+            {
+                Document.RemoveAll(removed);
+                foreach (var e in elements) e.SetPresent(false);
+                RaiseSelectionElementsPresenceChanged(elements, present: false);
+            },
+            () =>
+            {
+                Document.AddRange(removed);
+                for (int i = elements.Count - 1; i >= 0; i--) elements[i].SetPresent(true);
+                RaiseSelectionElementsPresenceChanged(elements, present: true);
+            }));
+        RaiseSelectionElementsPresenceChanged(elements, present: false);
         ClearSelection();
     }
 
@@ -1923,6 +1946,46 @@ private void EndMarquee(Vector2 endWorld)
     }
 
     // ---- commands ---------------------------------------------------------
+
+    /// <summary>
+    /// 对指定笔画/元素（不依赖当前选择）应用一次可撤销变换。用于统一命令入口
+    /// <c>BoardService.TransformObjects</c>；选择控件框不随命令改变，撤销/重做按快照恢复。
+    /// </summary>
+    public void TransformObjectsUndoable(
+        IReadOnlyList<InkStroke> strokes,
+        IReadOnlyList<ISelectionElement> elements,
+        Matrix3x2 matrix,
+        string name,
+        bool scaleWidth = true)
+    {
+        var strokeTargets = strokes?.Where(stroke => stroke is not null).ToList() ?? new List<InkStroke>();
+        var elementTargets = elements?.Where(element => element is not null).ToList() ?? new List<ISelectionElement>();
+        if (strokeTargets.Count == 0 && elementTargets.Count == 0) return;
+
+        var before = strokeTargets.Select(stroke => stroke.Clone()).ToList();
+        var beforeElements = elementTargets.Select(element => element.Capture()).ToList();
+        foreach (InkStroke stroke in strokeTargets) stroke.Transform(matrix, scaleWidth);
+        foreach (ISelectionElement element in elementTargets) element.Transform(matrix);
+        var after = strokeTargets.Select(stroke => stroke.Clone()).ToList();
+        var afterElements = elementTargets.Select(element => element.Capture()).ToList();
+
+        History.Push(new DelegateAction(
+            string.IsNullOrWhiteSpace(name) ? "transform objects" : name.Trim(),
+            () => Restore(after, afterElements),
+            () => Restore(before, beforeElements)));
+        Document.Touch();
+        SelectionChanged?.Invoke();
+        Invalidated?.Invoke();
+
+        void Restore(List<InkStroke> state, List<object> elementState)
+        {
+            ApplySnapshot(strokeTargets, state);
+            for (int i = 0; i < elementTargets.Count; i++) elementTargets[i].Restore(elementState[i]);
+            Document.Touch();
+            SelectionChanged?.Invoke();
+            Invalidated?.Invoke();
+        }
+    }
 
     public void RecolorSelection(InkColor color)
         => ChangeSelectionAttributes("selection color", attributes => attributes.Color = color);

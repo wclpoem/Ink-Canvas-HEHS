@@ -8,7 +8,7 @@ using InkCanvas.Ink;
 namespace InkCanvas.Features.Board;
 
 /// <summary>Image/video selection adapter. Snapshot geometry only; embedded bytes are immutable and shared.</summary>
-public sealed class BoardSelectionElement : IImageSelectionElement
+public sealed class BoardSelectionElement : IImageSelectionElement, IGroupedSelectionElement, IBoardObject
 {
     private readonly BoardService _board;
     private readonly InkController _page;
@@ -23,6 +23,48 @@ public sealed class BoardSelectionElement : IImageSelectionElement
     { _board = board; _page = page ?? board.Current; Media = media; }
 
     public Guid Id => Image?.Id ?? Media.Id;
+
+    /// <summary>与原生文本/公式共用 string 分组：图片/媒体参与统一分组命令。</summary>
+    public string SelectionGroupId => Image?.GroupId ?? Media?.GroupId ?? "";
+
+    BoardObjectType IBoardObject.Type => Image is not null ? BoardObjectType.Image : BoardObjectType.Media;
+
+    string IBoardObject.Content => Image is not null
+        ? Image.Metadata ?? ""
+        : Media?.Name ?? "";
+
+    BoardObjectStyle IBoardObject.Style => new();
+
+    Rect IBoardObject.Rect => Image is not null
+        ? new Rect(Image.Left, Image.Top, Image.Left + Image.Width, Image.Top + Image.Height)
+        : new Rect(Media.Left, Media.Top, Media.Left + Media.Width, Media.Top + Media.Height);
+
+    Matrix3x2 IBoardObject.RectTransform => Image is not null
+        ? BoardElementMath.Read(Image.Transform)
+        : BoardElementMath.Read(Media.Transform);
+
+    string IBoardObject.GroupId => SelectionGroupId;
+
+    ObjectProvenance IBoardObject.Provenance
+    {
+        get
+        {
+            string groupId = SelectionGroupId;
+            if (Image is null)
+                return BoardObjectProvenance.FromLegacy("", groupId: groupId);
+            AiPasteMetadata metadata = AiPasteMetadata.TryParse(Image.Metadata);
+            ObjectProvenance provenance = BoardObjectProvenance.FromLegacy(
+                metadata is null ? "" : "aiWrite", metadata?.Instruction, metadata?.CreatedAt ?? 0, groupId);
+            return provenance.Source == ObjectSource.AiWrite
+                ? provenance with { Source = metadata?.Kind == AiPasteKind.Shape ? ObjectSource.AiShape : ObjectSource.AiWrite }
+                : provenance;
+        }
+    }
+
+    int IBoardObject.Version => Image?.Version ?? Media?.Version ?? BoardObjectProvenance.DefaultVersion;
+
+    object IBoardObject.Source => (object)Image ?? Media;
+
     public long? LayerOrder
     {
         get => Image is not null ? Image.LayerOrder : Media.LayerOrder;

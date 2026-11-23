@@ -1,5 +1,6 @@
 using System.Numerics;
 using InkCanvas.Core.Latex;
+using InkCanvas.Ink;
 
 namespace InkCanvas.Features.Board.AiObjects;
 
@@ -7,6 +8,9 @@ namespace InkCanvas.Features.Board.AiObjects;
 internal sealed class BoardTextObjectFile
 {
     public Guid? Id { get; set; }
+
+    /// <summary>对象结构版本；旧文件缺字段时按 1 处理。</summary>
+    public int Version { get; set; } = BoardObjectProvenance.DefaultVersion;
     public string Type { get; set; }
     public string Content { get; set; }
     public string Title { get; set; }
@@ -34,6 +38,9 @@ internal sealed class BoardTextObjectFile
 internal sealed class BoardFormulaObjectFile
 {
     public Guid? Id { get; set; }
+
+    /// <summary>对象结构版本；旧文件缺字段时按 1 处理。</summary>
+    public int Version { get; set; } = BoardObjectProvenance.DefaultVersion;
     public string Latex { get; set; }
     public string FontFamily { get; set; }
     public double FontSize { get; set; }
@@ -75,6 +82,7 @@ internal static class BoardAiObjectSerialization
     public static BoardTextObjectFile ToFile(BoardTextObject text) => new()
     {
         Id = text.Id,
+        Version = text.Version,
         Type = text.Type,
         Content = text.Content,
         Title = text.Title,
@@ -103,6 +111,7 @@ internal static class BoardAiObjectSerialization
         var text = new BoardTextObject
         {
             Id = file?.Id is { } id && id != Guid.Empty ? id : Guid.NewGuid(),
+            Version = file?.Version > 0 ? file.Version : BoardObjectProvenance.DefaultVersion,
             Type = file?.Type,
             Content = file?.Content,
             Title = file?.Title,
@@ -134,6 +143,7 @@ internal static class BoardAiObjectSerialization
     public static BoardFormulaObjectFile ToFile(BoardFormulaObject formula) => new()
     {
         Id = formula.Id,
+        Version = formula.Version,
         Latex = formula.Latex,
         FontFamily = formula.FontFamily,
         FontSize = formula.FontSize,
@@ -155,6 +165,7 @@ internal static class BoardAiObjectSerialization
         var formula = new BoardFormulaObject
         {
             Id = file?.Id is { } id && id != Guid.Empty ? id : Guid.NewGuid(),
+            Version = file?.Version > 0 ? file.Version : BoardObjectProvenance.DefaultVersion,
             Latex = file?.Latex,
             FontFamily = file?.FontFamily,
             FontSize = file?.FontSize ?? 0,
@@ -179,6 +190,8 @@ internal static class BoardAiObjectSerialization
     public static void Normalize(BoardTextObject text)
     {
         if (text is null) return;
+        text.Version = text.Version < BoardObjectProvenance.DefaultVersion
+            ? BoardObjectProvenance.DefaultVersion : text.Version;
         text.Type = NormalizeType(text.Type);
         text.Content = Limit(text.Content, MaxContentLength);
         text.Title = Limit(text.Title, MaxTitleLength);
@@ -207,6 +220,8 @@ internal static class BoardAiObjectSerialization
     public static void Normalize(BoardFormulaObject formula)
     {
         if (formula is null) return;
+        formula.Version = formula.Version < BoardObjectProvenance.DefaultVersion
+            ? BoardObjectProvenance.DefaultVersion : formula.Version;
         formula.Latex = Limit(formula.Latex, LatexToMathML.MaxLatexLength);
         formula.FontFamily = Limit(formula.FontFamily, 64);
         if (formula.FontFamily.Length == 0) formula.FontFamily = "Cambria Math";

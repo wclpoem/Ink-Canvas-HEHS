@@ -1,0 +1,25 @@
+{
+  "type": "board_plan",
+  "schema": 2,
+  "intent": "poem",
+  "originals": ["床前明月光", "疑是地上霜"],
+  "confidence": 0.9,
+  "blocks": [
+    {
+      "id": "p1",
+      "kind": "poem",
+      "title": "静夜思",
+      "author": "李白",
+      "lines": ["床前明月光", "疑是地上霜"],
+      "confidence": 0.92
+    }
+  ],
+  "expected": {
+    "blockKinds": ["poem"],
+    "originalLines": ["床前明月光", "疑是地上霜"],
+    "confidence": 0.9,
+    "needsReview": false,
+    "selectedIds": ["p1"],
+    "selectedRatio": 1.0
+  }
+}

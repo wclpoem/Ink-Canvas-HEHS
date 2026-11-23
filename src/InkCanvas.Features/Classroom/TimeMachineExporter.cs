@@ -668,15 +668,27 @@ public static class TimeMachineExporter
 
         var rect = new Windows.Foundation.Rect(
             item.Left, item.Top, Math.Max(1, item.Width), Math.Max(1, item.Height));
-        CanvasBitmap bitmap = LoadAiBitmap(device, item, cache, out bool failed);
-        if (bitmap is not null)
+        // 旧 PNG 卡片同样应用录制的 6 元变换；schema=2 缺失时 identity。
+        Matrix3x2 transform = BoardElementMath.Read(item.HasTransform ? item.Transform : null);
+        Matrix3x2 previous = drawing.Transform;
+        try
         {
-            drawing.DrawImage(bitmap, rect,
-                new Windows.Foundation.Rect(0, 0, bitmap.SizeInPixels.Width, bitmap.SizeInPixels.Height));
-            return;
-        }
+            if (!transform.IsIdentity) drawing.Transform = transform * previous;
 
-        DrawAiPlaceholder(drawing, item, rect, failed ? "解码失败" : "回放缺失");
+            CanvasBitmap bitmap = LoadAiBitmap(device, item, cache, out bool failed);
+            if (bitmap is not null)
+            {
+                drawing.DrawImage(bitmap, rect,
+                    new Windows.Foundation.Rect(0, 0, bitmap.SizeInPixels.Width, bitmap.SizeInPixels.Height));
+                return;
+            }
+
+            DrawAiPlaceholder(drawing, item, rect, failed ? "解码失败" : "回放缺失");
+        }
+        finally
+        {
+            drawing.Transform = previous;
+        }
     }
 
     private static CanvasBitmap LoadAiBitmap(CanvasDevice device, TimelineAiObject item,

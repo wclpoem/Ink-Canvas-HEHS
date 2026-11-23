@@ -1,4 +1,5 @@
 using System.Numerics;
+using InkCanvas.Core.AiAssistant;
 using InkCanvas.Core.Ink;
 using InkCanvas.Core.Selection;
 using InkCanvas.Ink;
@@ -11,7 +12,7 @@ namespace InkCanvas.Features.Board.AiObjects;
 /// Geometry and transform mirror <see cref="BoardImageAsset"/> so selection, move, resize,
 /// rotation, duplicate and undo share the existing image path.
 /// </summary>
-public sealed class BoardTextObject : ISelectionElement, IGroupedSelectionElement, IBoardTextElement
+public sealed class BoardTextObject : ISelectionElement, IGroupedSelectionElement, IBoardTextElement, IBoardObject
 {
     private BoardService _board;
     private InkController _page;
@@ -68,6 +69,36 @@ public sealed class BoardTextObject : ISelectionElement, IGroupedSelectionElemen
 
     public string SelectionGroupId => GroupId ?? "";
 
+    /// <summary>对象结构版本；旧文件缺字段时按 1 读取。</summary>
+    public int Version { get; set; } = BoardObjectProvenance.DefaultVersion;
+
+    Guid IBoardObject.Id => Id;
+
+    BoardObjectType IBoardObject.Type => BoardObjectType.Text;
+
+    string IBoardObject.Content => Content ?? "";
+
+    BoardObjectStyle IBoardObject.Style => new(
+        FontFamily: FontFamily ?? "",
+        FontSize: FontSize,
+        Color: Color ?? "",
+        LineHeight: LineHeight,
+        Align: Align ?? "",
+        Columns: Columns);
+
+    Rect IBoardObject.Rect => new(Left, Top, Left + Width, Top + Height);
+
+    Matrix3x2 IBoardObject.RectTransform => BoardElementMath.Read(TransformMatrix);
+
+    string IBoardObject.GroupId => GroupId ?? "";
+
+    ObjectProvenance IBoardObject.Provenance
+        => BoardObjectProvenance.FromLegacy(Source, Instruction, CreatedAt, GroupId);
+
+    int IBoardObject.Version => Version;
+
+    object IBoardObject.Source => this;
+
     public Rect Bounds => BoardElementMath.TransformedBounds(Left, Top, Width, Height, TransformMatrix);
 
     public SelectionFrame Frame => new(
@@ -104,6 +135,7 @@ public sealed class BoardTextObject : ISelectionElement, IGroupedSelectionElemen
         Source = Source,
         Instruction = Instruction,
         CreatedAt = CreatedAt,
+        Version = Version,
         TransformMatrix = TransformMatrix?.ToArray(),
     };
 
@@ -174,6 +206,7 @@ public sealed class BoardTextObject : ISelectionElement, IGroupedSelectionElemen
         Source = snapshot.Source;
         Instruction = snapshot.Instruction;
         CreatedAt = snapshot.CreatedAt;
+        Version = snapshot.Version;
         TransformMatrix = snapshot.TransformMatrix?.ToArray();
     }
 }

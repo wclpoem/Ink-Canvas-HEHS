@@ -65,9 +65,8 @@ public sealed class InkTimeline
     // 笔画 id -> 首次登记的事件索引，用于保持帧内笔画顺序，也作为按需解析时查找 JSON 的起点。
     private readonly Dictionary<string, int> _strokeOrder = new();
 
-    // AI 对象 id -> 页码 / 画板 / 首次登记索引。对象数量远小于笔画，不做容量淘汰。
-    private readonly Dictionary<string, int> _objectPages = new();
-    private readonly Dictionary<string, int> _objectBoards = new();
+    // AI 对象 id -> 首次登记索引。归属页/板以目标时刻解析出的快照为准，
+    // 不能用「整个事件流的最后登记」预过滤，否则历史帧会被未来的跨页/换板事件提前排除。
     private readonly Dictionary<string, int> _objectOrder = new();
 
 
@@ -281,13 +280,15 @@ public sealed class InkTimeline
         var result = new List<(TimelineAiObject Object, long LayerOrder, int Order)>();
         foreach (string id in alive)
         {
-            if (!_objectPages.TryGetValue(id, out int objectPage) || objectPage != page) continue;
-            if (_objectBoards.TryGetValue(id, out int objectBoard) && objectBoard != boardId) continue;
-
             TimelineAiObject item = latest.TryGetValue(id, out TimelineAiObject snapshotItem)
                 ? snapshotItem
                 : ResolveObjectAt(id, fallbackIndex);
             if (item is null) continue;
+
+            // 按目标时刻快照自身的页/板过滤：同一对象可能在后续事件中跨页或从子板移回主展板，
+            // 用未来状态预过滤会让「从头播放/倒退/直接定位」看到不同的对象集合。
+            if (item.PageIndex != page) continue;
+            if (item.BoardId != boardId) continue;
 
             int order = _objectOrder.TryGetValue(id, out int knownOrder) ? knownOrder : int.MaxValue;
             result.Add((item, item.LayerOrder ?? long.MaxValue, order));
@@ -468,25 +469,34 @@ public sealed class InkTimeline
             {
                 case TimelineEventKind.PageChanged:
                     name = $"第 {e.PageIndex + 1} 页";
-                    kind = "page";
+                    kind = SessionBookmarkKind.Page;
                     break;
                 case TimelineEventKind.Cleared:
                     name = $"清空第 {e.PageIndex + 1} 页";
-                    kind = "cleared";
+                    kind = SessionBookmarkKind.Cleared;
                     break;
                 case TimelineEventKind.PptSlideChanged:
                     PptSlideChange change = DecodePptSlideChanged(e.Payload);
                     if (change.IsValid && change.Index > 0) pptSlide = change.Index;
                     name = pptSlide > 0 ? $"PPT 第 {pptSlide} 页" : "PPT 翻页";
-                    kind = "ppt";
+                    kind = SessionBookmarkKind.Ppt;
                     break;
                 case TimelineEventKind.RosterDrawn:
                     name = string.IsNullOrWhiteSpace(e.Payload) ? "点名" : $"点名：{e.Payload}";
-                    kind = "roster";
+                    kind = SessionBookmarkKind.Roster;
                     break;
                 case TimelineEventKind.TimerEnded:
-                    name = "倒计时结束";
-                    kind = "timer";
+                    // 练习场景的倒计时结束单独标记，便于时间轴区分「练习结束」与普通倒计时。
+                    if (IsPracticeTimerEnded(e.Payload))
+                    {
+                        name = "练习结束";
+                        kind = SessionBookmarkKind.Practice;
+                    }
+                    else
+                    {
+                        name = "倒计时结束";
+                        kind = SessionBookmarkKind.Timer;
+                    }
                     break;
                 default:
                     continue;
@@ -538,7 +548,7 @@ public sealed class InkTimeline
     }
 
     /// <summary>插入一个书签（按时间排序），返回其索引。</summary>
-    public int AddBookmark(long timeMs, string name, string kind = "manual", bool auto = false)
+    public int AddBookmark(long timeMs, string name, string kind = SessionBookmarkKind.Manual, bool auto = false)
     {
         var list = _session.Bookmarks ??= new List<SessionBookmark>();
         timeMs = Math.Max(0, timeMs);
@@ -570,7 +580,7 @@ public sealed class InkTimeline
 
         list[index].Name = name.Trim();
         list[index].Auto = false;
-        list[index].Kind = "manual";
+        list[index].Kind = SessionBookmarkKind.Manual;
         return true;
     }
 
@@ -668,14 +678,48 @@ public sealed class InkTimeline
 
     private static string KindLabel(string kind) => kind switch
     {
-        "page" => "切换页",
-        "cleared" => "清空板书",
-        "ppt" => "PPT 翻页",
-        "roster" => "点名",
-        "timer" => "倒计时",
-        "manual" => "手动书签",
+        SessionBookmarkKind.Page => "切换页",
+        SessionBookmarkKind.Cleared => "清空板书",
+        SessionBookmarkKind.Ppt => "PPT 翻页",
+        SessionBookmarkKind.Roster => "点名",
+        SessionBookmarkKind.Timer => "倒计时",
+        SessionBookmarkKind.Practice => "练习结束",
+        SessionBookmarkKind.Manual => "手动书签",
         _ => "",
     };
+
+    /// <summary>
+    /// 判断倒计时结束事件是否属于练习场景：载荷为含 <c>practice:true</c> 的 JSON 对象，
+    /// 或含 <c>scene</c> 等于 "practice"（不区分大小写），或文本含「练习结束」信号时返回 true；
+    /// 非法 JSON / 空载荷返回 false，绝不抛异常。
+    /// </summary>
+    public static bool IsPracticeTimerEnded(string payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload)) return false;
+        // 兼容旧数据与时光机 PracticeFinished 信号：载荷文本直接带了结束说明。
+        if (payload.Contains("练习结束", StringComparison.Ordinal)) return true;
+
+        try
+        {
+            using var document = JsonDocument.Parse(payload.Trim());
+            JsonElement root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return false;
+
+            foreach (JsonProperty property in root.EnumerateObject())
+            {
+                if (string.Equals(property.Name, "practice", StringComparison.OrdinalIgnoreCase)
+                    && property.Value.ValueKind == JsonValueKind.True)
+                    return true;
+            }
+
+            string scene = ReadString(root, "scene", "Scene");
+            return string.Equals(scene, "practice", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     private static int ParseInt(string value, int fallback)
         => int.TryParse(value, out int parsed) ? parsed : fallback;
@@ -1018,20 +1062,12 @@ public sealed class InkTimeline
         if (e.Kind == TimelineEventKind.AiStep &&
             AiObjectPayloadCodec.TryDecode(e.Payload, out AiObjectsPayload payload))
         {
-            int payloadPage = payload.PageIndex >= 0 ? payload.PageIndex : e.PageIndex;
             foreach (TimelineAiObject item in payload.AllObjects)
             {
                 if (string.IsNullOrEmpty(item.Id)) continue;
+                // 只登记首次出现顺序；页/板不在此固化，读取时以目标时刻快照为准。
                 if (!_objectOrder.ContainsKey(item.Id))
-                {
-                    _objectPages[item.Id] = payloadPage;
-                    _objectBoards[item.Id] = e.BoardId;
                     _objectOrder[item.Id] = index;
-                }
-                else
-                {
-                    _objectPages[item.Id] = payloadPage;
-                }
             }
         }
     }

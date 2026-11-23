@@ -54,12 +54,12 @@ public static class BoardPreview
         const int width = 768, height = 432;
         var page = board.GetPageInfo(index);
         var objects = page.Controller.DrawingObjects.ToArray();
-        var bounds = page.Controller.Document.Strokes.Select(stroke => stroke.Bounds)
-            .Concat(page.Images.Select(image => BoardElementMath.TransformedBounds(image.Left, image.Top, image.Width, image.Height, image.Transform)))
-            .Concat(page.Media.Select(media => BoardElementMath.TransformedBounds(media.Left, media.Top, media.Width, media.Height, media.Transform)))
-            .Where(rect => !rect.IsEmpty && float.IsFinite(rect.Left) && float.IsFinite(rect.Top) && float.IsFinite(rect.Right) && float.IsFinite(rect.Bottom)).ToArray();
-        var area = bounds.Length == 0 ? new Rect(0, 0, 1920, 1080)
-            : new Rect(bounds.Min(rect => rect.Left), bounds.Min(rect => rect.Top), bounds.Max(rect => rect.Right), bounds.Max(rect => rect.Bottom)).Inflate(32);
+        // Composer bounds 已含旋转后的图片/媒体外接框与原生文本/公式，避免封面把文本裁掉。
+        var content = BoardPageComposer.ContentBounds(page);
+        var area = content.IsEmpty || !float.IsFinite(content.Left) || !float.IsFinite(content.Top)
+            || !float.IsFinite(content.Right) || !float.IsFinite(content.Bottom)
+            ? new Rect(0, 0, 1920, 1080)
+            : content.Inflate(32);
         float scale = Math.Min(width / Math.Max(1, area.Width), height / Math.Max(1, area.Height));
         var view = Matrix3x2.CreateTranslation(-area.Left, -area.Top) * Matrix3x2.CreateScale(scale)
             * Matrix3x2.CreateTranslation((width - area.Width * scale) / 2, (height - area.Height * scale) / 2);

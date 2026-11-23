@@ -1,0 +1,31 @@
+{
+  "type": "board_plan",
+  "schema": 2,
+  "intent": "organize",
+  "originals": [
+    { "text": "第一行原文", "rect": { "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.1 } },
+    { "latex": "x^2" },
+    { "text": "第三行原文" }
+  ],
+  "confidence": 0.88,
+  "blocks": [
+    { "id": "o1", "kind": "text", "text": "整理结果", "confidence": 0.9 },
+    {
+      "id": "o2",
+      "kind": "poem",
+      "title": "静夜思",
+      "author": "李白",
+      "lines": ["床前明月光"],
+      "confidence": 0.9
+    }
+  ],
+  "expected": {
+    "blockKinds": ["text", "poem"],
+    "originalLines": ["第一行原文", "x^2", "第三行原文"],
+    "originalBlocks": 3,
+    "confidence": 0.88,
+    "needsReview": false,
+    "selectedIds": ["o1", "o2"],
+    "selectedRatio": 1.0
+  }
+}

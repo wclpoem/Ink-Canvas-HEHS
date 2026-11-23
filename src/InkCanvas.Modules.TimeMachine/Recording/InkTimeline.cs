@@ -486,8 +486,16 @@ public sealed class InkTimeline
                     kind = "roster";
                     break;
                 case TimelineEventKind.TimerEnded:
-                    name = "倒计时结束";
-                    kind = "timer";
+                    if (IsPracticeTimerEnded(e.Payload))
+                    {
+                        name = "练习结束";
+                        kind = "practice";
+                    }
+                    else
+                    {
+                        name = "倒计时结束";
+                        kind = "timer";
+                    }
                     break;
                 default:
                     continue;
@@ -674,9 +682,41 @@ public sealed class InkTimeline
         "ppt" => "PPT 翻页",
         "roster" => "点名",
         "timer" => "倒计时",
+        "practice" => "练习结束",
         "manual" => "手动书签",
         _ => "",
     };
+
+    /// <summary>
+    /// 判断倒计时结束事件是否属于练习场景：载荷为 <c>{"practice":true}</c> 的 JSON 对象，
+    /// 或文本包含「练习结束」信号时返回 true。非法 JSON / 空载荷返回 false，绝不抛异常。
+    /// </summary>
+    private static bool IsPracticeTimerEnded(string payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload)) return false;
+        if (payload.Contains("练习结束", StringComparison.Ordinal)) return true;
+
+        try
+        {
+            using var document = JsonDocument.Parse(payload.Trim());
+            JsonElement root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return false;
+
+            foreach (JsonProperty property in root.EnumerateObject())
+            {
+                if (string.Equals(property.Name, "practice", StringComparison.OrdinalIgnoreCase)
+                    && property.Value.ValueKind == JsonValueKind.True)
+                    return true;
+            }
+
+            string scene = ReadString(root, "scene", "Scene");
+            return string.Equals(scene, "practice", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     private static int ParseInt(string value, int fallback)
         => int.TryParse(value, out int parsed) ? parsed : fallback;

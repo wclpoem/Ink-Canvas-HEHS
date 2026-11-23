@@ -1,0 +1,31 @@
+{
+  "type": "board_plan",
+  "schema": 2,
+  "intent": "vocabulary",
+  "originals": ["春天", "柳树"],
+  "confidence": 0.94,
+  "blocks": [
+    {
+      "id": "w1",
+      "kind": "wordlist",
+      "text": "春天｜chūn tiān｜春季",
+      "lines": ["春天｜chūn tiān｜春季"],
+      "confidence": 0.95
+    },
+    {
+      "id": "w2",
+      "kind": "wordlist",
+      "text": "柳树｜liǔ shù｜落叶乔木",
+      "lines": ["柳树｜liǔ shù｜落叶乔木"],
+      "confidence": 0.93
+    }
+  ],
+  "expected": {
+    "blockKinds": ["wordlist", "wordlist"],
+    "originalLines": ["春天", "柳树"],
+    "confidence": 0.94,
+    "needsReview": false,
+    "selectedIds": ["w1"],
+    "selectedRatio": 0.5
+  }
+}
