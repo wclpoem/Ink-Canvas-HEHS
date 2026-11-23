@@ -105,6 +105,18 @@ public sealed class LongPlaybackStressTests
     private static long EventTime(int index, int totalEvents)
         => index * TotalMs / (totalEvents - 1);
 
+    /// <summary>
+    /// 仅用于内存采样前的状态稳定：强制完整回收、等待终结器清空并给后台 GC 收敛时间，
+    /// 使峰值采样与结束采样处于同一 GC 状态。这里不改变任何判定阈值与语义。
+    /// </summary>
+    private static void StabilizeManagedMemory()
+    {
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+        GC.WaitForPendingFinalizers();
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+        Thread.Sleep(100);
+    }
+
     [Fact]
     public void BuildFrame_90MinutePlayback_30Fps_KeepsTimeAndMemoryBounded()
     {
@@ -119,6 +131,7 @@ public sealed class LongPlaybackStressTests
         coldWatch.Stop();
         Assert.True(coldFrame.Count > 0, $"冷启动定位 {halfMs}ms 未取到任何笔画，页码过滤可能失效");
 
+        StabilizeManagedMemory();
         var memorySamples = new List<long> { GC.GetTotalMemory(forceFullCollection: true) };
 
         int frameCount = 0;
@@ -137,14 +150,17 @@ public sealed class LongPlaybackStressTests
             frameCount++;
 
             if (frameCount % SampleEveryFrames == 0)
+            {
+                StabilizeManagedMemory();
                 memorySamples.Add(GC.GetTotalMemory(forceFullCollection: true));
+            }
         }
         frameWatch.Stop();
 
+        StabilizeManagedMemory();
         memorySamples.Add(GC.GetTotalMemory(forceFullCollection: true));
 
         long peakBytes = memorySamples.Max();
-        long firstSampleBytes = memorySamples[0];
         long lastSampleBytes = memorySamples[^1];
         double totalMs = frameWatch.Elapsed.TotalMilliseconds;
         double averageMs = frameCount > 0 ? totalMs / frameCount : 0;
@@ -156,17 +172,14 @@ public sealed class LongPlaybackStressTests
         _output.WriteLine($"冷启动 BuildFrame({halfMs}ms) 耗时={coldWatch.Elapsed.TotalMilliseconds:F1} ms；笔画数={coldFrame.Count}");
         _output.WriteLine($"总帧数={frameCount}；逐帧总耗时={totalMs:F1} ms；平均每帧={averageMs:F3} ms（上界 180000 ms）");
         _output.WriteLine($"内存采样(MB)=[{memorySeries}]");
-        _output.WriteLine($"峰值内存={peakBytes / 1024.0 / 1024.0:F1} MB；最后采样={lastSampleBytes / 1024.0 / 1024.0:F1} MB");
+        _output.WriteLine($"峰值内存={peakBytes / 1024.0 / 1024.0:F1} MB；最后采样={lastSampleBytes / 1024.0 / 1024.0:F1} MB；峰值−结束={(peakBytes - lastSampleBytes) / 1024.0 / 1024.0:F1} MB（上界 256 MB）");
 
         Assert.Equal(durationMs, lastFrameTimeMs);
+        // 原判据：回放结束后应释放峰值内存，峰值与结束值之差须小于 256MB。
+        // 每次采样前已通过 StabilizeManagedMemory 统一 GC 状态，确保峰值与结束值可比。
+        Assert.True(peakBytes - lastSampleBytes < 256L * 1024 * 1024,
+            $"内存峰值与最后采样相差 {(peakBytes - lastSampleBytes) / 1024.0 / 1024.0:F1} MB，超过 256MB");
         Assert.True(totalMs < 180_000, $"逐帧总耗时 {totalMs:F1} ms 超过 180 秒上界");
-        // 用「测试结束相对开始」的托管内存增量判断是否有持续增长。
-        // 不能用「峰值 - 结束值」：全量串行运行时，前面测试的托管残留会让首个采样偏高，
-        // 随后 GC 回落到正常水平，峰值与结束值之差会被误判为超限。
-        Assert.True(lastSampleBytes - firstSampleBytes < 256L * 1024 * 1024,
-            $"结束采样较首个采样增长 {(lastSampleBytes - firstSampleBytes) / 1024.0 / 1024.0:F1} MB，超过 256MB");
-        Assert.True(lastSampleBytes <= peakBytes,
-            $"结束采样 {lastSampleBytes / 1024.0 / 1024.0:F1} MB 不应高于峰值 {peakBytes / 1024.0 / 1024.0:F1} MB");
         Assert.True(lastFrame.Count > 0, "最后一帧未取到笔画");
 
         IReadOnlyList<InkStroke> endFrame = timeline.BuildFrame(durationMs);
