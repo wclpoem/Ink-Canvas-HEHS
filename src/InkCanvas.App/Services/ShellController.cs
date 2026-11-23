@@ -3,6 +3,7 @@ using InkCanvas.Controls.Controls;
 using InkCanvas.Core.AiAssistant;
 using InkCanvas.Core.Classroom;
 using InkCanvas.Core.Ink;
+using InkCanvas.Core.Ui;
 using InkCanvas.Features.AiAssistant;
 using InkCanvas.Features.Board;
 using InkCanvas.Features.Classroom;
@@ -613,7 +614,6 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
 
     private async Task<bool> AskAsync(string title, string message, string primary)
     {
-        if (_bar?.Content is not FrameworkElement root || root.XamlRoot is null) return false;
         var dialog = new ContentDialog
         {
             Title = title,
@@ -621,9 +621,8 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
             PrimaryButtonText = primary,
             CloseButtonText = "取消",
             DefaultButton = ContentDialogButton.Close,
-            XamlRoot = root.XamlRoot,
         };
-        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+        return await ShowDialogAsync(dialog) == ContentDialogResult.Primary;
     }
 
     /// <summary>
@@ -743,7 +742,7 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
     {
         try
         {
-            if (_bar?.Content is not FrameworkElement root || root.XamlRoot is null) return;
+
             string summary = notice.InkMappingSummary ?? "课件页序与墨迹存档不一致。";
             string backupHint = string.IsNullOrWhiteSpace(notice.BackupDirectory)
                 ? "选择清空前会先备份整个墨迹目录。"
@@ -760,9 +759,8 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
                 SecondaryButtonText = "备份并导出",
                 CloseButtonText = "稍后处理",
                 DefaultButton = ContentDialogButton.Primary,
-                XamlRoot = root.XamlRoot,
             };
-            ContentDialogResult result = await dialog.ShowAsync();
+            ContentDialogResult result = await ShowDialogAsync(dialog);
             if (result == ContentDialogResult.Primary)
             {
                 Core.Diagnostics.FileLog.WriteLogToFile(
@@ -2610,11 +2608,206 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
 
     private async Task<ContentDialogResult> ShowDialogAsync(ContentDialog dialog)
     {
-        if (_bar?.Content is not FrameworkElement root || root.XamlRoot is null)
+        if (dialog is null) return ContentDialogResult.None;
+
+        DialogHost host = ResolveDialogHost();
+        if (!DialogHostPolicy.IsUsable(host.Surface) || host.Root is null)
+        {
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[UI] ContentDialog 无可用宿主：surface={host.Surface}，"
+                + $"bar={_bar is not null}，board={_board is not null}，assistant={_aiAssistant is not null}",
+                Core.Diagnostics.LogType.Error);
             return ContentDialogResult.None;
-        dialog.XamlRoot = root.XamlRoot;
-        return await dialog.ShowAsync();
+        }
+
+        dialog.XamlRoot = host.Root;
+        bool suspendedAssistant = SuspendAssistantForDialog(host.Surface);
+        if (host.RestoreFoldedBar)
+        {
+            try { _bar?.SetFolded(false); }
+            catch (Exception ex)
+            {
+                Core.Diagnostics.FileLog.WriteLogToFile(
+                    $"[UI] 弹窗临时展开浮条失败：{ex.Message}", Core.Diagnostics.LogType.Trace);
+            }
+        }
+        Core.Diagnostics.FileLog.WriteLogToFile(
+            $"[UI] ContentDialog 宿主：surface={host.Surface}，suspendedAssistant={suspendedAssistant}，"
+            + $"restoreFoldedBar={host.RestoreFoldedBar}，rootSet={(dialog.XamlRoot is not null)}",
+            Core.Diagnostics.LogType.Info);
+        try
+        {
+            PrepareDialogHost(host.Window, host.Surface);
+            return await dialog.ShowAsync();
+        }
+        catch (Exception ex)
+        {
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[UI] ContentDialog 显示失败：surface={host.Surface}，{ex.Message}",
+                Core.Diagnostics.LogType.Error);
+            return ContentDialogResult.None;
+        }
+        finally
+        {
+            RestoreAssistantAfterDialog(suspendedAssistant);
+            if (host.RestoreFoldedBar)
+            {
+                try { _bar?.SetFolded(true); }
+                catch (Exception ex)
+                {
+                    Core.Diagnostics.FileLog.WriteLogToFile(
+                        $"[UI] 弹窗结束恢复浮条折叠失败：{ex.Message}", Core.Diagnostics.LogType.Trace);
+                }
+            }
+        }
     }
+
+    /// <summary>
+    /// 对话框宿主解析：当前目标窗口优先（侧板/主展板），其次文档、浮条，最后 AI 浮窗兜底。
+    /// 只读取窗口可见性与 XamlRoot，不修改任何 UI。
+    /// </summary>
+    private DialogHost ResolveDialogHost()
+    {
+        bool sideBoardVisible = _sideBoard is { IsShown: true } && TryGetXamlRoot(_sideBoard) is not null;
+        bool sideBoardPreferred = _aiTarget?.Kind == AssistantCanvasKind.SideBoard
+                                  || (_sideBoard is not null
+                                      && ReferenceEquals(ActiveController, _sideBoard.CurrentController));
+        bool mainBoardVisible = _board is not null && IsWindowVisible(_board)
+                                && TryGetXamlRoot(_board) is not null;
+        bool documentVisible = DocumentActive && _documentWorkspace?.Window is not null
+                               && IsWindowVisible(_documentWorkspace.Window)
+                               && TryGetXamlRoot(_documentWorkspace.Window) is not null;
+        bool barVisible = _bar is not null && !_bar.IsFolded && IsWindowVisible(_bar);
+        XamlRoot barRoot = TryGetXamlRoot(_bar);
+        XamlRoot assistantRoot = TryGetXamlRoot(_aiAssistant);
+        bool assistantVisible = assistantRoot is not null && !_aiHiddenWithSideBoard
+                                && IsWindowVisible(_aiAssistant);
+
+        DialogHostSurface surface = DialogHostPolicy.Select(new DialogHostContext(
+            sideBoardVisible,
+            sideBoardPreferred,
+            mainBoardVisible,
+            documentVisible,
+            barRoot is not null && barVisible,
+            assistantVisible));
+
+        Window window = surface switch
+        {
+            DialogHostSurface.SideBoard => _sideBoard,
+            DialogHostSurface.MainBoard => _board,
+            DialogHostSurface.Document => _documentWorkspace?.Window,
+            DialogHostSurface.FloatingBar => _bar,
+            DialogHostSurface.Assistant => _aiAssistant,
+            _ => null,
+        };
+
+        XamlRoot root = TryGetXamlRoot(window);
+        if (root is not null) return new DialogHost(window, root, surface, RestoreFoldedBar: false);
+
+        // 最后兜底：浮条折叠时窗口被 Hide，但 XamlRoot 仍在——直接显示会得到不可见对话框。
+        // 此时临时展开浮条承载，关闭后恢复折叠状态。
+        if (barRoot is not null && _bar is not null)
+            return new DialogHost(_bar, barRoot, DialogHostSurface.FloatingBar, RestoreFoldedBar: _bar.IsFolded);
+
+        return new DialogHost(null, null, DialogHostSurface.None, RestoreFoldedBar: false);
+    }
+
+    /// <summary>激活宿主并把它提到浮条/AI 浮窗之上，避免 ContentDialog 被常驻 topmost 子窗口遮挡。</summary>
+    private void PrepareDialogHost(Window window, DialogHostSurface surface)
+    {
+        if (window is null) return;
+
+        try { window.Activate(); }
+        catch (Exception) { /* 激活失败不阻断弹窗，XamlRoot 仍可承载对话框 */ }
+
+        WindowChrome.EnsureAbove(window, Overlay.Window.Handle);
+        RaiseAboveAllDialogSiblings(window, surface);
+    }
+
+    private void RaiseAboveAllDialogSiblings(Window window, DialogHostSurface surface)
+    {
+        if (surface is DialogHostSurface.FloatingBar or DialogHostSurface.Assistant) return;
+
+        if (_bar is not null && !ReferenceEquals(window, _bar))
+        {
+            IntPtr bar = WindowChrome.GetHwnd(_bar);
+            if (bar != IntPtr.Zero) WindowChrome.EnsureAbove(window, bar);
+        }
+
+        if (_aiAssistant is not null && !ReferenceEquals(window, _aiAssistant))
+        {
+            IntPtr assistant = WindowChrome.GetHwnd(_aiAssistant);
+            if (assistant != IntPtr.Zero) WindowChrome.EnsureAbove(window, assistant);
+        }
+    }
+
+    /// <summary>板/文档宿主内的模态对话框会被拥有的 AI 浮窗盖住；弹窗期间暂时收起，结束后恢复。</summary>
+    private bool SuspendAssistantForDialog(DialogHostSurface surface)
+    {
+        if (!DialogHostPolicy.RequiresAssistantSuspension(surface)) return false;
+        if (_aiAssistant is null || _aiHiddenWithSideBoard) return false;
+
+        try
+        {
+            _aiAssistant.AppWindow.Hide();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[UI] 弹窗期间收起 AI 浮窗失败：{ex.Message}", Core.Diagnostics.LogType.Trace);
+            return false;
+        }
+    }
+
+    private void RestoreAssistantAfterDialog(bool suspended)
+    {
+        if (!suspended || _aiAssistant is null) return;
+
+        try
+        {
+            _aiAssistant.AppWindow.Show();
+            _aiAssistant.Activate();
+            IntPtr anchor = _board is not null ? WindowChrome.GetHwnd(_board) : Overlay.Window.Handle;
+            if (AssistantBelongsToSideBoard && _sideBoard is not null)
+                anchor = WindowChrome.GetHwnd(_sideBoard);
+            WindowChrome.EnsureAbove(_aiAssistant, anchor);
+        }
+        catch (Exception ex)
+        {
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[UI] 弹窗结束恢复 AI 浮窗失败：{ex.Message}", Core.Diagnostics.LogType.Trace);
+        }
+    }
+
+    private static XamlRoot TryGetXamlRoot(Window window)
+    {
+        if (window is null) return null;
+        try
+        {
+            return (window.Content as FrameworkElement)?.XamlRoot;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static bool IsWindowVisible(Window window)
+    {
+        if (window is null) return false;
+        try
+        {
+            return window.AppWindow?.IsVisible == true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private readonly record struct DialogHost(
+        Window Window, XamlRoot Root, DialogHostSurface Surface, bool RestoreFoldedBar);
 
     public void PasteSpotlightToBoard() => _ = CaptureFocusAsync(askAi: false);
 
@@ -4279,7 +4472,8 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
         if (UnifiedContextEnabled)
         {
             // 请求发起时补齐会话/请求/代数，后续显示与写回都以此快照为准。
-            _aiContext = (_aiContext ?? CaptureClassroomContext()) with
+            // 每次请求都按当前画板/页/课件重新采集，避免沿用上一轮残留的 PageId/RequestId 导致变式预览被误判过期。
+            _aiContext = CaptureClassroomContext() with
             {
                 SessionId = _aiSession?.SessionId ?? "",
                 RequestId = "req-" + Guid.NewGuid().ToString("N"),
@@ -4539,6 +4733,14 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
 
     private void OnAiError(string message)
     {
+        // 失败即放弃待预览标记，避免错误之后的下一次正常完成误触发变式预览。
+        if (_variantPending)
+        {
+            _variantPending = false;
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                "[AI] 变式请求失败：已清除待预览标记", Core.Diagnostics.LogType.Info);
+        }
+
         if (!AiTargetStillCurrent(writeBack: false)) { _aiAssistant?.SetBusy(false); return; }
         if (_aiSession is null) { _aiAssistant?.SetBusy(false); return; }
         ResetAiPreStage();
@@ -4596,7 +4798,8 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
         {
             string id = _reRecognizeRegionId;
             _reRecognizeRegionId = null;
-            if (!AiTargetStillCurrent(writeBack: true))
+            // 重新识别结果只更新会话内区域文本并再次求解，不写画布，选区差异不应丢弃结果。
+            if (!AiTargetStillCurrent(continueSession: true))
             {
                 _reRecognizeRegionId = null;
             }
@@ -4616,7 +4819,19 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
         if (_variantPending)
         {
             _variantPending = false;
-            if (AiTargetStillCurrent(writeBack: true)) _ = PreviewVariantAsync(_aiSession);
+            // 变式结果只进入预览对话框，不直接写画布，因此只要求会话可继续（不比较选区）。
+            if (AiTargetStillCurrent(continueSession: true))
+            {
+                _ = PreviewVariantSafelyAsync(_aiSession);
+            }
+            else
+            {
+                Core.Diagnostics.FileLog.WriteLogToFile(
+                    "[AI] 变式预览被丢弃：会话目标已变化（画板/页/课件/代数），未弹出练习预览。"
+                    + $"requested={ClassroomContextPolicy.Describe(_aiContext)}",
+                    Core.Diagnostics.LogType.Info);
+                // 具体原因提示已由 ClassroomContextStillCurrent 的 ContinueSessionNotice 弹出；此处不再重复 ShowNotice。
+            }
         }
 
         FlushPendingExamplePrompt();
@@ -4630,6 +4845,16 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
     {
         if (string.IsNullOrEmpty(_aiPendingExamplePrompt)) return;
         if (_aiSession?.State != AssistantState.Done || _aiAssistant is null) return;
+
+        // 追问沿用原会话，不写画布，只要求会话可继续（选区变化不影响追问）。
+        if (!AiTargetStillCurrent(continueSession: true))
+        {
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                "[AI] 再讲追问被丢弃：会话目标已变化，未自动提交追问。", Core.Diagnostics.LogType.Info);
+            // 清空预填避免残留，提示由判定内部弹出。
+            _aiPendingExamplePrompt = "";
+            return;
+        }
 
         string prompt = _aiPendingExamplePrompt;
         _aiPendingExamplePrompt = "";
@@ -4713,7 +4938,8 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
     private void OnAiTeachingModeChanged(AssistantTeachingMode mode)
     {
         if (_aiSession is null) return;
-        if (!AiTargetStillCurrent(writeBack: true)) return;
+        // 只重排已生成内容的展示，不写画布。
+        if (!AiTargetStillCurrent(continueSession: true)) return;
 
         AssistantMachine.SetTeachingMode(_aiSession, mode);
         Services.Settings.Ai.TeachingMode = AssistantTeachingPolicy.Wire(mode);
@@ -4740,7 +4966,8 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
     /// <summary>基于当前题生成同知识点变式题；结果先预览编辑，不直接贴入。</summary>
     private void OnAiVariantRequested(bool advanced)
     {
-        if (!AiTargetStillCurrent(writeBack: true)) return;
+        // 发起变式请求属于原会话上的继续追问，不写画布，不要求选区未变化。
+        if (!AiTargetStillCurrent(continueSession: true)) return;
         if (_aiProblem is null || _aiProblem.IsEmpty)
         {
             _aiAssistant?.ShowNotice("先框选一道题，再生成变式题");
@@ -4771,9 +4998,34 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
         StartAssistantStream(request, followUp: false, question: "");
     }
 
+    private async Task PreviewVariantSafelyAsync(AssistantSession session)
+    {
+        try
+        {
+            await PreviewVariantAsync(session);
+        }
+        catch (Exception ex)
+        {
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[AI] 变式预览异常：{ex.GetType().Name}: {ex.Message}", Core.Diagnostics.LogType.Error);
+            _aiAssistant?.ShowNotice("变式预览打开失败，已保留变式文本，可复制或重试。");
+        }
+    }
+
     private async Task PreviewVariantAsync(AssistantSession session)
     {
-        if (session is null || session.State != AssistantState.Done) return;
+        if (session is null)
+        {
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                "[AI] 变式预览跳过：会话为空", Core.Diagnostics.LogType.Info);
+            return;
+        }
+        if (session.State != AssistantState.Done)
+        {
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[AI] 变式预览跳过：会话状态 {session.State} 非 Done", Core.Diagnostics.LogType.Info);
+            return;
+        }
 
         VariantQuestionDraft draft = ExerciseFlowPolicy.Parse(
             session.Text, _variantDifficulty,
@@ -4784,9 +5036,16 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
 
         if (!draft.IsValid)
         {
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[AI] 变式预览失败：AI 未返回可用变式题（difficulty={_variantDifficulty}，textChars={session.Text?.Length ?? 0}）",
+                Core.Diagnostics.LogType.Info);
             await NotifyAsync("变式题", "AI 没有返回可用题目，请重试或补充框选。");
             return;
         }
+
+        Core.Diagnostics.FileLog.WriteLogToFile(
+            $"[AI] 变式预览弹出：difficulty={_variantDifficulty}，textChars={draft.Text?.Length ?? 0}，session={session.SessionId}",
+            Core.Diagnostics.LogType.Event);
 
         var textBox = new TextBox
         {
@@ -5067,7 +5326,8 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
     private void OnAiReRecognizeRegion(string id)
     {
         if (_aiProblem is null || _aiAssistant is null) return;
-        if (!AiTargetStillCurrent(writeBack: true)) return;
+        // 重新识别只更新该区文本，不直接写画布。
+        if (!AiTargetStillCurrent(continueSession: true)) return;
 
         ProblemRegion region = _aiProblem.Regions.Find(item => item.Id == id);
         if (region is null || string.IsNullOrEmpty(region.ImageBase64))
@@ -5128,7 +5388,8 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
     private void OnAiBoardWriteRequested(string instruction, string intent)
     {
         if (_aiSession is null || _aiAssistant is null) return;
-        if (!AiTargetStillCurrent(writeBack: true)) return;
+        // 板书请求本身不写画布（写入发生在 ConfirmBoardWriteAsync），只要求会话可继续。
+        if (!AiTargetStillCurrent(continueSession: true)) return;
 
         string normalizedIntent = BoardWriteIntentPolicy.Normalize(intent);
         string instructionText = (instruction ?? "").Trim();
@@ -5783,9 +6044,6 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
     private async Task<BoardLayoutChoice> ShowBoardLayoutDialogAsync(
         AssistantWindow window, BoardLayoutPlan layout)
     {
-        if (window.Content is not FrameworkElement root || root.XamlRoot is null)
-            return BoardLayoutChoice.Cancel;
-
         BoardLayoutDialogSpec spec = BoardLayoutDecisionPolicy.Describe(layout);
         var dialog = new ContentDialog
         {
@@ -5795,20 +6053,9 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
             SecondaryButtonText = spec.SecondaryText,
             CloseButtonText = spec.CloseText,
             DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = root.XamlRoot,
         };
 
-        ContentDialogResult result;
-        try
-        {
-            result = await dialog.ShowAsync();
-        }
-        catch (Exception ex)
-        {
-            Core.Diagnostics.FileLog.WriteLogToFile(
-                $"[AI] 空间不足弹窗失败：{ex.Message}", Core.Diagnostics.LogType.Error);
-            return BoardLayoutChoice.Cancel;
-        }
+        ContentDialogResult result = await ShowDialogAsync(dialog);
 
         if (result == ContentDialogResult.Primary) return spec.PrimaryChoice;
         if (result == ContentDialogResult.Secondary) return spec.SecondaryChoice;
@@ -5973,7 +6220,8 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
     private void OnAiFollowUpRequested(string question)
     {
         if (_aiSession is null) return;
-        if (!AiTargetStillCurrent(writeBack: true)) return;
+        // 追问沿用原会话，不写画布，只要求会话可继续（选区变化不影响追问）。
+        if (!AiTargetStillCurrent(continueSession: true)) return;
 
         var request = new AssistantRequest
         {
@@ -6024,7 +6272,7 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
             + $"窗口={(receivedWindow is null ? "null" : "ok")}",
             Core.Diagnostics.LogType.Trace);
 
-        if (!AiTargetStillCurrent(writeBack: true)) return;
+        if (!AiTargetStillCurrent(continueSession: true)) return;
         if (!Services.Settings.Ai.EnableLocalCorrection) return;
         if (rect.IsEmpty) return;
 
@@ -6103,7 +6351,8 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
                     _aiRegionStream = null;
                     if (failure || !ReferenceEquals(_aiAssistant, window)) return;
                     if (!ReferenceEquals(_aiSession, session)) return;
-                    if (!AiTargetStillCurrent(writeBack: true)) return;
+                    // 局部纠错完成只更新会话文本，不写画布，不要求选区未变化。
+                    if (!AiTargetStillCurrent(continueSession: true)) return;
 
                     string replacement = string.IsNullOrWhiteSpace(formula) ? buffer.ToString() : formula;
                     if (string.IsNullOrWhiteSpace(replacement))
@@ -6307,21 +6556,39 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
 
     /// <summary>
     /// 统一上下文过期校验。writeBack=true（贴回/局部纠错）要求同板、同页、同课件页、
-    /// 同选区与同请求代数；流式显示只要求同板同页。未记录上下文时保持旧路径行为（视为有效）。
+    /// 同选区与同请求代数；continueSession=true（变式预览、再讲追问、教学模式切换、局部纠错、
+    /// 板书请求）只要求同板、同页、同课件页与同代数，不约束选区；两者都不传时为流式显示校验
+    /// （只要求同板同页）。未记录上下文时保持旧路径行为（视为有效）。
     /// </summary>
-    private bool ClassroomContextStillCurrent(bool writeBack)
+    private bool ClassroomContextStillCurrent(bool writeBack, bool continueSession = false)
     {
         if (_aiContext is null) return true;
+        // continueSession 不比较选区，快照无需采集选区（把“选区变化”从判定链路中彻底移除）。
         ClassroomContext current = SnapshotClassroomContext(includeSelection: writeBack);
-        bool ok = writeBack
-            ? ClassroomContextPolicy.CanWriteBack(_aiContext, current)
-            : ClassroomContextPolicy.IsCurrentForDisplay(_aiContext, current);
+        bool ok = continueSession
+            ? ClassroomContextPolicy.CanContinueSession(_aiContext, current)
+            : writeBack
+                ? ClassroomContextPolicy.CanWriteBack(_aiContext, current)
+                : ClassroomContextPolicy.IsCurrentForDisplay(_aiContext, current);
         if (ok) return true;
+
+        if (continueSession)
+        {
+            // 会话继续失败只按画板/页面/课件页/代数说明原因，不出现“选区已变化”的写回提示。
+            string continueNotice = ClassroomContextPolicy.ContinueSessionNotice(_aiContext, current);
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"[AI] 会话继续被丢弃：requested={ClassroomContextPolicy.Describe(_aiContext)}，"
+                + $"current={ClassroomContextPolicy.Describe(current)}，notice={continueNotice}",
+                Core.Diagnostics.LogType.Info);
+            _aiAssistant?.ShowNotice(continueNotice);
+            return false;
+        }
 
         string notice = ClassroomContextPolicy.StaleNotice(_aiContext, current);
         bool crossBoard = !ClassroomContextPolicy.SameBoard(_aiContext, current);
         Core.Diagnostics.FileLog.WriteLogToFile(
-            $"{ClassroomContextPolicy.Describe(_aiContext)} 丢弃过期上下文：writeBack={writeBack}，"
+            (writeBack ? "[AI] 丢弃过期写回：" : "[AI] 流式显示丢弃过期上下文：")
+            + $"requested={ClassroomContextPolicy.Describe(_aiContext)}，"
             + $"current={ClassroomContextPolicy.Describe(current)}，notice={notice}",
             Core.Diagnostics.LogType.Info);
         if (writeBack || crossBoard) _aiAssistant?.ShowNotice(notice);
@@ -6461,32 +6728,36 @@ public sealed partial class ShellController : IShellActions, IExampleLibraryHost
     }
 
     /// <summary>
-    /// 异步响应目标校验。Flag 开启且已记录统一上下文时走 <see cref="ClassroomContextPolicy"/>；
+    /// 目标校验。writeBack=true 用于真正写入画布（贴回/板书写入/替换），要求同板/页/课件/选区/代数；
+    /// continueSession=true 用于在原会话上继续（变式预览、再讲追问、教学模式切换、局部纠错、板书请求），
+    /// 只要求同板/页/课件/代数，不约束选区；两者都不传时为流式显示校验。
+    /// Flag 开启且已记录统一上下文时走 <see cref="ClassroomContextPolicy"/>；
     /// 否则沿用旧 <see cref="AssistantTargetPolicy"/> 逻辑（不再回写 requested.SessionId，
     /// 会话身份统一由当前快照提供，避免把过期会话伪装成当前会话）。
-    /// 失败一律写日志，写回失败与跨板失败额外用浮窗提示用户。
+    /// 失败一律写日志，写回失败、会话继续失败与跨板失败额外用浮窗提示用户。
     /// </summary>
-    private bool AiTargetStillCurrent(bool writeBack)
+    private bool AiTargetStillCurrent(bool writeBack = false, bool continueSession = false)
     {
         if (UnifiedContextEnabled && _aiContext is not null)
-            return ClassroomContextStillCurrent(writeBack);
+            return ClassroomContextStillCurrent(writeBack, continueSession);
 
         AssistantTarget requested = _aiTarget;
         if (requested is null) return true; // 聚焦区域/课件回看等旧路径保持原行为
         AssistantTarget current = SnapshotAssistantTarget();
         bool sameCanvas = AssistantTargetPolicy.SameCanvas(requested, current);
         bool sameSession = AssistantTargetPolicy.SameSession(requested, current);
-        bool ok = writeBack
+        bool ok = writeBack || continueSession
             ? AssistantTargetPolicy.CanWriteBack(requested, current)
             : sameCanvas && sameSession;
         if (ok) return true;
 
         string notice = AssistantTargetPolicy.StaleNotice(requested, current);
         Core.Diagnostics.FileLog.WriteLogToFile(
-            $"[AI] 丢弃过期响应：writeBack={writeBack}，requested=({AssistantTargetPolicy.Describe(requested)})，"
+            $"[AI] 丢弃过期响应：writeBack={writeBack}，continueSession={continueSession}，"
+            + $"requested=({AssistantTargetPolicy.Describe(requested)})，"
             + $"current=({AssistantTargetPolicy.Describe(current)})，notice={notice}",
             Core.Diagnostics.LogType.Info);
-        if (writeBack || !sameCanvas) _aiAssistant?.ShowNotice(notice);
+        if (writeBack || continueSession || !sameCanvas) _aiAssistant?.ShowNotice(notice);
         return false;
     }
 

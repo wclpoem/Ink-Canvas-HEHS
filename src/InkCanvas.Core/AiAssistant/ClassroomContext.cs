@@ -223,6 +223,47 @@ public static class ClassroomContextPolicy
             && requested.Generation == current.Generation;
 
     /// <summary>
+    /// 是否允许在原会话上继续（变式预览、再讲/追问、教学模式切换、局部纠错、板书请求等）：
+    /// 要求同一会话、同一画板、同一页、同一课件页与同一请求代数；
+    /// 不要求选区/笔画/对象集合未变化（这些变化不影响"继续对话"）。
+    /// 注意：仅页索引相同、缺稳定 PageId 的旧上下文不视为可继续，与写回保持一致。
+    /// 与 <see cref="CanWriteBack"/> 的唯一差异是不比较 SelectionId/GroupId/StrokeIds/ObjectIds；
+    /// 其余画板、页面、课件页与请求代数条件完全相同。
+    /// </summary>
+    public static bool CanContinueSession(ClassroomContext requested, ClassroomContext current)
+        => SameSession(requested, current)
+            && IsCurrentForDisplay(requested, current)
+            && requested.HasPageIdentity
+            && current.HasPageIdentity
+            && SameSlide(requested, current)
+            && requested.Generation == current.Generation;
+
+    /// <summary>
+    /// 会话继续失败时的中文提示：按画板 → 页面 → 课件页 → 请求代数 的顺序给出首个原因，
+    /// 不提示"选区已变化"（会话继续不约束选区，故与 <see cref="CanWriteBack"/>
+    /// 在 SelectionId/GroupId/StrokeIds/ObjectIds 上的差异不会产生提示）。
+    /// </summary>
+    public static string ContinueSessionNotice(ClassroomContext requested, ClassroomContext current)
+    {
+        if (requested is null || current is null)
+            return "AI 会话已结束，本次结果未继续处理；请重新发起请求。";
+
+        if (!SameBoard(requested, current))
+            return "发起 AI 请求的画板已关闭或已切换，本次结果未继续处理；请回到原画板重新发起。";
+
+        if (!SamePage(requested, current))
+            return "发起 AI 请求的页面已切换或被删除，本次结果未继续处理；请回到原页重新发起。";
+
+        if (!SameSlide(requested, current))
+            return "课件已翻页或切换放映，本次结果未继续处理；请回到原幻灯片重新发起。";
+
+        if (requested.Generation != current.Generation)
+            return "AI 请求已过期（已被新的请求替代），本次结果未继续处理；请查看最新结果。";
+
+        return ExpiredNotice;
+    }
+
+    /// <summary>
     /// 面向教师的中文过期提示：按画板 → 页面 → 课件页 → 选区 → 请求代数的优先级给出首个原因。
     /// </summary>
     public static string StaleNotice(ClassroomContext requested, ClassroomContext current)
