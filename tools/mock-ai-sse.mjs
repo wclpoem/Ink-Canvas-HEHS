@@ -71,16 +71,58 @@ const BOARD_WRITE_PLAN = {
   notes: ['第 2 块标题为自动生成，可按需修改']
 };
 
-function boardWriteScript() {
+const SUMMARY_PLAN = {
+  type: 'board_plan',
+  schema: 1,
+  intent: 'write',
+  target: { board: 'main', pageIndex: 0 },
+  originals: ['一元二次方程综合讲解', '判别式 / 配方法 / 因式分解', '1/2 x² - 3x + 2 = 0'],
+  confidence: 0.86,
+  warnings: [],
+  blocks: [
+    {
+      id: 's1',
+      kind: 'summary',
+      title: '本课总结',
+      text: '一元二次方程的三种解法：直接开平方、配方法与因式分解。\n判别式 Δ = b² - 4ac 决定根的情况。',
+      rect: { x: 0.08, y: 0.12, w: 0.6, h: 0.32 },
+      style: { fontSize: 26, align: 'left', columns: 1, lineHeight: 1.5 },
+      confidence: 0.92
+    }
+  ],
+  notes: ['总结页将新建，原始板书保留']
+};
+
+const VARIANT_TEXT = [
+  '题目：解方程 x^2 - 5x + 6 = 0（变式题，mock 模式）\n',
+  '答案：x1 = 2，x2 = 3\n',
+  '知识点：因式分解, 一元二次方程'
+];
+
+function boardWriteScript(instruction) {
+  if (typeof instruction === 'string' && instruction.includes('总结')) {
+    return [
+      { name: 'board_plan', data: SUMMARY_PLAN },
+      { name: 'done', data: { type: 'done' } }
+    ];
+  }
   return [
     { name: 'board_plan', data: BOARD_WRITE_PLAN },
     { name: 'done', data: { type: 'done' } }
   ];
 }
 
-function scriptFor(mode, purpose) {
+function variantScript() {
+  return VARIANT_TEXT.map((text) => ({ name: 'token', data: { type: 'token', text } }))
+    .concat([{ name: 'done', data: { type: 'done' } }]);
+}
+
+function scriptFor(mode, purpose, instruction) {
+  if (purpose === 'variant' || mode === 'variant') {
+    return variantScript();
+  }
   if (mode === 'board_write' || purpose === 'board_write') {
-    return boardWriteScript();
+    return boardWriteScript(instruction);
   }
 
   const events = [];
@@ -152,6 +194,7 @@ createServer((req, res) => {
   req.on('end', () => {
     let mode = 'auto';
     let purpose = '';
+    let instruction = '';
     try {
       const payload = JSON.parse(body);
       if (typeof payload.mode === 'string') {
@@ -159,6 +202,9 @@ createServer((req, res) => {
       }
       if (typeof payload.purpose === 'string') {
         purpose = payload.purpose;
+      }
+      if (typeof payload.instruction === 'string') {
+        instruction = payload.instruction;
       }
     } catch (error) {
       void error;
@@ -183,7 +229,7 @@ createServer((req, res) => {
       Connection: 'keep-alive',
       'Access-Control-Allow-Origin': '*'
     });
-    const events = scriptFor(mode, purpose);
+    const events = scriptFor(mode, purpose, instruction);
     let index = 0;
     let closed = false;
     res.on('close', () => {

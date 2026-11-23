@@ -589,6 +589,34 @@ const BOARD_WRITE_PLAN = {
   notes: ['第 2 块标题为自动生成，可按需修改']
 };
 
+const SUMMARY_PLAN = {
+  type: 'board_plan',
+  schema: 1,
+  intent: 'write',
+  target: { board: 'main', pageIndex: 0 },
+  originals: ['一元二次方程综合讲解', '判别式 / 配方法 / 因式分解', '1/2 x² - 3x + 2 = 0'],
+  confidence: 0.86,
+  warnings: [],
+  blocks: [
+    {
+      id: 's1',
+      kind: 'summary',
+      title: '本课总结',
+      text: '一元二次方程的三种解法：直接开平方、配方法与因式分解。\n判别式 Δ = b² - 4ac 决定根的情况。',
+      rect: { x: 0.08, y: 0.12, w: 0.6, h: 0.32 },
+      style: { fontSize: 26, align: 'left', columns: 1, lineHeight: 1.5 },
+      confidence: 0.92
+    }
+  ],
+  notes: ['总结页将新建，原始板书保留']
+};
+
+const VARIANT_TEXT = [
+  '题目：解方程 x^2 - 5x + 6 = 0（变式题，mock 模式）\n',
+  '答案：x1 = 2，x2 = 3\n',
+  '知识点：因式分解, 一元二次方程'
+];
+
 function mockTokenScript(mode) {
   if (mode === 'formula') {
     return [
@@ -625,6 +653,7 @@ function mockTokenScript(mode) {
 async function streamMock(req, res, payload, stats, isClientClosed) {
   const mode = asString(pick(payload, 'mode', 'Mode')).trim().toLowerCase() || 'auto';
   const purpose = asString(pick(payload, 'purpose', 'Purpose')).trim().toLowerCase();
+  const instruction = asString(pick(payload, 'instruction', 'Instruction'));
 
   if (mode === 'error' || req.headers['x-mock-fail'] === '1') {
     writeEvent(res, 'error', { type: 'error', text: 'mock 服务故障（用于错误态自测）' });
@@ -632,9 +661,24 @@ async function streamMock(req, res, payload, stats, isClientClosed) {
     return;
   }
 
+  if (purpose === 'variant' || mode === 'variant') {
+    for (const text of VARIANT_TEXT) {
+      if (isClientClosed() || res.destroyed) {
+        stats.outcome = 'client-closed';
+        return;
+      }
+      stats.tokenChars += text.length;
+      writeEvent(res, 'token', { type: 'token', text });
+      await delay(MOCK_TOKEN_INTERVAL_MS);
+    }
+    writeEvent(res, 'done', { type: 'done' });
+    return;
+  }
+
   if (mode === 'board_write' || purpose === 'board_write') {
-    stats.tokenChars += JSON.stringify(BOARD_WRITE_PLAN).length;
-    writeEvent(res, 'board_plan', BOARD_WRITE_PLAN);
+    const plan = instruction.includes('总结') ? SUMMARY_PLAN : BOARD_WRITE_PLAN;
+    stats.tokenChars += JSON.stringify(plan).length;
+    writeEvent(res, 'board_plan', plan);
     await delay(MOCK_TOKEN_INTERVAL_MS);
     if (isClientClosed() || res.destroyed) {
       stats.outcome = 'client-closed';
