@@ -48,7 +48,7 @@
 ## 3. 课堂工具箱与练习闭环
 
 ### 可复用
-- `ClassroomRoster`（名单/抽取/贴板）、`CountdownWindow`（Started/Stopped/Ended）、`SpotlightWindow`/`MagnifierWindow`、`ToolkitWindow`、`InkRecorder`（练习结束书签）、`PasteCardRenderer`
+- `ClassroomRoster`（名单/抽取/贴板）、`CountdownWindow`（Started/Stopped/Ended）、`SpotlightWindow`/`MagnifierWindow`、`ToolkitWindow`、`PasteCardRenderer`；课堂信号（点名 / 倒计时结束等）经宿主事件接入「时光机」插件生成章节书签
 
 ### 缺失
 | # | 缺口 | 影响 | 方案 | 工作量 |
@@ -75,13 +75,13 @@
 | GroupScoreService | 已实现 | 分组/积分（本地） |
 | HandoutExporter | 已实现 | 讲义 PNG + 最小 PDF（无外部依赖） |
 
-- 数据版本：AiPasteMetadata v1、ClassroomSession v2、Board v3、Ppt manifest v2；新增结构均带 `Version` 与兼容读取。
+- 数据版本：AiPasteMetadata v1、Board v3、Ppt manifest v2；新增结构均带 `Version` 与兼容读取。原 `ClassroomSession v2` 录制会话格式已随时光机插件化移除，课堂录制改由插件保存为 `.icink`（`inkcanvas-classroom` v1）。
 - AI 请求可取消（已有 Abort/CTS）；切题/切页/关窗需用 sessionId+generation 丢弃过期响应（复用 SlideSwitchGate 思路）。
 
 ## 5. 改造风险总览
 1. 范围极大：P0 约 15+ 功能点；一次全做风险高，建议按九节分阶段。
 2. 真实环境：WPS/多版本 PPT、动画/媒体、真实 AI、PDF 渲染需实机；本机用合成课件截图/mock 验证并标注。
-3. 既有保护：批注归属/撤销/时光机/画板数据不得改动既有格式；新字段只追加。
+3. 既有保护：批注归属/撤销/画板数据不得改动既有格式；时光机已拆为独立插件，其录制格式不影响本体画板与课件数据，新字段只追加。
 4. UI 复杂度：批注导航缩略图、拼题缩略图、场景预设均需新面板，需复用现有浮窗/主题/无障碍模式。
 
 ## 6. 建议实施顺序与工作量
@@ -98,7 +98,7 @@
 
 ## 8. 实施结果（2026-11-21）
 
-按需求第九节三阶段实施，均为增量改造，未改动既有白板书写、撤销/重做、批注归属、时光机与历史数据格式。
+按需求第九节三阶段实施，均为增量改造，未改动既有白板书写、撤销/重做、批注归属与画板历史数据格式；时光机相关录制链路后续已拆为独立插件。
 
 ### 第一阶段（已实现）
 - **A1 四种讲题模式**：`AssistantTeachingMode` + `AssistantTeachingPolicy`；分步模式在渲染前裁剪未揭示步骤与最终答案，课堂默认 `step`；切换模式只重排展示，不重发请求（`SetTeachingMode`/`RevealNextStep`）。
@@ -110,7 +110,7 @@
 ### 第二阶段（已实现）
 - **T1 场景预设**：`ClassroomPreset`/`ClassroomPresetLibrary`（讲题/练习/小组/总结四套内置；`Plan()` 只输出打开/收起工具动作，不复制业务逻辑）；工具条新增「切换场景」；`PresetWindow` 提供工具勾选、倒计时与保存，个人预设写入 `classroom.customPresets` 并参与场景轮换。
 - **T2 变式题→随堂练习闭环**：`ExerciseFlowPolicy`（基础/提高、变式请求、题干/答案/知识点解析、练习计划）；AI 浮窗「基础变式/提高变式」→ 预览编辑对话框（可改题干与答案）→「开始练习」插入新画板页（原题不覆盖）→ 贴练习卡片 → 应用练习场景 → 启动倒计时。
-- **倒计时结束**：练习会话无论是否录制都保存板书快照；录制中额外写 `TimerEnded` 事件并追加「练习结束」章节书签；普通计时保持原有语义。
+- **倒计时结束**：宿主发出练习结束信号；板书快照与「练习结束」章节书签由「时光机」插件在录制时决策与生成，普通计时保持原有语义。
 
 ### 第三阶段（已实现）
 - **P6 讲义导出**：`HandoutComposer`（全部/仅批注/选中页、页面尺寸）、`HandoutExportService`（课件页 PNG + 教师解析文本合成、失败重试）、`HandoutPdfBuilder`（Flate 压缩 RGB 的最小 PDF，无外部依赖）；导出前对话框预览首屏与页勾选；后台异步执行，不修改原课件。
@@ -145,7 +145,7 @@
 | E2E：图形标注联动 | 框选→AI 识别→切「分步引导」重新生成后，缩略图上出现与解释步骤对应的蓝色折线标注；「隐藏标注」→折线消失且按钮变「显示标注」→再点恢复。图像识别确认折线存在。日志/截图：`artifacts/teaching-loop-e2e/e2e-annotation.log`、`annotation-{visible,hidden}.png`。修复了锚点设置后不触发标注重绘的真实缺陷。 |
 | E2E：讲义导出 | 使用最近课件索引（2 页 + 缩略图 + 教师解析）打开「讲义导出」→预览对话框→点「导出」→生成 `handout-20261121-133200/`，含 `handout-001.png`、`handout-002.png`、`handout.pdf`（头 `%PDF-1.4`，1.6MB）。原索引与缩略图未被修改。日志/截图：`artifacts/teaching-loop-e2e/e2e-handout*`。 |
 | E2E：工具贴板与预设保存 | 点名「单次抽取」→「贴到白板」→ 画板窗口出现；抽奖「抽取」→ 自动贴板 → 画板窗口保持；预设编辑器改名「E2E 自定义场景」并勾选画板/倒计时 →「保存并应用」→ `Settings.json.classroom.customPresets` 解析出该名称与工具列表，`presetId` 切到自定义 ID（测试后已恢复为 teach）。日志/截图：`artifacts/teaching-loop-e2e/e2e-tools*`。 |
-| E2E：倒计时快照/书签 | 打开画板写一笔（录制）→ 倒计时 1 分钟 → 归零后新增快照 `Screenshot-130918.png`，关闭画板后新会话 JSON 含 `timer`/「倒计时结束」书签。日志与截图：`artifacts/teaching-loop-e2e/e2e-timer.log`、`e2e-timer-session.json`、`e2e-timer-*.png`。 |
+| E2E：倒计时快照/书签（历史归档） | 当时录制耦合验证：打开画板写一笔（录制）→ 倒计时 1 分钟 → 归零后新增快照 `Screenshot-130918.png`，关闭画板后录制文件含 `timer`/「倒计时结束」书签。日志与截图：`artifacts/teaching-loop-e2e/e2e-timer.log`、`e2e-timer-session.json`、`e2e-timer-*.png`。插件化后书签由插件依据课堂信号生成，该链路以插件验收为准。 |
 
 **Core 旧向量已登记的迁移差异**（`KnownMigrationDiffs`，逐 case+JSON 路径精确豁免；其余字段仍严格断言）：
 - 虚/点线分段数（dashed-line、dashed-line-negative、dot-line、dot-line-negative、dashed-circle、dot-circle）；

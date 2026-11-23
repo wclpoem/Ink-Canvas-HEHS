@@ -31,6 +31,9 @@ public sealed class SpotlightWindow : Window
     private double _radius = 120;
     private bool _initialized;
     private bool _dragging;
+    private readonly bool _aiAvailable;
+    private Button _askAi;
+    public void SetAiAvailable(bool available) { if (_askAi is not null) _askAi.Visibility = available ? Visibility.Visible : Visibility.Collapsed; }
 
     /// <summary>请求把当前聚焦区贴到白板（false）或交给 AI 识别（true）。</summary>
     public event Action<bool> CaptureRequested;
@@ -83,8 +86,9 @@ public sealed class SpotlightWindow : Window
         _mask.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    public SpotlightWindow()
+    public SpotlightWindow(bool aiAvailable = false)
     {
+        _aiAvailable = aiAvailable;
         Title = "聚光灯";
 
         _mask.IsHitTestVisible = false;
@@ -146,6 +150,8 @@ public sealed class SpotlightWindow : Window
         paste.Click += (_, _) => CaptureRequested?.Invoke(false);
 
         var ask = new Button { Content = "问 AI", MinHeight = 32, MinWidth = 56, Margin = new Thickness(2) };
+        _askAi = ask;
+        SetAiAvailable(_aiAvailable);
         ask.Click += (_, _) => CaptureRequested?.Invoke(true);
 
         var save = new Button { Content = "保存区", MinHeight = 32, MinWidth = 60, Margin = new Thickness(2) };

@@ -62,6 +62,9 @@ internal sealed class ChromeBackdrop : SystemBackdrop
 
     protected override void OnDefaultSystemBackdropConfigurationChanged(ICompositionSupportsSystemBackdrop target, XamlRoot xamlRoot)
     {
+        // The base class can notify while connecting or after the target disconnected.
+        // Its default configuration is only available for an attached target.
+        if (!_connected) return;
         _defaults = GetDefaultSystemBackdropConfiguration(target, xamlRoot);
         RefreshConfiguration();
         ApplyColors();

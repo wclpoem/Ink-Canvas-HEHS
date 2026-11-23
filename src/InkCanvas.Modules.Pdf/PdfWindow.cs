@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using InkCanvas.Controls.Controls;
 using InkCanvas.Controls.Lifecycle;
 using InkCanvas.Core.Ink;
@@ -30,8 +30,8 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
     private readonly PdfAnnotationFile _file;
     private readonly PdfRasterizer _rasterizer;
     private readonly Dictionary<int, InkController> _controllers = new();
-    private readonly Grid _root = new(), _viewport = new();
-    private readonly SplitView _split = new() { DisplayMode = SplitViewDisplayMode.Inline, IsPaneOpen = true, OpenPaneLength = 220 };
+    private readonly Grid _root = new(), _viewport = new(), _commandHost = new();
+    private readonly SplitView _split = new() { DisplayMode = SplitViewDisplayMode.Inline, IsPaneOpen = true, OpenPaneLength = 216 };
     private readonly Grid _sidebar = new();
     private readonly List<TouchIconButton> _commandButtons = new();
     private readonly CanvasControl _paper = new() { IsHitTestVisible = false, ClearColor = Microsoft.UI.Colors.Transparent };
@@ -40,10 +40,12 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
     private readonly Border _selectionBorder = new() { Padding = new Thickness(4), CornerRadius = new CornerRadius(8),
         Background = new SolidColorBrush(Windows.UI.Color.FromArgb(242, 250, 250, 250)), Visibility = Visibility.Collapsed };
     private readonly SelectionToolbar _selection;
-    private readonly NumberBox _pageNumber = new() { Minimum = 1, Value = 1, Width = 112, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact, SmallChange = 1 };
-    private readonly TextBlock _pageCount = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 12, 0) };
-    private readonly TextBlock _zoom = new() { Width = 68, VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center };
-    private readonly TextBlock _status = new() { Margin = new Thickness(12, 4, 12, 6), TextTrimming = TextTrimming.CharacterEllipsis };
+    private readonly TextBox _pageNumber = new() { Text = "1", Width = 44, MinWidth = 44, MinHeight = 32,
+        Padding = new Thickness(4, 5, 4, 5), TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+        InputScope = new InputScope { Names = { new InputScopeName(InputScopeNameValue.Number) } } };
+    private readonly TextBlock _pageCount = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 4, 0), FontSize = 12 };
+    private readonly DropDownButton _zoom = new() { Content = "100%", MinWidth = 76, MinHeight = 40,
+        Padding = new Thickness(6, 4, 6, 4), FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
     private readonly ListView _pages = new() { SelectionMode = ListViewSelectionMode.Single };
     private readonly ListView _searchResults = new() { SelectionMode = ListViewSelectionMode.Single, Visibility = Visibility.Collapsed };
     private readonly ListView _bookmarks = new() { SelectionMode = ListViewSelectionMode.Single, Visibility = Visibility.Collapsed };
@@ -58,6 +60,7 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
     private readonly PdfContinuousLayout _layout;
     private Matrix3x2 _lastView;
     private bool _closed, _allowClose, _closing, _saving, _pageChanging, _renderPending, _selectionPending, _viewHasLayout;
+    private bool _fittingView;
     private string _targetPath;
     private FitMode _fitMode = FitMode.Page;
     private enum FitMode { Free, Page, Width }
@@ -79,54 +82,15 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
         Func<Task> open, Func<Task> import)
     {
         _host = host; _file = file; _rasterizer = rasterizer; _targetPath = file.SourcePath;
+        _paper.CustomDevice = rasterizer.Device;
         _layout = new PdfContinuousLayout(file.Pages);
         foreach (int index in file.InkPages) UpdateInkBounds(index);
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        var commands = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, Padding = new Thickness(8, 3, 8, 3) };
-        _sidebarToggle = Command("页面", "\uE8A5", () => SetSidebarOpen(!_split.IsPaneOpen));
-        AutomationProperties.SetName(_sidebarToggle, "显示或隐藏 PDF 侧栏");
-        commands.Children.Add(Command("打开", "\uE8E5", async () => await open()));
-        var save = Command("保存", "\uE74E", async () => await SaveAsync()); save.IsEnabled = !file.ReadOnly; commands.Children.Add(save);
-        var saveAs = Command("另存为", "\uE792", async () => await SaveAsync(true)); saveAs.IsEnabled = !file.ReadOnly; commands.Children.Add(saveAs);
-        commands.Children.Add(Command("上一页", "\uE76B", () => GoToPage(_pageIndex - 1)));
-        commands.Children.Add(_pageNumber); commands.Children.Add(_pageCount);
-        commands.Children.Add(Command("下一页", "\uE76C", () => GoToPage(_pageIndex + 1)));
-        commands.Children.Add(Command("缩小", "\uE71F", () => ZoomBy(.8f)));
-        commands.Children.Add(_zoom);
-        commands.Children.Add(Command("放大", "\uE8A3", () => ZoomBy(1.25f)));
-        commands.Children.Add(Command("整页", "\uE9A6", () => Fit(FitMode.Page)));
-        commands.Children.Add(Command("页宽", "\uE7EA", () => Fit(FitMode.Width)));
-        commands.Children.Add(Command("阅读", "\uE7C9", () => { Controller.Tool = InkTool.Pan; }));
-        commands.Children.Add(Command("搜索", "\uE721", OpenSearch));
-        commands.Children.Add(Command("导入画板", "\uE8B5", async () => await import()));
-        var commandScroll = new ScrollViewer { Content = commands, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Enabled };
-        var commandHost = new Grid();
-        commandHost.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        commandHost.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        commandHost.Children.Add(_sidebarToggle);
-        Grid.SetColumn(commandScroll, 1); commandHost.Children.Add(commandScroll);
-        _root.Children.Add(commandHost);
+        ConfigureToolbar(open, import);
         Grid.SetRow(_split, 1); _root.Children.Add(_split);
-        _sidebar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        _sidebar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        _sidebar.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        _sidebar.Children.Add(CreateSidebarHeader());
         ConfigureSidebar();
         _pages.SelectedIndex = 0;
-        var tabs = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
-        tabs.Children.Add(Command("预览", "\uE8A5", () => { _pages.Visibility = Visibility.Visible; _bookmarks.Visibility = _searchResults.Visibility = Visibility.Collapsed; }));
-        tabs.Children.Add(Command("目录", "\uE8A4", () =>
-        {
-            _bookmarks.Visibility = Visibility.Visible; _pages.Visibility = _searchResults.Visibility = Visibility.Collapsed;
-            if (_file.Bookmarks.Count == 0) SetStatus("此 PDF 没有目录书签");
-        }));
-        Grid.SetRow(tabs, 1); _sidebar.Children.Add(tabs);
-        Grid.SetRow(_pages, 2); _sidebar.Children.Add(_pages);
-        Grid.SetRow(_searchResults, 2); _sidebar.Children.Add(_searchResults);
-        Grid.SetRow(_bookmarks, 2); _sidebar.Children.Add(_bookmarks);
         _bookmarks.ItemsSource = file.Bookmarks.Select(bookmark => new BookmarkItem(bookmark)).ToArray();
         _bookmarks.SelectionChanged += (_, _) => { if (_bookmarks.SelectedItem is BookmarkItem item) GoToPage(item.Bookmark.PageIndex); };
         _split.Pane = _sidebar;
@@ -141,16 +105,19 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
         _split.Content = pageHost;
         _scrollbar.ValueChanged += (_, _) => ScrollbarChanged();
         _horizontalScrollbar.ValueChanged += (_, _) => ScrollbarChanged();
-        _viewport.Children.Add(_paper); _viewport.Children.Add(_ink); _viewport.Children.Add(_selectionHost);
+        _viewport.Children.Add(_paper); _viewport.Children.Add(_ink); _viewport.Children.Add(_navigationPicture); _viewport.Children.Add(_selectionHost);
         // A Canvas does not consume input on its empty area. Only the compact toolbar is hit-testable.
         _selection = new SelectionToolbar(() => Controller, async () => await SaveAsync(true), () => _ = import(), "导入画板");
         _selectionBorder.Child = _selection; _selectionHost.Children.Add(_selectionBorder);
         _selection.LayoutChanged += QueueSelection;
         _selectionBorder.SizeChanged += (_, _) => QueueSelection();
-        Grid.SetRow(_status, 2); _root.Children.Add(_status);
         Content = _root;
         _host.ConfigureWindow(this);
-        WindowFrame.Attach(this, _root);
+        var frame = WindowFrame.Attach(this, _root).UseMica();
+        frame.Header.IconSource = new SymbolIconSource { Symbol = Symbol.Page };
+        frame.Header.MinHeight = frame.Header.Height = 40;
+        AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Standard;
+        ConfigureDocumentStatus(frame);
         if (AppWindow.Presenter is OverlappedPresenter presenter) presenter.IsAlwaysOnTop = false;
         InkCanvas.Platform.Interop.NativeMethods.SetWindowPos(WinRT.Interop.WindowNative.GetWindowHandle(this),
             InkCanvas.Platform.Interop.NativeMethods.HWND_NOTOPMOST, 0, 0, 0, 0,
@@ -160,34 +127,41 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
         _detailTimer.Tick += (_, _) => _ = RenderDetailAsync();
         _idleResources = new WindowIdleResources(this, ReleaseInactiveRendering, RestoreRendering);
         _paper.Draw += DrawPage;
+        _ink.FrameDrawn += NavigationInkDrawn;
         _paper.CreateResources += (_, _) => { if (!_closed && _viewHasLayout) _ = RenderPageAsync(); };
-        _viewport.SizeChanged += (_, _) =>
+        DeferredLayout.Observe(_viewport, () =>
         {
             if (_closed || _viewport.ActualWidth < 10 || _viewport.ActualHeight < 10) return;
             _viewHasLayout = true;
             StopScrollMotion();
+            _navigationPictureDirty = true;
             if (_fitMode != FitMode.Free) Fit(_fitMode);
             else { ClampDocumentView(); Controller.NotifyElementsChanged(); }
             UpdateScrollbar();
             QueuePageRendering();
             UpdateSidebarLayout();
-        };
+        });
         _ink.IsTabStop = true;
         _ink.InputStarting += NavigationInputStarting;
         ConfigureNavigation();
         _ink.InputBegan += () => { _ink.Focus(FocusState.Pointer); InputBegan?.Invoke(); _selection.ClosePanels(); };
         _ink.PointerWheelChanged += Wheel;
-        _pageNumber.ValueChanged += (_, _) => { if (!_pageChanging && double.IsFinite(_pageNumber.Value)) GoToPage((int)_pageNumber.Value - 1); };
+        _pageNumber.KeyDown += (_, args) =>
+        {
+            if (args.Key != Windows.System.VirtualKey.Enter) return;
+            args.Handled = true;
+            CommitPageNumber();
+        };
+        _pageNumber.LostFocus += (_, _) => CommitPageNumber();
         _pages.SelectionChanged += (_, _) => { if (!_pageChanging && _pages.SelectedIndex >= 0) GoToPage(_pages.SelectedIndex); };
-        _search.QuerySubmitted += async (_, _) => await SearchAsync(_search.Text);
-        _search.TextChanged += (_, _) => { if (string.IsNullOrEmpty(_search.Text)) ClearSearch(); };
+        ConfigureSearchEvents();
         _searchResults.SelectionChanged += (_, _) => { if (_searchResults.SelectedItem is SearchItem item) ShowSearchHit(item.Hit); };
         _root.KeyDown += KeyDown;
         AppWindow.Closing += (sender, e) => { if (!_allowClose) { e.Cancel = true; _ = CloseAsync(); } };
         Closed += (_, _) =>
         {
             _closed = true; _lifetime.Cancel(); _renderCancellation?.Cancel(); _detailCancellation?.Cancel(); _searchCancellation?.Cancel(); _detailTimer.Stop();
-            StopScrollMotion(); ReleaseAppearance();
+            StopScrollMotion(); ReleaseNavigationPicture(); ReleaseAppearance();
             _host.Detach(this);
             if (Controller is not null) Unbind(Controller);
             _ink.Dispose(); _detail?.Dispose(); _detail = null;
@@ -203,21 +177,12 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
         AutomationProperties.SetName(_searchResults, "PDF 搜索结果");
         AutomationProperties.SetName(_scrollbar, "PDF 垂直滚动条");
         AutomationProperties.SetName(_horizontalScrollbar, "PDF 水平滚动条");
-        _pageNumber.Maximum = file.Pages.Count; _pageCount.Text = "/ " + file.Pages.Count;
+        _pageCount.Text = "/ " + file.Pages.Count;
         GoToPage(0);
         UpdateTitle();
-        SetStatus(file.ReadOnly ? "此文件只允许查看" : file.HasSignatures ? "含数字签名，批注请另存为副本" : "使用主工具栏批注 · 双指平移和缩放 · 阅读模式支持单指拖动");
         if (file.UnrecognizedInkPages > 0) SetStatus("部分旧墨迹数据无法编辑，原批注外观已保留");
     }
 
-    private TouchIconButton Command(string label, string glyph, Action action)
-    {
-        var button = new TouchIconButton { Label = label, Glyph = glyph, MinWidth = 54, MinHeight = 54, Padding = new Thickness(6, 2, 6, 2) };
-        AutomationProperties.SetName(button, label); ToolTipService.SetToolTip(button, label);
-        button.Click += (_, _) => action();
-        _commandButtons.Add(button);
-        return button;
-    }
     private void Configure(InkController controller)
     {
         _host.ConfigureController(controller);
@@ -257,7 +222,7 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
             var documentView = previous is null ? Matrix3x2.Identity : _layout.DocumentView(_pageIndex, previous.ViewTransform);
             if (previous is not null)
             {
-                if (previous.HasActiveInteraction) { _pageNumber.Value = _pageIndex + 1; _pages.SelectedIndex = _pageIndex; return; }
+                if (previous.HasActiveInteraction) { _pageNumber.Text = (_pageIndex + 1).ToString(); _pages.SelectedIndex = _pageIndex; return; }
                 previous.FinishDotAnimations(); previous.EndPlayback(); previous.ClearSelection(); Unbind(previous);
             }
             _pageIndex = index;
@@ -287,12 +252,14 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
             Controller.ToolChanged += OnToolChanged;
             _ink.Controller = next;
             _ink.ContentBounds = null;
-            _pageNumber.Value = index + 1; _pages.SelectedIndex = index;
+            _pageNumber.Text = (index + 1).ToString(); _pages.SelectedIndex = index;
             _generation++; _detailCancellation?.Cancel();
+            _navigationPictureDirty = true;
             _detail?.Dispose(); _detail = null;
             if (preserveView) { next.ViewTransform = _layout.PageView(index, documentView); OnInvalidated(); }
             else if (_viewHasLayout) Fit(_fitMode == FitMode.Free ? FitMode.Page : _fitMode);
             ControllerChanged?.Invoke(); QueueSelection(); _paper.Invalidate();
+            UpdateDocumentStatus();
             UpdateScrollbar();
             QueuePageRendering();
             _pages.ScrollIntoView(_pages.SelectedItem);
@@ -308,40 +275,39 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
     {
         StopScrollMotion();
         if (_file.ReadOnly && Controller.Tool != InkTool.Pan) Controller.Tool = InkTool.Pan;
+        UpdateDocumentStatus();
+        UpdateReadingControls();
         QueueSelection();
     }
     private void OnInkChanged(int index)
     {
-        _version++; UpdateTitle();
+        _version++; _statusMessage = null; UpdateTitle();
+        _navigationPictureDirty = true;
+        _detailTimer.Stop(); _detailTimer.Start();
         UpdateInkBounds(index);
         _paper.Invalidate();
         if (_realizedThumbnails.TryGetValue(index, out var item)) _ = LoadThumbnailAsync(item);
     }
     private void UpdateTitle()
     {
-        Title = (IsDirty ? "● " : "") + Path.GetFileName(_targetPath) + " — Ink Canvas PDF";
-        (Content as WindowFrame)?.RefreshTitle();
+        UpdateDocumentTitle();
+        UpdateDocumentStatus();
     }
-    private void SetStatus(string text) { if (!_closed) _status.Text = text; }
 
     private void OnInvalidated()
     {
         if (_closed) return;
         if (_lastView != Controller.ViewTransform)
         {
+            float movement = Controller.ViewTransform.Translation.Y - _lastView.Translation.Y;
+            if (Math.Abs(movement) > .1f) _previewDirection = movement < 0 ? 1 : -1;
             ClampDocumentView();
             ObserveNavigation();
-            if (Controller.IsViewManipulating) _fitMode = FitMode.Free;
+            if (!_fittingView && !_pageChanging) _fitMode = FitMode.Free;
             _lastView = Controller.ViewTransform;
-            _detailCancellation?.Cancel();
-            _paper.Invalidate();
-            _zoom.Text = (Math.Sqrt(Math.Abs(_lastView.GetDeterminant())) * 100).ToString("0") + "%";
-            _detailTimer.Stop(); _detailTimer.Start();
-            QueuePageRendering();
-            UpdateScrollbar();
-            QueueActivePage();
+            QueueViewportUpdate();
         }
-        QueueSelection();
+        if (!Controller.IsViewManipulating && !_scrollRendering) QueueSelection();
     }
     private void Fit(FitMode mode)
     {
@@ -349,12 +315,17 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
         _fitMode = mode;
         if (!_viewHasLayout || Controller is null) return;
         var page = _file.Pages[_pageIndex];
-        float availableWidth = (float)Math.Max(20, _viewport.ActualWidth - 32), availableHeight = (float)Math.Max(20, _viewport.ActualHeight - 32);
+        float availableWidth = (float)Math.Max(20, _viewport.ActualWidth - 32), availableHeight = (float)Math.Max(20, _viewport.ActualHeight - 32 - DocumentBottomPadding);
         float scale = Math.Clamp(mode == FitMode.Width ? availableWidth / page.DipWidth : Math.Min(availableWidth / page.DipWidth, availableHeight / page.DipHeight), .02f, 8);
-        Controller.ViewTransform = Matrix3x2.CreateScale(scale) * Matrix3x2.CreateTranslation(
-            ((float)_viewport.ActualWidth - page.DipWidth * scale) / 2,
-            mode == FitMode.Width ? 16 : ((float)_viewport.ActualHeight - page.DipHeight * scale) / 2);
-        Controller.NotifyElementsChanged();
+        _fittingView = true;
+        try
+        {
+            Controller.ViewTransform = Matrix3x2.CreateScale(scale) * Matrix3x2.CreateTranslation(
+                ((float)_viewport.ActualWidth - page.DipWidth * scale) / 2,
+                mode == FitMode.Width ? 16 : ((float)_viewport.ActualHeight - DocumentBottomPadding - page.DipHeight * scale) / 2);
+            Controller.NotifyElementsChanged();
+        }
+        finally { _fittingView = false; }
     }
     private void ZoomBy(float factor, Vector2? anchor = null)
     {
@@ -389,8 +360,16 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
             || InkCanvas.Platform.Interop.NativeMethods.GetKeyState(0x5C) < 0) return;
         bool control = (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control) & Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
         bool shift = (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Shift) & Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
-        if (control && e.Key == Windows.System.VirtualKey.S) { e.Handled = true; await SaveAsync(shift); }
+        if (e.Key == Windows.System.VirtualKey.Escape && _floatingSearch.Visibility == Visibility.Visible)
+        { e.Handled = true; CloseSearch(); }
+        else if (control && e.Key == Windows.System.VirtualKey.O) { e.Handled = true; await _openDocument(); }
+        else if (control && e.Key == Windows.System.VirtualKey.S) { e.Handled = true; await SaveAsync(shift); }
         else if (control && e.Key == Windows.System.VirtualKey.F) { e.Handled = true; OpenSearch(); }
+        else if (control && e.Key is Windows.System.VirtualKey.Add or (Windows.System.VirtualKey)187)
+        { e.Handled = true; ZoomBy(1.25f); }
+        else if (control && e.Key is Windows.System.VirtualKey.Subtract or (Windows.System.VirtualKey)189)
+        { e.Handled = true; ZoomBy(.8f); }
+        else if (control && e.Key == Windows.System.VirtualKey.Number0) { e.Handled = true; Fit(FitMode.Page); }
         else if (e.Key == Windows.System.VirtualKey.F3) { e.Handled = true; NextSearchResult(shift ? -1 : 1); }
         else if (KeyboardShortcutScope.IsTextInput(e.OriginalSource as DependencyObject) || KeyboardShortcutScope.HasTextInputFocus(_root)) return;
         else if (Controller.Tool != InkTool.Pan && control && !shift && e.Key == Windows.System.VirtualKey.Z) { e.Handled = true; Controller.Undo(); }
@@ -413,7 +392,7 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
     {
         if (_closed || !_idleResources.IsActive || !_viewHasLayout || !_pagePreviews.ContainsKey(_pageIndex)) return;
         var view = Controller.ViewTransform;
-        if (Controller.IsViewManipulating) { _detailTimer.Start(); return; }
+        if (Controller.IsViewManipulating || _scrollRendering) { _detailTimer.Start(); return; }
         if (!Matrix3x2.Invert(view, out var inverse)) return;
         int generation = _generation, index = _pageIndex;
         var page = _file.Pages[index];
@@ -428,10 +407,11 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
         var token = _detailCancellation.Token;
         try
         {
-            var bytes = await _rasterizer.RenderAsync(index, page, source, Math.Sqrt(Math.Abs(view.GetDeterminant())) * (_root.XamlRoot?.RasterizationScale ?? 1), token);
-            var bitmap = await LoadBitmapAsync(bytes, token);
+            var bitmap = await _rasterizer.RenderBitmapAsync(index, page, source, Math.Sqrt(Math.Abs(view.GetDeterminant())) * (_root.XamlRoot?.RasterizationScale ?? 1), token);
             if (_closed || generation != _generation || view != Controller.ViewTransform) { bitmap.Dispose(); return; }
             _detail?.Dispose(); _detail = bitmap; _detailRect = source; _paper.Invalidate();
+            _navigationPictureDirty = true;
+            DrawNavigationPicture();
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { if (!_closed && generation == _generation) SetStatus("高清页面渲染失败 · " + ex.Message); }
@@ -489,20 +469,30 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
             query = query?.Trim();
             if (string.IsNullOrEmpty(query)) { _search.Text = ""; ClearSearch(); return; }
             _search.Text = query;
-            SetStatus("正在搜索文字…");
+            _searching = true; UpdateSearchNavigation(); UpdateDocumentStatus();
             var hits = await _file.SearchAsync(query, cancellation.Token);
             if (_closed || cancellation.IsCancellationRequested) return;
             _hits = hits;
+            _navigationPictureDirty = true;
             _searchResults.ItemsSource = hits.Select(hit => new SearchItem(hit)).ToArray();
-            SetSidebarOpen(true);
-            if (hits.Count > 0) _searchResults.SelectedIndex = 0;
+
+            if (hits.Count > 0)
+            {
+                if (_searchResults.SelectedIndex == 0) ShowSearchHit(hits[0]);
+                else _searchResults.SelectedIndex = 0;
+            }
             _paper.Invalidate();
-            _searchResults.Visibility = Visibility.Visible; _pages.Visibility = _bookmarks.Visibility = Visibility.Collapsed;
+            UpdateSidebarView();
             if (hits.Count == 0) _searchCount.Text = "没有匹配结果";
             SetStatus("找到 " + hits.Count + " 个匹配结果" + (hits.Count == 0 ? " · 扫描件需要先进行文字识别" : hits.Count == 500 ? " · 最多显示 500 个结果" : ""));
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { if (!_closed && !cancellation.IsCancellationRequested) SetStatus("搜索失败 · " + ex.Message); }
+        finally
+        {
+            if (ReferenceEquals(_searchCancellation, cancellation))
+            { _searching = false; UpdateSearchNavigation(); UpdateDocumentStatus(); }
+        }
     }
 
     public async Task<bool> SaveAsync(bool saveAs = false)
@@ -510,6 +500,7 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
         if (_closed || _saving || _file.ReadOnly) return false;
         if (_controllers.Values.Any(controller => controller.HasActiveInteraction)) { SetStatus("请先完成当前笔画或拖动，再保存"); return false; }
         _saving = true;
+        UpdateDocumentStatus();
         try
         {
             _searchCancellation?.Cancel();
@@ -530,12 +521,18 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
             SetStatus("正在保存 PDF 矢量批注…");
             await _file.SaveAsync(path, pages, _lifetime.Token);
             _targetPath = path; _savedVersion = version; UpdateTitle();
-            SetStatus("已保存 · " + Path.GetFileName(path) + " · " + (new FileInfo(path).Length / 1024d).ToString("N0") + " KB");
+            NotifyDocumentAi(path);
+            SetStatus(IsDirty ? "已保存快照，新的批注尚未保存"
+                : "已保存 · " + Path.GetFileName(path) + " · " + (new FileInfo(path).Length / 1024d).ToString("N0") + " KB");
             return true;
         }
         catch (OperationCanceledException) { return false; }
-        catch (Exception ex) { if (!_closed) await MessageAsync("保存 PDF 失败", ex.GetBaseException().Message); return false; }
-        finally { _saving = false; }
+        catch (Exception ex)
+        {
+            if (!_closed) { SetStatus("保存失败 · " + ex.GetBaseException().Message); await MessageAsync("保存 PDF 失败", ex.GetBaseException().Message); }
+            return false;
+        }
+        finally { _saving = false; UpdateDocumentStatus(); }
     }
     private Task<ContentDialogResult> MessageAsync(string title, string message)
     {

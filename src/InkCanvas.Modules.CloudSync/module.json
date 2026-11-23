@@ -1,0 +1,8 @@
+{
+  "Id": "inkcanvas.cloud-sync",
+  "Name": "云同步",
+  "Version": "1.0.1",
+  "ApiVersion": 1,
+  "EntryAssembly": "InkCanvas.Modules.CloudSync.dll",
+  "EntryType": "InkCanvas.Modules.CloudSync.CloudSyncModule"
+}

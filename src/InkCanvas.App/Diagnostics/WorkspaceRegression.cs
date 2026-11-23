@@ -106,11 +106,14 @@ internal static class WorkspaceRegression
                 Check("closing settings restores annotation surface ordering " + i, shell.Overlay.Window.Topmost);
             }
 
-            var guide = InfoWindow.OpenGuide(1);
-            guide.Activate(); await Task.Delay(160);
-            Check("guide uses shared WinUI title bar and left navigation", ClassroomWindowRegression.CheckNativeFrame(guide, extended: true)
-                && guide.Content is WindowFrame { Header.Title: "Ink Canvas Artistry 使用指南" }
-                && Descendants(guide.Content).OfType<WindowWorkspace>().Count() == 1);
+            shell.OpenGuide(); await Task.Delay(160);
+            var guide = shell.OpenWindows.OfType<SettingsWindow>().Single();
+            var guideWorkspace = Descendants(guide.Content).OfType<WindowWorkspace>().Single();
+            Check("guide opens inside settings navigation", ClassroomWindowRegression.CheckNativeFrame(guide, extended: true)
+                && guideWorkspace.SelectedPage == "操作指南");
+            guide.SelectCategory("快捷键");
+            Check("guide supports nested navigation and back", guideWorkspace.CanGoBack && guideWorkspace.GoBack()
+                && guideWorkspace.SelectedPage == "操作指南");
             await BoardWindowRegression.SaveVisual((FrameworkElement)guide.Content, Path.Combine(directory, "guide.png"));
             guide.Close();
             await ClassroomWindowRegression.Run(directory);

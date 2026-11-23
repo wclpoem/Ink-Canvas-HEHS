@@ -5,11 +5,17 @@ using InkCanvas.App.Services;
 using InkCanvas.App.Views;
 using InkCanvas.Controls.Controls;
 using InkCanvas.Core.Ink;
+using InkCanvas.Core.Settings;
+using InkCanvas.Ink;
 using InkCanvas.Ink.Rendering;
+using InkCanvas.Platform.Windows;
 using Microsoft.Graphics.Canvas;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
+using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
 
 namespace InkCanvas.App.Diagnostics;
@@ -22,7 +28,11 @@ internal static class InkWashRegression
         var checks = new List<object>();
         using var services = new AppServices(Path.Combine(directory, "settings"));
         services.Settings.Startup.IsAutoUpdate = false;
-        var window = new SettingsWindow(services);
+        services.Settings.PowerPoint.PowerPointSupport = false;
+        services.Settings.Automation.MinimumAutomationStrokeNumber = int.MaxValue;
+        using var shell = new ShellController(services);
+        shell.Start();
+        var window = new SettingsWindow(services, shell: shell);
         window.Activate();
         try
         {
@@ -47,6 +57,79 @@ internal static class InkWashRegression
             var boardPalette = new BoardPenPalette(services.Board.Current, services.Settings, 1);
             Check("toolbar palettes contain no water-ink parameter editors", new DependencyObject[] { palette, boardPalette }
                 .All(root => !Descendants(root).OfType<Slider>().Any(slider => AutomationProperties.GetName(slider).StartsWith("水墨"))));
+
+            services.Settings.Canvas.InkStyle = OriginalMenuCatalog.ToPenStyle(TaperKind.InkWash);
+            services.ApplySettings(); services.SaveSettings();
+            double ordinaryWidth = services.Settings.Canvas.InkWidth;
+            shell.OpenPenPalette(false);
+            await Task.Delay(180);
+            var desktopPalette = shell.OpenWindows.OfType<PenPaletteWindow>().Single();
+            var desktopWidth = Descendants(desktopPalette.Content).OfType<Slider>().Single(slider => AutomationProperties.GetName(slider) == "画笔粗细");
+            Check("water-ink width slider uses independent pixel units", desktopWidth.Maximum == 120 && desktopWidth.Value == 38);
+            SetWidth(desktopWidth, 64);
+            Check("desktop water-ink width persists without overwriting ordinary pen width", services.Store.Load().Canvas.InkWashWidth == 64
+                && services.Settings.Canvas.InkWidth == ordinaryWidth && services.OverlayInk.GetDrawingAttributes(false).BaseWidth == 64);
+            DrawController(services.OverlayInk, 64, "desktop width reaches actual ink");
+            sliders.Single(slider => AutomationProperties.GetName(slider) == "水墨笔锋粗细（px）").Value = 82;
+            Check("settings width synchronizes an already-open desktop palette", desktopWidth.Value == 82 && services.OverlayInk.InkWashWidth == 82);
+            await BoardWindowRegression.SaveVisual((FrameworkElement)desktopPalette.Content, Path.Combine(directory, "desktop-width.png"));
+            var style = Descendants(desktopPalette.Content).OfType<PenStylePicker>().Single();
+            ChooseStyle(style, TaperKind.None);
+            Check("switching to ordinary pen restores its width scale", desktopWidth.Maximum == 30 && desktopWidth.Value == ordinaryWidth * 2);
+            SetWidth(desktopWidth, 18);
+            ChooseStyle(style, TaperKind.InkWash);
+            Check("switching back retains independent water-ink width", desktopWidth.Maximum == 120 && desktopWidth.Value == 82
+                && services.Settings.Canvas.InkWidth == 9 && services.OverlayInk.GetDrawingAttributes(false).BaseWidth == 82);
+            desktopPalette.Close();
+            shell.OpenPenPalette(false);
+            await Task.Delay(180);
+            desktopPalette = shell.OpenWindows.OfType<PenPaletteWindow>().Single();
+            desktopWidth = Descendants(desktopPalette.Content).OfType<Slider>().Single(slider => AutomationProperties.GetName(slider) == "画笔粗细");
+            Check("reopening palette preserves the water-ink readout", desktopWidth.Value == 82);
+            desktopPalette.Close();
+
+            shell.ToggleBoard();
+            await Task.Delay(180);
+            var board = shell.OpenWindows.OfType<BoardWindow>().Single();
+            board.ShowPenPalette();
+            await Task.Delay(150);
+            var activeBoardPalette = board.ToolPanels.SelectMany(panel => Descendants(panel.Content)).OfType<BoardPenPalette>().Single();
+            var boardWidth = Descendants(activeBoardPalette).OfType<Slider>().Single(slider => AutomationProperties.GetName(slider) == "画笔粗细");
+            Check("whiteboard opens with the saved water-ink width", boardWidth.Maximum == 120 && boardWidth.Value == 82);
+            SetWidth(boardWidth, 96);
+            Check("whiteboard water-ink width persists and reaches its controller", services.Store.Load().Canvas.InkWashWidth == 96
+                && board.CurrentController.GetDrawingAttributes(false).BaseWidth == 96 && services.Settings.Canvas.InkWidth == 9);
+            await BoardWindowRegression.SaveVisual(activeBoardPalette, Path.Combine(directory, "board-width.png"));
+            DrawController(board.CurrentController, 96, "whiteboard width reaches actual ink");
+            services.Settings.Canvas.InkWashWidth = 54; services.ApplySettings(); services.SaveSettings();
+            Check("external settings synchronize an open whiteboard palette", boardWidth.Value == 54);
+            ChooseStyle(Descendants(activeBoardPalette).OfType<PenStylePicker>().Single(), TaperKind.None);
+            Check("whiteboard ordinary pen restores its separate width", boardWidth.Maximum == 30 && boardWidth.Value == 18);
+            ChooseStyle(Descendants(activeBoardPalette).OfType<PenStylePicker>().Single(), TaperKind.InkWash);
+            Check("whiteboard switching styles restores water-ink pixels", boardWidth.Maximum == 120 && boardWidth.Value == 54);
+            board.Close();
+            services.Reload();
+            Check("reloading configuration retains the water-ink width", services.OverlayInk.InkWashWidth == 54 && services.Settings.Canvas.InkWidth == 9);
+
+            using (var samples = new CanvasRenderTarget(CanvasDevice.GetSharedDevice(), 960, 310, 96))
+            using (var renderer = new StrokeRenderer())
+            {
+                using (var drawing = samples.CreateDrawingSession())
+                {
+                    drawing.Clear(Microsoft.UI.Colors.White);
+                    float[] widths = { 15, 30, 60, 90 };
+                    for (int row = 0; row < widths.Length; row++)
+                    {
+                        for (int segment = 0; segment < 4; segment++)
+                        {
+                            var stroke = new InkStroke(new() { BaseWidth = widths[row], TaperKind = TaperKind.InkWash, InkWashSeed = 137 });
+                            for (int p = 0; p <= 60; p++) stroke.AddPoint(100 + segment * 185 + p, 40 + row * 72, .5f, p * 8);
+                            stroke.Complete(); renderer.Draw(drawing, stroke, Matrix3x2.Identity);
+                        }
+                    }
+                }
+                await samples.SaveAsync(Path.Combine(directory, "short-writing-widths.png"), CanvasBitmapFileFormat.Png);
+            }
 
             using var liveTarget = new CanvasRenderTarget(CanvasDevice.GetSharedDevice(), 960, 360, 96);
             using var coldTarget = new CanvasRenderTarget(CanvasDevice.GetSharedDevice(), 960, 360, 96);
@@ -116,9 +199,25 @@ internal static class InkWashRegression
         {
             await File.WriteAllTextAsync(Path.Combine(directory, "ink-wash.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
             window.Close();
+            shell.Dispose();
             Application.Current.Exit();
         }
         void Check(string check, bool passed, object detail = null) => checks.Add(new { check, passed, detail });
+        void DrawController(InkController controller, float width, string name)
+        {
+            controller.Tool = InkTool.Pen; controller.RecognizeShapes = false;
+            var first = new OverlayPointer(981, 100, 100, .5f, 0, 0, OverlayPointerKind.Mouse, 1000);
+            controller.OnPointerDown(first);
+            for (int sample = 1; sample <= 40; sample++) controller.OnPointerMove(first with { X = 100 + sample, TimeMs = (uint)(1000 + sample * 8) });
+            controller.OnPointerUp(first with { X = 140, TimeMs = 1330 });
+            var stroke = controller.Document.Strokes.Last();
+            Check(name, stroke.Attributes.BaseWidth == width && stroke.Points.Max(point => point.Width) > width * .8f);
+            controller.Undo();
+        }
+        static void SetWidth(Slider slider, double width) => ((IRangeValueProvider)new SliderAutomationPeer(slider).GetPattern(PatternInterface.RangeValue)).SetValue(width);
+        static void ChooseStyle(PenStylePicker picker, TaperKind kind)
+            => ((IToggleProvider)new ToggleButtonAutomationPeer(Descendants(picker).OfType<ToggleButton>()
+                .ElementAt(OriginalMenuCatalog.ToPenStyle(kind))).GetPattern(PatternInterface.Toggle)).Toggle();
     }
 
     private static void Draw(StrokeRenderer renderer, InkStroke stroke, CanvasRenderTarget target)

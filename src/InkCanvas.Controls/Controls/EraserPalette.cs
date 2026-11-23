@@ -1,4 +1,4 @@
-using InkCanvas.Controls.Theming;
+﻿using InkCanvas.Controls.Theming;
 using InkCanvas.Core.Settings;
 using InkCanvas.Ink;
 using Microsoft.UI.Xaml;
@@ -36,7 +36,7 @@ public sealed class EraserPalette : UserControl
                 IsSelected = controller.EraserMode == mode,
             };
             var icon = new Grid { Width = 30, Height = 30 };
-            var eraser = new FontIcon { Glyph = Glyphs.Eraser, FontFamily = new("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"), FontSize = 24 };
+            var eraser = new FontIcon { Glyph = Glyphs.Eraser, FontFamily = new(IconFontStyle.Family), FontSize = 24 };
             var overlay = new FontIcon { Glyph = badge, FontFamily = eraser.FontFamily, FontSize = mode == InkEraserMode.WholeStroke ? 10 : 14,
                 HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom };
             icon.Children.Add(eraser); icon.Children.Add(overlay);

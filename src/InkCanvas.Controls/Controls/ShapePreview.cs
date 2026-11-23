@@ -34,10 +34,10 @@ public static class ShapeMenuCatalog
         => new(kind, label, kind.ToString(), new Thickness(8, 10, 8, 10), SlotWidth: 30, LongPress: sticky, Rotation: rotation);
     public static readonly ShapeMenuCategory[] Categories =
     {
-        new ShapeMenuCategory("线条", new[] { new[] { Item(ShapeKind.Line, "直线"), Item(ShapeKind.DashedLine, "虚线"),
-            Item(ShapeKind.DotLine, "点线"), Item(ShapeKind.Arrow, "箭头"), Item(ShapeKind.ParallelLine, "平行线") } }),
-        new ShapeMenuCategory("坐标", new[]
+        new ShapeMenuCategory("线条与坐标", new[]
         {
+            new[] { Item(ShapeKind.Line, "直线"), Item(ShapeKind.DashedLine, "虚线"),
+                Item(ShapeKind.DotLine, "点线"), Item(ShapeKind.Arrow, "箭头"), Item(ShapeKind.ParallelLine, "平行线") },
             new[] { Item(ShapeKind.CoordinateBoth, "坐标系（双向，中心原点）"),
                 Item(ShapeKind.CoordinateXOneWay, "坐标系（x 单向）"), Item(ShapeKind.CoordinateYOneWay, "坐标系（y 单向）") },
             new[] { Item(ShapeKind.CoordinateFirstQuadrant, "坐标系（第一象限）"), Item(ShapeKind.Coordinate3D, "空间坐标系"),
@@ -527,6 +527,7 @@ public sealed class ShapePreview : UserControl
 
         _categories = new SegmentedSelector(ShapeMenuCatalog.Categories.Select(category => category.Name).Append("全部").ToArray(),
             columns: ShapeMenuCatalog.Categories.Length + 1);
+        if (_categories.Content is Grid categoryTabs) categoryTabs.ColumnDefinitions[0].Width = new GridLength(2, GridUnitType.Star);
         _categories.SetOptionHelp(AllCategoryIndex, "显示全部形状，展开更高的面板");
         for (int index = 0; index < ShapeMenuCatalog.Categories.Length; index++)
         {
@@ -630,8 +631,8 @@ public sealed class ShapePreview : UserControl
             Tag = item,
         };
         cell.Children.Add(icon);
-        cell.Children.Add(new FontIcon { Glyph = "\uE77A", FontSize = 9,
-            FontFamily = new FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
+        cell.Children.Add(new FontIcon { Glyph = "\uF60E", FontSize = 9,
+            FontFamily = IconFontStyle.Font,
             Foreground = PopupBrushes.Accent(), HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Top, Visibility = Visibility.Collapsed, IsHitTestVisible = false });
         AutomationProperties.SetName(cell, item.Label);

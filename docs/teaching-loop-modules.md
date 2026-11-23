@@ -13,8 +13,8 @@
 | `AnnotationLayer` / `AnnotationLayerPolicy` | `Core/AiAssistant/AnnotationLayer.cs` | 解释步骤 ↔ 图形标注映射、逐步可见、定位降级 |
 | `AiResponseGate` | `Core/AiAssistant/AiResponseGate.cs` | 会话 ID + 世代，丢弃过期流响应 |
 | `TeachingSession` | `Core/Classroom/TeachingSession.cs` | 统一课堂会话与跨模块关联 |
-| `StudentInteractionContracts` | `Core/Classroom/StudentInteractionContracts.cs` | P2 学生互动接口预留 |
-| `AiClassSummaryContracts` | `Core/Classroom/AiClassSummaryContracts.cs` | P2 AI 摘要草稿接口预留 |
+| `StudentInteractionContracts` | ~~`Core/Classroom/StudentInteractionContracts.cs`~~ | P2 学生互动接口预留；死契约零消费者，已随重构删除 |
+| `AiClassSummaryContracts` | ~~`Core/Classroom/AiClassSummaryContracts.cs`~~ | P2 AI 摘要草稿接口预留；死契约零消费者，已随重构删除 |
 | `SlideContentIndex` | `Features/Ppt/SlideContentIndex.cs` | slideId → 批注/收藏/AI/缩略图/文本 |
 | `HandoutComposer` / `HandoutExportService` / `HandoutPdfBuilder` | `Features/Ppt/HandoutExporter.cs`、`HandoutExportService.cs` | 选页、PNG 合成、最小 PDF |
 | `ClassroomPreset` / `ClassroomPresetLibrary` | `Features/Classroom/ClassroomPreset.cs` | 场景预设与工具动作计划 |
@@ -69,12 +69,12 @@ gate.Invalidate();                      // 关窗/换题
 ```csharp
 enum ExerciseDifficulty { Basic, Advanced }
 class VariantQuestionDraft { Version=1, Id, Difficulty, Text, Answer, KnowledgePoint, SourceSessionId, SlideId, SlideIndex }
-class PracticePlan { Version=1, Id, ExerciseId, BoardPageIndex, CountdownMinutes, SceneId, SaveSnapshotOnFinish, BookmarkName }
+class PracticePlan { Version=1, Id, ExerciseId, BoardPageIndex, CountdownMinutes, SceneId }
 ExerciseFlowPolicy.BuildRequest(context, difficulty, sessionId, teaching) // purpose=variant
 ExerciseFlowPolicy.Parse(aiText, difficulty, ...)
 ExerciseFlowPolicy.Plan(draft, newBoardPageIndex, minutes)
 ExerciseFlowPolicy.BuildPasteLines(draft)
-PracticeFinishPolicy.Plan(plan, isRecording, snapshotSaved)
+// 录制耦合判定（书签名 / 结束快照 / isRecording）已移除：宿主只发 PracticeFinished 课堂信号，书签与快照决策归「时光机」插件
 ```
 
 ### 2.6 场景预设
@@ -221,6 +221,6 @@ AI 配置新增/沿用：`ai.teachingMode`（`hint`/`step`/`full`/`teacher`，�
 
 ## 7. 验证边界
 
-已实机 E2E 覆盖：AI 四模式（分步默认不泄露、逐步揭示、完整显示公式）、点名→分组积分→加分→贴板、画板+倒计时→结束快照→时光机 timer 书签；截图与日志在 `artifacts/teaching-loop-e2e/`。构建 0 警告 0 错误，Core 148/148、Ai 132/132、P0 33/33、Classroom 252/252 全通过（0 跳过）。
+已实机 E2E 覆盖：AI 四模式（分步默认不泄露、逐步揭示、完整显示公式）、点名→分组积分→加分→贴板、画板+倒计时→结束信号→「时光机」插件 timer 书签；截图与日志在 `artifacts/teaching-loop-e2e/`（历史记录，书签链路以插件验收为准）。构建 0 警告 0 错误，Core 148/148、Ai 132/132、P0 33/33、Classroom 252/252 全通过（0 跳过，重构前基线）。
 
-仍**未验证**：真实 PowerPoint/WPS 的页文本/动画步/媒体暂停、真实 AI 端点、讲义真实排版与导出全链路、变式题/聚焦贴图/讲解回放/预设保存等 UI 完整点击、高 DPI/高对比度、90 分钟压力、多屏与投屏。详见 `docs/teaching-loop-gap.md` 第 9 节；单元测试与构建证据只覆盖纯逻辑与编译，不等同于实机功能验收。
+仍**未验证**：真实 PowerPoint/WPS 的页文本/动画步/媒体暂停、真实 AI 端点、讲义真实排版与导出全链路、变式题/聚焦贴图/讲解回放/预设保存等 UI 完整点击、高 DPI/高对比度、多屏与投屏。90 分钟压力归属「时光机」插件测试。详见 `docs/teaching-loop-gap.md` 第 9 节；单元测试与构建证据只覆盖纯逻辑与编译，不等同于实机功能验收。

@@ -71,3 +71,6 @@ export type {
   AssistantPayload
 } from './src/main/ets/assistant/AiClient';
 export { CAPTURE_MAX_EDGE, captureRegionBase64 } from './src/main/ets/assistant/AssistantCapture';
+
+export { InkCastClient } from './src/main/ets/net/InkCastClient';
+export type { InkCastEvent } from './src/main/ets/net/InkCastClient';

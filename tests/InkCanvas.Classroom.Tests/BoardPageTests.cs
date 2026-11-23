@@ -250,7 +250,7 @@ public sealed class BoardPageTests
     }
 
     [Fact]
-    public void SavePage_WithoutImages_KeepsLegacySinglePageFormat()
+    public void SavePage_WithoutImages_RoundTripsThroughBoardPackage()
     {
         var path = TempFile("page.icink");
         try
@@ -260,9 +260,12 @@ public sealed class BoardPageTests
 
             board.SavePage(path);
 
-            var text = File.ReadAllText(path);
-            Assert.DoesNotContain("inkcanvas-board", text);
-            Assert.Contains("\"Strokes\"", text);
+            using (var package = System.IO.Compression.ZipFile.OpenRead(path))
+                Assert.NotNull(package.GetEntry("board.json"));
+
+            var loaded = new BoardService();
+            loaded.LoadPage(path);
+            Assert.Single(loaded.Current.Document.Strokes);
         }
         finally
         {

@@ -68,7 +68,8 @@ public sealed record PptPresentationNotice(
     bool ResumeIndexDegraded = false, bool OfferInkMappingReview = false,
     string InkMappingSummary = null, string BackupDirectory = null);
 
-public sealed record PptStoredSlide(int SlideId, int SlideIndex, IReadOnlyList<InkStroke> Strokes);
+public sealed record PptStoredSlide(int SlideId, int SlideIndex, IReadOnlyList<InkStroke> Strokes,
+    bool IsDeferred = false, int? StoredStrokeCount = null);
 
 /// <summary>
 /// Store implementations receive only managed snapshots, never COM objects.

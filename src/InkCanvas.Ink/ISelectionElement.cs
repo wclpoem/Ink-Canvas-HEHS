@@ -25,5 +25,6 @@ public interface IImageSelectionElement : ISelectionElement
 {
     byte[] ImageData { get; }
     string ImageContentType { get; }
+    IReadOnlyList<IReadOnlyList<Core.AiAssistant.ShapeAnnotationPoint>> ImageAnnotations => Array.Empty<IReadOnlyList<Core.AiAssistant.ShapeAnnotationPoint>>();
     float Opacity { get; set; }
 }

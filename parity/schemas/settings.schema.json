@@ -262,6 +262,10 @@
         },
         "isSupportWPS": {
           "type": "boolean"
+        },
+        "hideStrokesAfterLeavingAnnotation": {
+          "type": "boolean",
+          "description": "离开批注模式后隐藏墨迹"
         }
       },
       "required": [
@@ -316,6 +320,57 @@
         },
         "hyperbolaAsymptoteOption": {
           "type": "number"
+        },
+        "InkWashWidth": {
+          "type": "number",
+          "description": "墨韵笔刷宽度（默认 30）"
+        },
+        "InkWash": {
+          "type": "object",
+          "description": "墨韵参数（Dryness/Flatness [0,1]，Angle 度；默认 .42/44/.44）",
+          "properties": {
+            "Dryness": {
+              "type": "number",
+              "description": "干燥度"
+            },
+            "Angle": {
+              "type": "number",
+              "description": "角度"
+            },
+            "Flatness": {
+              "type": "number",
+              "description": "扁度"
+            }
+          }
+        },
+        "UseHardwarePressure": {
+          "type": "boolean",
+          "description": "使用硬件压感（默认开）"
+        },
+        "UsePenTilt": {
+          "type": "boolean",
+          "description": "使用笔倾斜（默认开）"
+        },
+        "penColor": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "笔色 packed ARGB；null 省略写出"
+        },
+        "highlighterColor": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "荧光笔色 packed ARGB；null 省略写出"
+        },
+        "shapeKind": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "持久化图形种类；null 省略写出"
         }
       },
       "required": [
@@ -357,7 +412,16 @@
           "type": "number"
         },
         "isEnableStylusGesture": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "鸿蒙风格笔双击/轻捏工具轮转（Windows 未用，跨端保持键集一致）"
+        },
+        "PenHasPriority": {
+          "type": "boolean",
+          "description": "笔优先于手掌（默认开）"
+        },
+        "PalmErases": {
+          "type": "boolean",
+          "description": "手掌擦除（默认开）"
         }
       },
       "required": [
@@ -377,6 +441,34 @@
       "properties": {
         "isInkToShapeEnabled": {
           "type": "boolean"
+        },
+        "HoldMilliseconds": {
+          "type": "integer",
+          "description": "识别保持毫秒（默认 450）"
+        },
+        "AutoAlign": {
+          "type": "boolean",
+          "description": "自动对齐（默认开）"
+        },
+        "AlignmentAngle": {
+          "type": "number",
+          "description": "对齐角阈值度数（默认 5）"
+        },
+        "RecognizePolygons": {
+          "type": "boolean",
+          "description": "识别多边形（默认开）"
+        },
+        "RecognizeRoundShapes": {
+          "type": "boolean",
+          "description": "识别圆形（默认开）"
+        },
+        "RecognizeCube": {
+          "type": "boolean",
+          "description": "识别立方体（默认开）"
+        },
+        "RecognizeAxes": {
+          "type": "boolean",
+          "description": "识别坐标轴（默认开）"
         }
       },
       "required": [
@@ -424,6 +516,18 @@
         },
         "isNotRepeatName": {
           "type": "boolean"
+        },
+        "samplingMode": {
+          "type": "integer",
+          "description": "抽样模式：0=软冷却 1=均匀 2=不回放轮抽（默认 0）"
+        },
+        "cooldownHalfLifeDays": {
+          "type": "number",
+          "description": "冷却半衰期天数（夹取 0.25..3650，默认 10）"
+        },
+        "cooldownPenaltyStrength": {
+          "type": "number",
+          "description": "冷却惩罚强度（夹取 0.1..10，默认 1）"
         }
       },
       "required": [
@@ -462,6 +566,147 @@
         },
         "Edge": {
           "type": "boolean"
+        }
+      }
+    },
+    "display": {
+      "type": "object",
+      "description": "多显示器",
+      "properties": {
+        "allDisplays": {
+          "type": "boolean",
+          "description": "所有显示器（默认开）"
+        },
+        "enabledDevices": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "启用的设备列表（默认空）"
+        }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "description": "存储与缓存",
+      "properties": {
+        "AutomaticallyCleanCache": {
+          "type": "boolean",
+          "description": "自动清理缓存（默认开）"
+        },
+        "UpdateCacheDays": {
+          "type": "integer",
+          "description": "缓存清理天数（默认 7）"
+        }
+      }
+    },
+    "ai": {
+      "type": "object",
+      "description": "AI 助教灰度开关（默认全开）",
+      "properties": {
+        "enableLocalCorrection": {
+          "type": "boolean",
+          "description": "本地纠错"
+        },
+        "enableEditablePaste": {
+          "type": "boolean",
+          "description": "可编辑粘贴"
+        },
+        "enableVerification": {
+          "type": "boolean",
+          "description": "自检验证"
+        },
+        "enableTwoStage": {
+          "type": "boolean",
+          "description": "两阶段生成"
+        },
+        "teachingMode": {
+          "type": "string",
+          "description": "讲题模式（默认 step）"
+        },
+        "hasSeenLassoHint": {
+          "type": "boolean",
+          "description": "圈选一次性引导已展示"
+        }
+      }
+    },
+    "classroom": {
+      "type": "object",
+      "description": "课堂工具箱配置（新字段只追加；-2147483648=未保存，默认居中）",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "description": "schema 版本（默认 1）"
+        },
+        "presetId": {
+          "type": "string",
+          "description": "场景预设（默认 teach）"
+        },
+        "countdownMinutes": {
+          "type": "integer",
+          "description": "倒计时分钟（默认 3）"
+        },
+        "toolkitCollapsed": {
+          "type": "boolean",
+          "description": "工具箱已折叠"
+        },
+        "practicePageName": {
+          "type": "string",
+          "description": "随堂练习页名（默认 随堂练习）"
+        },
+        "customPresets": {
+          "type": "string",
+          "description": "自定义预设（默认空）"
+        },
+        "groupSplitMode": {
+          "type": "string",
+          "description": "分组模式（默认 groupCount）"
+        },
+        "groupSplitValue": {
+          "type": "integer",
+          "description": "分组值（默认 4）"
+        },
+        "spotlightRegions": {
+          "type": "string",
+          "description": "聚焦区域（默认空）"
+        },
+        "toolkitX": {
+          "type": "integer",
+          "description": "工具箱窗口 X；-2147483648=未保存"
+        },
+        "toolkitY": {
+          "type": "integer",
+          "description": "工具箱窗口 Y；-2147483648=未保存"
+        },
+        "magnifierX": {
+          "type": "integer",
+          "description": "放大镜窗口 X；-2147483648=未保存"
+        },
+        "magnifierY": {
+          "type": "integer",
+          "description": "放大镜窗口 Y；-2147483648=未保存"
+        }
+      }
+    },
+    "features": {
+      "type": "object",
+      "description": "功能区开关（默认全开）",
+      "properties": {
+        "enableAiTeaching": {
+          "type": "boolean",
+          "description": "AI 教学"
+        },
+        "enableExerciseFlow": {
+          "type": "boolean",
+          "description": "练习流程"
+        },
+        "enableExampleLibrary": {
+          "type": "boolean",
+          "description": "例题库"
+        },
+        "enableResourceBundle": {
+          "type": "boolean",
+          "description": "资源包"
         }
       }
     }

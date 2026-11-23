@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
-  <ItemGroup><ProjectReference Include="..\InkCanvas.Extensibility\InkCanvas.Extensibility.csproj" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\InkCanvas.Extensibility\InkCanvas.Extensibility.csproj" />
+    <ProjectReference Include="..\InkCanvas.Core\InkCanvas.Core.csproj" />
+  </ItemGroup>
 </Project>

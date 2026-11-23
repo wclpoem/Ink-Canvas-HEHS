@@ -9,6 +9,8 @@ using InkCanvas.Extensibility;
 using InkCanvas.Extensions;
 using InkCanvas.Host.Contracts;
 using InkCanvas.Features.Update;
+using Microsoft.UI.Xaml;
+using InkCanvas.Controls.Controls;
 
 namespace InkCanvas.App.Services;
 
@@ -23,15 +25,24 @@ public sealed class AppServices : IDisposable
         Store = new SettingsStore(settingsDirectory);
         Settings = Store.Load();
         Settings.Storage ??= new();
+        Settings.Archive ??= new();
+        // 图标风格（Fluent Filled/Regular，与鸿蒙端同一 MIT 字体集）注入字体族解析。
+        Controls.Controls.IconFontStyle.BindStyleSource(() => Settings.Appearance.IsIconRegularStyle);
         UpdateCache = new UpdateCache(settingsDirectory is null ? null : Path.Combine(settingsDirectory, "UpdateCache"));
+        ExtensionInstalls = new ExtensionInstallStore(Store.Directory);
+        ExtensionInstalls.ApplyPending();
         ExtensionStore = new ExtensionPreferencesStore(Store.Directory);
         ExtensionPreferences = ExtensionStore.Load();
         Plugins = new PluginManager(Path.Combine(AppContext.BaseDirectory, "PluginHost", "InkCanvas.PluginHost.exe"), Path.Combine(Store.Directory, "PluginData"));
-        Plugins.Discover(Path.Combine(AppContext.BaseDirectory, "Plugins"), Path.Combine(Store.Directory, "Plugins"));
+        Plugins.DiscoverManaged(Path.Combine(AppContext.BaseDirectory, "Plugins"), Path.Combine(Store.Directory, "Plugins"));
+        ExtensionUpdates = new ExtensionUpdateCoordinator(this);
         Board = new BoardService();
         SideBoard = new BoardService();
         Board.SideBoardSource = SideBoard;
+        Archives = new BoardArchiveService(Board, () => Settings.Archive, Store.Directory);
         ScreenImages = new BoardService(OverlayInk);
+        ScreenArchives = new ScreenArchiveService(ScreenImages, () => Settings.Archive, Store.Directory);
+        _cloudSync = new CloudSyncHost(this);
         OverlayInk.GetSelectableElements = ScreenImages.GetSelectionElements;
         ScreenImages.ImagePlacementChanged += OnScreenImagePlacementChanged;
         // 1:1 SetBoardTheme：白板模式决定画板明暗。未验证。
@@ -48,14 +59,29 @@ public sealed class AppServices : IDisposable
 
     public SettingsStore Store { get; }
     public UpdateCache UpdateCache { get; }
+    public ExtensionInstallStore ExtensionInstalls { get; }
+    public ExtensionUpdateCoordinator ExtensionUpdates { get; }
 
     public AppSettings Settings { get; private set; }
     public ModuleRuntime Modules { get; } = new();
+    public ModuleSettingsRegistry ModuleSettings { get; } = new();
+    public AssistantToolRegistry AssistantTools { get; } = new();
+    private readonly CloudSyncHost _cloudSync;
     public PluginManager Plugins { get; }
     internal async Task<Action> PrepareInkOpenAsync(string path, BoardService target, bool entireBoard = false)
     {
         if (Path.GetExtension(path).Equals(".icink", StringComparison.OrdinalIgnoreCase))
+        {
+            // 新格式课堂录制文件：插件在位则路由给时光机模块，否则给出中文守卫提示。
+            if (ClassroomRecordingProbe.IsClassroomRecording(path))
+            {
+                var service = Modules.GetExport<ITimeMachineService>();
+                if (service is null) throw new InvalidDataException(ClassroomRecordingProbe.PluginRequiredMessage);
+                await service.OpenFileAsync(path);
+                return () => { };
+            }
             return await target.PrepareOpenAsync(path, entireBoard);
+        }
 
         string directory = Directory.CreateTempSubdirectory("InkCanvas-import-").FullName;
         string output = Path.Combine(directory, "page.icink");
@@ -73,15 +99,28 @@ public sealed class AppServices : IDisposable
     public ExtensionPreferencesStore ExtensionStore { get; }
     public ExtensionPreferences ExtensionPreferences { get; }
     private bool _modulesStarted;
-    public void StartModules(IScreenTrackingHost host, IDocumentWorkspaceHost documents = null, ICanvasToolsHost canvasTools = null)
+    public void StartModules(IScreenTrackingHost host, IDocumentWorkspaceHost documents = null, ICanvasToolsHost canvasTools = null, IAiAssistantHost assistant = null, IBoardLibraryHost library = null, ITimeMachineHost timeMachine = null, IAiDocumentHost documentAi = null)
     {
         if (_modulesStarted) return; _modulesStarted = true;
+        Modules.AddService<IModuleSettingsRegistry>(ModuleSettings);
+        Modules.AddService<IAssistantToolRegistry>(AssistantTools);
+        Modules.AddService<IMcpHost>(new McpHost(Path.Combine(Store.Directory, "PluginData", "inkcanvas.mcp")));
+        Modules.AddService<ICloudSyncHost>(_cloudSync);
         Modules.AddService(host);
         if (documents is not null) Modules.AddService(documents);
         if (canvasTools is not null) Modules.AddService(canvasTools);
-        Modules.RegisterPackage("inkcanvas.screen-tracking", "屏幕内容跟随", Path.Combine(AppContext.BaseDirectory, "Modules", "inkcanvas.screen-tracking", "module.json"));
-        if (documents is not null) Modules.RegisterPackage("inkcanvas.pdf", "PDF 阅读与批注", Path.Combine(AppContext.BaseDirectory, "Modules", "inkcanvas.pdf", "module.json"));
-        if (canvasTools is not null) Modules.RegisterPackage("inkcanvas.analytic-geometry", "解析几何", Path.Combine(AppContext.BaseDirectory, "Modules", "inkcanvas.analytic-geometry", "module.json"));
+        if (assistant is not null) Modules.AddService(assistant);
+        if (timeMachine is not null) Modules.AddService(timeMachine);
+        if (documentAi is not null) Modules.AddService(documentAi);
+        if (library is not null) Modules.AddService(library);
+        if (library is not null) Modules.RegisterPackage("inkcanvas.library", "文稿库", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.library"));
+        Modules.RegisterPackage("inkcanvas.screen-tracking", "屏幕内容跟随", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.screen-tracking"));
+        if (documents is not null) Modules.RegisterPackage("inkcanvas.pdf", "PDF 阅读与批注", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.pdf"));
+        if (canvasTools is not null) Modules.RegisterPackage("inkcanvas.analytic-geometry", "解析几何", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.analytic-geometry"));
+        if (assistant is not null) Modules.RegisterPackage("inkcanvas.ai-assistant", "AI 助手", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.ai-assistant"));
+        Modules.RegisterPackage("inkcanvas.cloud-sync", "云同步", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.cloud-sync"));
+        Modules.RegisterPackage("inkcanvas.mcp", "MCP 工具连接", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.mcp"));
+        if (timeMachine is not null) Modules.RegisterPackage("inkcanvas.time-machine", "板书时光机", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.time-machine"));
         Modules.Start(ExtensionPreferences.DisabledModules);
         Modules.Changed += UpdateModuleStatus;
         UpdateModuleStatus();
@@ -105,6 +144,8 @@ public sealed class AppServices : IDisposable
     public PptInteropService Ppt { get; }
 
     public AutoSaveService AutoSave { get; }
+    public BoardArchiveService Archives { get; }
+    public ScreenArchiveService ScreenArchives { get; }
 
     public LotteryService Lottery { get; }
     public LotteryMemoryStore LotteryMemory { get; }
@@ -119,6 +160,14 @@ public sealed class AppServices : IDisposable
         Settings.Canvas.InkWash = Settings.Canvas.InkWash.Normalize();
         Settings.Canvas.InkWashWidth = double.IsFinite(Settings.Canvas.InkWashWidth) ? Math.Clamp(Settings.Canvas.InkWashWidth, 1, 120) : 30;
         Settings.Storage ??= new();
+        Settings.Archive ??= new();
+        Settings.Archive.AutoSaveMinutes = Math.Clamp(Settings.Archive.AutoSaveMinutes, 1, 120);
+        Settings.Archive.AutomaticCopiesToKeep = Math.Clamp(Settings.Archive.AutomaticCopiesToKeep, 1, 200);
+        Settings.Archive.ScreenCapture.IntervalMinutes = Math.Clamp(Settings.Archive.ScreenCapture.IntervalMinutes, 1, 120);
+        Settings.Archive.ScreenCapture.CopiesToKeep = Math.Clamp(Settings.Archive.ScreenCapture.CopiesToKeep, 1, 200);
+        Archives.Configure();
+        ScreenArchives.Configure();
+        AutoSave.Settings = Settings.Automation;
         Settings.Storage.UpdateCacheDays = Math.Clamp(Settings.Storage.UpdateCacheDays, 1, 30);
         Settings.Experimental ??= new ExperimentalSettings();
         foreach (var controller in AllControllers())
@@ -140,7 +189,7 @@ public sealed class AppServices : IDisposable
         var taper = OriginalMenuCatalog.ToTaperKind(Settings.Canvas.InkStyle);
         controller.ConfigurePenWidths((float)Math.Clamp(Settings.Canvas.InkWidth, .5, 60),
             (float)Math.Clamp(Settings.Canvas.HighlighterWidth ?? Settings.Canvas.InkWidth, .5, 60));
-        controller.ConfigurePenColors(Settings.Canvas.PenColor is uint pen ? InkColor.FromPackedArgb(pen) : null,
+        controller.ConfigurePenColors(Settings.Canvas.PenColor is uint pen ? InkColor.FromPackedArgb(pen) : DefaultPenColor(Settings.Appearance.Theme),
             Settings.Canvas.HighlighterColor is uint highlighter ? InkColor.FromPackedArgb(highlighter) : null);
         if (Settings.Canvas.ShapeKind is { } shape && Enum.IsDefined(shape) && controller.ShapeKind != shape)
             controller.ShapeKind = shape;
@@ -184,6 +233,27 @@ public sealed class AppServices : IDisposable
         controller.TransformCenterOption = Settings.Gesture.MatrixTransformCenterPoint;
     }
 
+    internal static InkColor DefaultPenColor(int theme)
+    {
+        bool dark = theme switch
+        {
+            1 => false,
+            2 => true,
+            _ => SystemThemeIsDark(),
+        };
+        return dark ? InkColor.White : InkColor.Red;
+    }
+
+    private static bool SystemThemeIsDark()
+    {
+        try
+        {
+            var background = new Windows.UI.ViewManagement.UISettings().GetColorValue(Windows.UI.ViewManagement.UIColorType.Background);
+            return (background.R * 299 + background.G * 587 + background.B * 114) / 1000 < 128;
+        }
+        catch { return Application.Current?.RequestedTheme == Microsoft.UI.Xaml.ApplicationTheme.Dark; }
+    }
+
     public IEnumerable<InkController> AllControllers()
     {
         yield return OverlayInk;
@@ -191,7 +261,7 @@ public sealed class AppServices : IDisposable
         foreach (var page in SideBoard.Pages) yield return page;
     }
 
-    public void SaveSettings() => Store.Save(Settings);
+    public void SaveSettings() { Store.Save(Settings); _cloudSync?.NotifyPreferencesSaved(); }
 
     public void RememberToolOptions(InkController controller)
     {
@@ -213,10 +283,14 @@ public sealed class AppServices : IDisposable
 
     public void Dispose()
     {
+        ExtensionUpdates.Dispose();
+        Archives.Dispose();
+        ScreenArchives.Dispose();
         LotteryMemory.Dispose();
         Plugins.Dispose();
         Modules.Changed -= UpdateModuleStatus;
         Modules.Dispose();
+        _cloudSync.Dispose();
         ScreenImages.ImagePlacementChanged -= OnScreenImagePlacementChanged;
         OverlayInk.Dispose();
         foreach (var page in Board.Pages) page.Dispose();

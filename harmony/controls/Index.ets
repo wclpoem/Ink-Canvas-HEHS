@@ -4,6 +4,7 @@ export type { ThemeTokens } from './src/main/ets/ThemeTokens';
 export { FLOATING_BAR_BUTTONS, catalogSummary } from './src/main/ets/FloatingBarCatalog';
 export type { FloatingBarButton, FloatingBarCatalogSummary } from './src/main/ets/FloatingBarCatalog';
 export { FloatingBar } from './src/main/ets/FloatingBar';
+export { BoardDock } from './src/main/ets/BoardDock';
 export {
   PEN_COLORS_DARK,
   PEN_COLORS_LIGHT,
@@ -42,13 +43,27 @@ export {
 } from './src/main/ets/Motion';
 export { panelBackground, panelBlurStyle } from './src/main/ets/PanelStyle';
 export {
+  AiCaptureOverlay,
+  AiGeneratingOverlay,
+  AiResultCard,
+  AiNotesPanel,
+  ShapeSnapPanel
+} from './src/main/ets/AiStudio';
+export {
   GLYPH_SYMBOLS,
+  SYMBOL_FLUENT,
   symbolForCodepoint,
   symbolForButton,
   symbolForTool,
+  fluentCpForSymbol,
+  fluentCpForCodepoint,
+  fluentCharFor,
+  fluentGlyph,
+  setIconStyleRegular,
+  iconStyleIsRegular,
   IconGlyph
 } from './src/main/ets/IconGlyph';
-export type { GlyphSymbolEntry, IconGlyphOptions } from './src/main/ets/IconGlyph';
+export type { GlyphSymbolEntry, IconGlyphOptions, SymbolFluentEntry, FluentGlyphResult } from './src/main/ets/IconGlyph';
 export { MagicLassoEntry, LASSO_ENTRY_WIDTH, LASSO_ENTRY_HEIGHT } from './src/main/ets/MagicLassoEntry';
 export { AssistantCard, AI_CARD_WIDTH, AI_CARD_CORNER } from './src/main/ets/AssistantCard';
 export { StreamMessage } from './src/main/ets/StreamMessage';

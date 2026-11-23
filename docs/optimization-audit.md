@@ -1,5 +1,7 @@
 # 现状审查与优化差距清单（WinUI 端）
 
+> **【历史归档 · 2026-11-20 审计记录】** 本文 §3「时光机」小节为本体阶段的差距与实现状态。时光机已重构为独立插件模块「时光机」（Id `inkcanvas.time-machine`）：其中增量 journal、异常退出恢复、`.sha256` / `.bak` 校验备份与 WASAPI 音频条目随本体移除；统一时间轴、自动书签、抽稀、检查点定位与 MP4 导出管线等可复用结论由插件侧沿用复核。AI 助教与课件联动小节为同期历史记录。
+
 > 审查日期：2026-11-20
 > 范围：AI 助教（Core/AiAssistant、Platform/Ai、Features/AiAssistant、App/Views/AssistantWindow）、课件联动（Features/Ppt、Platform/Windows）、课堂工具箱与时光机（Features/Classroom、Core/Classroom、App/Views）。
 > 结论先行：**课件联动的 slideId 锚定已基本落地**；主要缺口集中在 AI 的可编辑/自检、课件旧数据迁移与邻页缓存、时光机的统一时间轴/书签/抽稀/导出、以及全局 Feature Flag 与性能度量。
@@ -42,7 +44,7 @@
 | P4 降级矩阵显式化 | 已实现·单测通过；真实三级降级未实机 | `PresentationSources.cs`（`PresentationSourceSelector`：Com → Window → Keys → None） | `BatchBTests.Selector_*`（6 项） |
 | P5 翻页笔/黑屏 | 已实现·单测通过；黑屏/翻页键未实机 | `PresentationKeyMap`、`BlackScreenWindow`、`ShellController.ToggleBlackScreen`、`OverlayHost` | `BatchBTests.KeyMap_*`（4 项） |
 
-## 3. 时光机（2.3）
+## 3. 时光机（2.3）〔历史归档：本节条目对应本体实现；插件化后恢复 / 校验 / 备份 / 音频条目关闭，时间轴 / 书签 / 抽稀 / 导出结论由插件沿用〕
 
 | 编号 | 现状（定位） | 根因 | 影响 | 改造方案 | 工作量 | 优先级 |
 |---|---|---|---|---|---|---|
@@ -82,7 +84,7 @@
 
 - **P0-A（AI）**：A1 局部纠错 → A2 贴回元数据/编辑 → A3 自检 → A4 流式两阶段（约 2 个迭代）
 - **P0-B（联动）**：P1 恢复位置改 slideId → P2 迁移/向导 → P3 邻页缓存 → P4 降级矩阵 → P5 黑屏/翻页笔
-- **P0-C（时光机）**：T1 统一时间轴 → T2 书签 → T3 抽稀/增量 → T4 视频导出（XL，建议最后）
+- **P0-C（时光机，历史路线）**：T1 统一时间轴 → T2 书签 → T3 抽稀/增量 → T4 视频导出；插件化后该路线由「时光机」插件承接，恢复 / 校验 / 音频条目关闭。
 - **P1**：两次框选合并、倒计时快照书签、点名贴回、快捷键表、内存治理
 
 ## 6. 验收口径待确认

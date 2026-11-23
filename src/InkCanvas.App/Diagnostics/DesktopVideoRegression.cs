@@ -37,7 +37,8 @@ internal static class DesktopVideoRegression
             var tools = Descendants(bar.Bar).OfType<TouchIconButton>().Single(button => button.Label == "工具");
             ((IInvokeProvider)new ButtonAutomationPeer(tools).GetPattern(PatternInterface.Invoke)).Invoke();
             await Task.Delay(150);
-            var videoButton = Descendants(bar.Bar.CreateMorePanelContent()).OfType<TouchIconButton>().Single(button => button.Label == "插入视频");
+            var insertion = await MoreMenuRegression.OpenInsertionMenu(bar.GetOpenPanel(BarPanelKind.More).Content);
+            var videoButton = Descendants(insertion).OfType<TouchIconButton>().Single(button => button.Label == "插入视频");
             Check("desktop video command is visible and enabled", videoButton?.IsEnabled == true && videoButton.Glyph == Glyphs.Video);
             var menu = bar.GetOpenPanel(BarPanelKind.More);
             await BoardWindowRegression.SaveVisual((FrameworkElement)menu.Content, Path.Combine(directory, "video-menu.png"));

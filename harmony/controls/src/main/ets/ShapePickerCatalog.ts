@@ -1,4 +1,4 @@
-// @parity src/InkCanvas.App/Views/PickerWindows.cs（ShapeMenuCatalog 当前 8 行 38 项）
+// @parity src/InkCanvas.Controls/Controls/ShapePreview.cs（ShapeMenuCatalog 当前 8 行 38 项）
 export interface ShapeMenuEntry {
   Kind: number;
   Label: string;

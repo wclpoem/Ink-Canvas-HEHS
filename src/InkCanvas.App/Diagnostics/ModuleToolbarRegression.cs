@@ -52,7 +52,8 @@ internal static class ModuleToolbarRegression
             var board = shell.OpenWindows.OfType<BoardWindow>().Single();
             OpenBoardMore(); await Task.Delay(150);
             var boardMenu = board.ToolPanels.Single();
-            foreach (var command in commands)
+            foreach (var command in commands.Where(command => command.PluginId != "inkcanvas.library"
+                && !(command.PluginId == "inkcanvas.pdf" && command.CommandId == "import")))
             {
                 var button = Descendants(boardMenu.Content).OfType<Button>().Single(item => item.Content is StackPanel panel
                     && panel.Children.OfType<TextBlock>().Any(text => text.Text == command.Title));
@@ -116,7 +117,8 @@ internal static class ModuleToolbarRegression
             void CheckFloatingEntries(string name)
             {
                 var buttons = Descendants(bar.Bar.CreateMorePanelContent()).OfType<TouchIconButton>().ToArray();
-                var current = shell.ExtensionCommands;
+                var current = shell.ExtensionCommands.Where(command => command.PluginId is not ("inkcanvas.library" or "inkcanvas.ai-assistant")
+                    && !(command.PluginId == "inkcanvas.pdf" && command.CommandId == "import")).ToArray();
                 Check(name + " matches available commands", current.All(command => buttons.Count(button => button.Label == command.Title) == 1)
                     && buttons.Count(button => button.Label is "打开 PDF" or "PDF 导入画板" or "解析几何")
                         == current.Count(command => command.PluginId is "inkcanvas.pdf" or "inkcanvas.analytic-geometry"));

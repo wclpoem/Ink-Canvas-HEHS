@@ -119,7 +119,7 @@ public sealed class SideBoardWindow : Window
 
         PageNavigator = new BoardPageNavigator(_board,
             () => new Vector2(Math.Max(1, (float)_surfaceHost.ActualWidth), Math.Max(1, (float)_surfaceHost.ActualHeight)),
-            NavigateToPage, InsertPage, DuplicatePage, DeleteCurrentPage);
+            NavigateToPage, InsertPage, DuplicatePage, DeleteCurrentPage, () => { });
         _pagePane = new Border
         {
             Width = 232,

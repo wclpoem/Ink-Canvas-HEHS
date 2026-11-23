@@ -54,7 +54,8 @@ internal static class ImageImportRegression
                 if (shell.Overlay.ClickThrough != mouseMode) shell.ToggleClickThrough();
                 Invoke(Descendants(toolbar.Bar).OfType<TouchIconButton>().Single(button => button.Label == "工具"));
                 await Task.Delay(100);
-                var image = Descendants(toolbar.Bar.CreateMorePanelContent()).OfType<TouchIconButton>()
+                var insertion = await MoreMenuRegression.OpenInsertionMenu(toolbar.GetOpenPanel(BarPanelKind.More).Content);
+                var image = Descendants(insertion).OfType<TouchIconButton>()
                     .Single(button => button.Label == "插入图片");
                 Check("image insertion menu is enabled in mouse mode " + mouseMode,
                     image.IsEnabled && image.Opacity == 1 && new ButtonAutomationPeer(image).IsEnabled());

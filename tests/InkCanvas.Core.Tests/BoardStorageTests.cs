@@ -7,6 +7,10 @@ using Xunit;
 
 namespace InkCanvas.Core.Tests;
 
+[CollectionDefinition("Archive memory accounting", DisableParallelization = true)]
+public sealed class ArchiveMemoryAccountingCollection { }
+
+[Collection("Archive memory accounting")]
 public sealed class BoardStorageTests : IDisposable
 {
     private readonly string _directory = Directory.CreateTempSubdirectory("inkcanvas-board-storage-").FullName;

@@ -57,4 +57,18 @@ public sealed class PdfContinuousLayout
         for (int index = NearestPage(top); index < Count && _pages[index].Top <= bottom; index++)
             if (_pages[index].Bottom >= top) yield return index;
     }
+
+    /// <summary>Visible pages first, followed by bounded look-ahead in the direction of travel.</summary>
+    public IEnumerable<int> PreviewPages(float top, float bottom, int direction)
+    {
+        int first = NearestPage(top), last = NearestPage(bottom);
+        foreach (int index in VisiblePages(top, bottom)) yield return index;
+        for (int distance = 1; distance <= (direction == 0 ? 1 : 3); distance++)
+        {
+            int ahead = direction < 0 ? first - distance : last + distance;
+            int behind = direction < 0 ? last + distance : first - distance;
+            if (ahead >= 0 && ahead < Count) yield return ahead;
+            if (distance == 1 && behind >= 0 && behind < Count) yield return behind;
+        }
+    }
 }

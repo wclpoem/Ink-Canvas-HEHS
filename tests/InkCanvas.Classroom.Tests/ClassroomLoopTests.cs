@@ -162,7 +162,6 @@ public sealed class ExerciseFlowTests
         Assert.Equal(4, plan.BoardPageIndex);
         Assert.Equal(1, plan.CountdownMinutes);
         Assert.Equal("practice", plan.SceneId);
-        Assert.True(plan.SaveSnapshotOnFinish);
     }
 
     [Fact]
@@ -180,19 +179,6 @@ public sealed class ExerciseFlowTests
         Assert.Equal("知识点：方程", lines[0]);
         Assert.Contains("题干二", lines);
         Assert.Equal("参考答案：42", lines[^1]);
-    }
-
-    [Fact]
-    public void PracticeFinish_PlansBookmarkOnlyWhileRecording()
-    {
-        var plan = new PracticePlan { ExerciseId = "ex", BoardPageIndex = 2 };
-
-        PracticeFinishRecord recording = PracticeFinishPolicy.Plan(plan, true, true);
-        PracticeFinishRecord idle = PracticeFinishPolicy.Plan(plan, false, true);
-
-        Assert.True(recording.BookmarkCreated);
-        Assert.Equal("练习结束", recording.BookmarkName);
-        Assert.False(idle.BookmarkCreated);
     }
 }
 

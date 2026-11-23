@@ -45,6 +45,8 @@ public sealed class LayeredInkWindow : IDisposable
     private const uint SWP_NOZORDER = 0x0004;
     private const uint SWP_NOACTIVATE = 0x0010;
     private const uint SWP_NOOWNERZORDER = 0x0200;
+    // Shared system cursor follows the user's cursor scheme and is owned by Windows.
+    private static readonly IntPtr ArrowCursor = NativeMethods.LoadCursorW(IntPtr.Zero, new IntPtr(NativeMethods.IDC_ARROW));
     private static bool _classRegistered;
     private static bool _mouseInPointerEnabled;
     private static bool _mouseAsPointer;
@@ -138,7 +140,7 @@ public sealed class LayeredInkWindow : IDisposable
                     lpfnWndProc = Marshal.GetFunctionPointerForDelegate(_wndProc),
                     hInstance = Marshal.GetHINSTANCE(typeof(LayeredInkWindow).Module),
                     lpszClassName = ClassName,
-                    hCursor = IntPtr.Zero,
+                    hCursor = ArrowCursor,
                     hbrBackground = IntPtr.Zero,
                 };
                 if (NativeMethods.RegisterClassW(ref wc) == 0)
@@ -246,7 +248,7 @@ public sealed class LayeredInkWindow : IDisposable
     public int Width { get; private set; }
     public int Height { get; private set; }
 
-    /// <summary>Logical DIPs per physical screen pixel on the monitor this overlay covers.</summary>
+/// <summary>Logical DIPs per physical screen pixel on the monitor this overlay covers.</summary>
     public float DpiScale { get; private set; } = 1f;
 
     /// <summary>Writable premultiplied-BGRA surface, <c>Width*Height*4</c> bytes, top-down.</summary>
@@ -379,7 +381,7 @@ public sealed class LayeredInkWindow : IDisposable
         IsVisible = false;
     }
 
-    /// <summary>
+/// <summary>
     /// Repositions and/or resizes the overlay without touching click-through, topmost or
     /// visibility. The DIB surface is only reallocated when the size actually changes, and
     /// <see cref="PixelBuffer"/> always points at the current allocation afterwards.
@@ -457,6 +459,7 @@ public sealed class LayeredInkWindow : IDisposable
         }
     }
 
+
     /// <summary>Push the current pixel buffer to the screen with per-pixel alpha.</summary>
     public void Present()
     {
@@ -484,6 +487,11 @@ public sealed class LayeredInkWindow : IDisposable
     {
         switch (msg)
         {
+            case NativeMethods.WM_SETCURSOR when (l.ToInt64() & 0xFFFF) == NativeMethods.HTCLIENT && !ClickThrough:
+                // A no-activate overlay must replace the cursor inherited from the window
+                // beneath it, which may still be displaying an application-starting spinner.
+                NativeMethods.SetCursor(ArrowCursor);
+                return new IntPtr(1);
             case NativeMethods.WM_DISPLAYCHANGE:
             case 0x02E0: // WM_DPICHANGED. The shared ink viewport deliberately keeps a stable scale.
             case 0x001A: // WM_SETTINGCHANGE, including taskbar / work-area changes.

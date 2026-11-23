@@ -35,7 +35,7 @@ public sealed class PresetWindow : Window
     };
     private readonly Dictionary<ClassroomTool, CheckBox> _checks = new();
 
-    public PresetWindow(ClassroomPreset current, int theme)
+    public PresetWindow(ClassroomPreset current, int theme, bool aiAvailable = false)
     {
         Title = "场景预设";
 
@@ -46,6 +46,7 @@ public sealed class PresetWindow : Window
         var toolPanel = new StackPanel { Spacing = 2 };
         foreach (ClassroomTool tool in EditableTools)
         {
+            if (!aiAvailable && tool is ClassroomTool.AiAssistant or ClassroomTool.AiStepGuide) continue;
             var check = new CheckBox
             {
                 Content = ToolLabel(tool),
@@ -140,7 +141,7 @@ public sealed class PresetWindow : Window
     {
         ClassroomTool.PptAnnotation => "课件批注",
         ClassroomTool.SlideNavigator => "批注导航",
-        ClassroomTool.AiAssistant => "AI 助教",
+        ClassroomTool.AiAssistant => "AI 助手",
         ClassroomTool.AiStepGuide => "AI 分步引导",
         ClassroomTool.Spotlight => "聚光灯",
         ClassroomTool.Magnifier => "放大镜",

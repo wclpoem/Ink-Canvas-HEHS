@@ -8,28 +8,14 @@ public readonly record struct NavigationPlacementResult(
     int X, int Y, int Width, int Height, NavigationCorner Corner);
 
 /// <summary>
-/// Pure placement math mirrored from the navigation window. Sizes are DIPs scaled by the
-/// monitor DPI; the result is always clamped inside the supplied screen bounds.
+/// Places the measured navigation client rectangle in physical pixels, keeping bottom
+/// navigation aligned with the main toolbar and avoiding overlap on narrow displays.
 /// </summary>
 public static class NavigationLayout
 {
-    private const double HorizontalWidth = 160;
-    private const double HorizontalHeight = 52;
-    private const double VerticalWidth = 52;
-    private const double VerticalHeight = 160;
-    private const double Margin = 20;
-
     public static NavigationPlacementResult Place(
-        NavigationCorner corner, ScreenBox showBounds, double dpiScale, bool counterVisible)
+        NavigationCorner corner, ScreenBox showBounds, int width, int height, int gap, ScreenBox toolbarBounds = default)
     {
-        _ = counterVisible;
-
-        double scale = dpiScale > 0 ? dpiScale : 1;
-        bool vertical = corner is NavigationCorner.SideLeft or NavigationCorner.SideRight;
-        int width = (int)Math.Ceiling((vertical ? VerticalWidth : HorizontalWidth) * scale);
-        int height = (int)Math.Ceiling((vertical ? VerticalHeight : HorizontalHeight) * scale);
-        int gap = (int)Math.Ceiling(Margin * scale);
-
         int boundsWidth = Math.Max(0, showBounds.Width);
         int boundsHeight = Math.Max(0, showBounds.Height);
         width = Math.Min(Math.Max(0, width), boundsWidth);
@@ -45,11 +31,20 @@ public static class NavigationLayout
         {
             NavigationCorner.SideLeft or NavigationCorner.SideRight
                 => showBounds.Y + (boundsHeight - height) / 2,
-            _ => showBounds.Y + boundsHeight - height - gap,
+            _ => (toolbarBounds.Height > 0 ? toolbarBounds.Y + toolbarBounds.Height : showBounds.Y + boundsHeight - gap) - height,
         };
 
         x = Math.Clamp(x, showBounds.X, showBounds.X + boundsWidth - width);
         y = Math.Clamp(y, showBounds.Y, showBounds.Y + boundsHeight - height);
+
+        if (toolbarBounds.Width > 0 && toolbarBounds.Height > 0
+            && x < toolbarBounds.X + toolbarBounds.Width && x + width > toolbarBounds.X
+            && y < toolbarBounds.Y + toolbarBounds.Height && y + height > toolbarBounds.Y)
+        {
+            int above = toolbarBounds.Y - gap - height;
+            int below = toolbarBounds.Y + toolbarBounds.Height + gap;
+            y = above >= showBounds.Y ? above : below + height <= showBounds.Y + boundsHeight ? below : y;
+        }
 
         return new NavigationPlacementResult(x, y, width, height, corner);
     }

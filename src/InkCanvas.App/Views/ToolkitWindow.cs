@@ -1,4 +1,4 @@
-using InkCanvas.App.Services;
+﻿using InkCanvas.App.Services;
 using InkCanvas.Controls.Animation;
 using InkCanvas.Controls.Controls;
 using InkCanvas.Platform.Interop;
@@ -17,6 +17,8 @@ namespace InkCanvas.App.Views;
 /// </summary>
 public sealed class ToolkitWindow : Window
 {
+    private Button _aiEntry;
+    public void SetAiAvailable(bool available) { if (_aiEntry is not null) _aiEntry.Visibility = available ? Visibility.Visible : Visibility.Collapsed; }
     private const double WindowWidth = 320;
     private const double ExpandedHeight = 434;
     private const double CollapsedHeight = 56;
@@ -99,10 +101,11 @@ public sealed class ToolkitWindow : Window
         AddTool(grid, 0, 0, Glyphs.People, "点名", () => _shell?.OpenRoster());
         AddTool(grid, 0, 1, Glyphs.Replay, "抽奖", () => _shell?.OpenLottery());
         AddTool(grid, 0, 2, Glyphs.Stopwatch, "倒计时", () => _shell?.OpenTimer());
-        AddTool(grid, 1, 0, Glyphs.Select, "聚光灯", () => _shell?.OpenSpotlight());
+        AddTool(grid, 1, 0, Glyphs.Spotlight, "聚光灯", () => _shell?.OpenSpotlight());
         AddTool(grid, 1, 1, Glyphs.Add, "放大镜", () => _shell?.OpenMagnifier());
         AddTool(grid, 1, 2, Glyphs.Board, "画板", () => _shell?.ToggleBoard());
-        AddTool(grid, 2, 0, Glyphs.Ai, "AI 助教", () => _shell?.OpenAiAssistant());
+        _aiEntry = AddTool(grid, 2, 0, Glyphs.Ai, "AI 助手", () => _shell?.OpenAiAssistant());
+        SetAiAvailable(_shell?.AiAssistantAvailable == true);
         AddTool(grid, 2, 1, Glyphs.People, "分组积分", () => _shell?.OpenGroupScore());
         AddTool(grid, 2, 2, Glyphs.Download, "讲义导出", () => _shell?.OpenHandout());
         AddTool(grid, 3, 0, Glyphs.SlideList, "切换场景", () => _shell?.CyclePreset());
@@ -148,7 +151,7 @@ public sealed class ToolkitWindow : Window
         Activated += (_, _) => Motion.PlayEntrance(outer, 12f);
     }
 
-    private static void AddTool(Grid grid, int row, int column, string glyph, string label, Action onClick)
+    private static Button AddTool(Grid grid, int row, int column, string glyph, string label, Action onClick)
     {
         FrameworkElement icon;
         if (glyph == Glyphs.Ai)
@@ -159,7 +162,7 @@ public sealed class ToolkitWindow : Window
         {
             icon = new FontIcon
             {
-                FontFamily = new FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
+                FontFamily = IconFontStyle.Font,
                 FontSize = 18,
                 Glyph = glyph,
             };
@@ -184,6 +187,7 @@ public sealed class ToolkitWindow : Window
         Grid.SetRow(button, row);
         Grid.SetColumn(button, column);
         grid.Children.Add(button);
+        return button;
     }
 
     private void OnHeaderPointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)

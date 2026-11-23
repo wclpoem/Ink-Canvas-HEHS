@@ -12,7 +12,7 @@ namespace InkCanvas.Platform.Ai;
 /// </summary>
 public sealed class AiClient : IDisposable
 {
-    internal static readonly HttpClient SharedHttpClient = new() { Timeout = Timeout.InfiniteTimeSpan };
+    public static readonly HttpClient SharedHttpClient = new() { Timeout = Timeout.InfiniteTimeSpan };
 
     private static readonly JsonSerializerOptions RequestJson = new()
     {
@@ -210,6 +210,12 @@ public sealed class AiClient : IDisposable
             writer.WritePropertyName("viewport");
             WriteViewport(writer, request.Viewport ?? new AssistantViewport());
             writer.WriteString("stage", StageText(request.Stage));
+            if (!string.IsNullOrWhiteSpace(request.Question)) writer.WriteString("question", request.Question);
+            if (request.Messages is { Count: > 0 })
+            {
+                writer.WritePropertyName("messages");
+                JsonSerializer.Serialize(writer, request.Messages, RequestJson);
+            }
             writer.WriteString("teaching", AssistantTeachingPolicy.Wire(request.Teaching));
             if (!string.IsNullOrEmpty(request.Purpose))
                 writer.WriteString("purpose", request.Purpose);
@@ -327,7 +333,7 @@ public sealed class AiStreamHandle
 {
     private Action _abort;
 
-    internal AiStreamHandle(Action abort)
+    public AiStreamHandle(Action abort)
     {
         _abort = abort ?? throw new ArgumentNullException(nameof(abort));
     }

@@ -44,7 +44,8 @@ internal static class BoardPopupRegression
                 try
                 {
                     await Task.Delay(100);
-                    var imageButtons = Descendants(tools.Content).OfType<TouchIconButton>().Where(button => button.Label == "插入图片").ToArray();
+                    var insertion = await MoreMenuRegression.OpenInsertionMenu(tools.Content);
+                    var imageButtons = Descendants(insertion).OfType<TouchIconButton>().Where(button => button.Label == "插入图片").ToArray();
                     checks.Add(new { check = "image insertion remains usable in tools menu",
                         passed = imageButtons.Length == 1 && imageButtons[0].IsEnabled && imageButtons[0].Opacity == 1 });
                 }
@@ -66,19 +67,10 @@ internal static class BoardPopupRegression
             window.CurrentController.Tool = InkTool.Select;
             Invoke(clearButton);
             await Task.Delay(100);
-            var dialog = VisualTreeHelper.GetOpenPopupsForXamlRoot(root.XamlRoot)
-                .SelectMany(popup => Descendants(popup.Child)).OfType<ContentDialog>().Single();
-            dialog.Hide();
-            await Task.Delay(100);
-            checks.Add(new { check = "canceling board clear preserves page and current tool",
-                passed = window.CurrentController.Document.Strokes.Contains(stroke) && window.CurrentController.Tool == InkTool.Select });
-            Invoke(clearButton);
-            await Task.Delay(100);
-            dialog = VisualTreeHelper.GetOpenPopupsForXamlRoot(root.XamlRoot)
-                .SelectMany(popup => Descendants(popup.Child)).OfType<ContentDialog>().Single();
-            Invoke(Descendants(dialog).OfType<Button>().Single(button => button.Name == "PrimaryButton"));
-            await Task.Delay(100);
-            checks.Add(new { check = "confirmed clear uses current page workflow",
+            checks.Add(new { check = "toolbar clear skips confirmation",
+                passed = !VisualTreeHelper.GetOpenPopupsForXamlRoot(root.XamlRoot)
+                    .SelectMany(popup => Descendants(popup.Child)).OfType<ContentDialog>().Any() });
+            checks.Add(new { check = "toolbar clear uses current page workflow",
                 passed = window.CurrentController.Document.Count == 0 && window.CurrentController.Tool == InkTool.Pen
                     && window.CurrentController.History.CanUndo });
             window.CurrentController.Undo();

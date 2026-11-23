@@ -65,11 +65,7 @@ public sealed class GeometryWindow : Window
     {
         _host = host; Title = "解析几何 — Ink Canvas";
         _mathModeAvailable = EnableMathMode(_formulaMath) & EnableMathMode(_secondMath);
-        _root.Background = new SolidColorBrush(Microsoft.UI.Colors.WhiteSmoke);
-        void ApplyTheme() => _root.Background = new SolidColorBrush(_root.ActualTheme == ElementTheme.Dark
-            ? Windows.UI.Color.FromArgb(255, 32, 32, 32) : Microsoft.UI.Colors.WhiteSmoke);
-        _root.ActualThemeChanged += (_, _) => ApplyTheme();
-        _root.Loaded += (_, _) => ApplyTheme();
+        _root.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -136,7 +132,7 @@ public sealed class GeometryWindow : Window
         var previewFrame = new Border { Child = _preview, Background = new SolidColorBrush(Microsoft.UI.Colors.White), Margin = new Thickness(0, 0, 16, 0), CornerRadius = new CornerRadius(8) };
         Grid.SetColumn(previewFrame, 1); body.Children.Add(previewFrame); Grid.SetRow(_status, 2); _root.Children.Add(_status);
         Content = _root; _host.ConfigureWindow(this);
-        WindowFrame.Attach(this, _root);
+        WindowFrame.Attach(this, _root).UseMica();
         _debounce = DispatcherQueue.CreateTimer(); _debounce.Interval = TimeSpan.FromMilliseconds(110); _debounce.IsRepeating = false;
         _debounce.Tick += (_, _) => _pendingCalculation = CalculateCoreAsync();
         _kind.SelectionChanged += (_, _) =>

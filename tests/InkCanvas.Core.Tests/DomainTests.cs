@@ -225,5 +225,6 @@ public class SettingsTests
         Assert.Equal(45, s.Rand.PeopleCount);
         // Untouched sections keep their defaults.
         Assert.True(s.PowerPoint.PowerPointSupport);
+        Assert.False(s.PowerPoint.HideStrokesAfterLeavingAnnotation);
     }
 }

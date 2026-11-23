@@ -28,7 +28,7 @@ public sealed class CommittedInkLayer : IDisposable
     }
     private readonly List<Run> _runs = new();
     private readonly Dictionary<(int Run, int X, int Y), Tile> _tiles = new();
-    private readonly List<(InkStroke Stroke, long Version, uint Color, Matrix3x2 Nib)> _snapshot = new();
+    private readonly List<(InkStroke Stroke, long Version, uint Color, Matrix3x2 Nib, InkCanvas.Core.Ink.Rect Bounds)> _snapshot = new();
     private Matrix3x2 _linear;
     private Vector2 _rasterOffset;
     private InkPlayback _playback;
@@ -50,6 +50,7 @@ public sealed class CommittedInkLayer : IDisposable
     public long CommittedStrokeDraws { get; private set; }
     public long RebuildCount { get; private set; }
     public long RasterBytes => _tileRasterBytes + _smallRasterBytes;
+    public long RasterBudgetBytes { get; set; } = MaxTileRasterBytes + MaxSmallRasterBytes;
     public void Invalidate() => _dirty = true;
 
     public void Draw(CanvasDrawingSession session, InkSceneRenderer scene, InkController controller,
@@ -60,6 +61,14 @@ public sealed class CommittedInkLayer : IDisposable
         var objects = objectsOverride ?? controller.DrawingObjects;
         if (objects.Count == 0) { Dispose(); return; }
         var view = transformOverride ?? controller.ViewTransform;
+        if (RasterBytes > RasterBudgetBytes) Dispose();
+        long minimumRaster = 516L * 516 * 4 * (controller.IsSelectionGestureActive ? 4 : 1);
+        if (RasterBudgetBytes < minimumRaster)
+        {
+            Dispose();
+            foreach (var item in objects) scene.DrawObject(session, controller, item, view);
+            return;
+        }
         var viewport = new InkCanvas.Core.Ink.Rect(0, 0, width, height);
         scene.Images.TrimOutsideViewport(controller, view, viewport);
         var linear = view;
@@ -87,7 +96,11 @@ public sealed class CommittedInkLayer : IDisposable
                     && strokes[i].Attributes.EffectiveColor.PackedArgb == _snapshot[i].Color && strokes[i].Attributes.NibTransform == _snapshot[i].Nib;
             if (!append)
             {
-                ClearTiles(); ClearRuns(); _linear = linear; _rasterOffset = rasterOffset; RebuildCount++;
+                bool partial = !changed && rasterOffset == _rasterOffset && preview is null && _runs.Count == 1 && !_runs[0].Moving
+                    && _runs[0].Image is null && objects.All(item => item.Stroke is not null);
+                if (partial) RetainUnchangedTiles(strokes, pixel);
+                else ClearTiles();
+                ClearRuns(); _linear = linear; _rasterOffset = rasterOffset; RebuildCount++;
             }
             for (int i = append ? _snapshot.Count : 0; i < objects.Count; i++)
             {
@@ -117,7 +130,7 @@ public sealed class CommittedInkLayer : IDisposable
                 IndexStroke(_runs[^1], bounds, pixel * 512, pixel * 2);
             }
             _snapshot.Clear();
-            foreach (var stroke in strokes) _snapshot.Add((stroke, stroke.GeometryVersion, stroke.Attributes.EffectiveColor.PackedArgb, stroke.Attributes.NibTransform));
+            foreach (var stroke in strokes) _snapshot.Add((stroke, stroke.GeometryVersion, stroke.Attributes.EffectiveColor.PackedArgb, stroke.Attributes.NibTransform, stroke.Bounds));
             _owner = controller; _preview = preview; _playback = controller.Playback; _dpi = dpi;
             _dotAnimationVersion = controller.DotAnimationVersion; _dirty = false;
             _recognitionVersion = controller.RecognitionSourcesVersion;
@@ -181,7 +194,7 @@ public sealed class CommittedInkLayer : IDisposable
                             : Math.Clamp(MathF.Sqrt(MathF.Abs(rasterToView.GetDeterminant())), .125f, 1);
                         long pixels = (long)MathF.Ceiling(516 * rasterScale);
                         long bytes = pixels * pixels * 4;
-                        while (_tiles.Count >= MaxTiles || _tileRasterBytes + bytes > MaxTileRasterBytes)
+                        while (_tiles.Count > 0 && (_tiles.Count >= MaxTiles || _tileRasterBytes + bytes > Math.Min(MaxTileRasterBytes, RasterBudgetBytes * 4 / 5)))
                         {
                             var oldest = _tiles.MinBy(pair => pair.Value.LastUsed);
                             _tileRasterBytes -= (long)oldest.Value.Target.SizeInPixels.Width * oldest.Value.Target.SizeInPixels.Height * 4;
@@ -255,7 +268,8 @@ public sealed class CommittedInkLayer : IDisposable
             int width = (int)MathF.Ceiling((run.Coverage.Right - origin.X) / pixel) + 2;
             int height = (int)MathF.Ceiling((run.Coverage.Bottom - origin.Y) / pixel) + 2;
             long bytes = (long)width * height * 4 * rasterScale * rasterScale;
-            if (width <= 0 || height <= 0 || width > 512 || height > 512 || _smallRasterBytes + bytes > MaxSmallRasterBytes) return false;
+            if (width <= 0 || height <= 0 || width > 512 || height > 512
+                || _smallRasterBytes + bytes > Math.Min(MaxSmallRasterBytes, RasterBudgetBytes / 5)) return false;
             run.SmallTarget = new CanvasRenderTarget(session, width * pixel, height * pixel, dpi * rasterScale);
             run.SmallOrigin = origin;
             _smallRasterBytes += bytes;
@@ -276,6 +290,45 @@ public sealed class CommittedInkLayer : IDisposable
         }
         finally { session.Transform = previous; }
         return true;
+    }
+
+    private void RetainUnchangedTiles(InkStroke[] strokes, float pixel)
+    {
+        var retained = _snapshot.Select(item => item.Stroke).ToHashSet();
+        var incoming = strokes.ToHashSet();
+        if (retained.Count != _snapshot.Count || incoming.Count != strokes.Length
+            || !_snapshot.Where(item => incoming.Contains(item.Stroke)).Select(item => item.Stroke)
+            .SequenceEqual(strokes.Where(retained.Contains)))
+        {
+            ClearTiles();
+            return;
+        }
+        var previous = _snapshot.ToDictionary(item => item.Stroke);
+        var dirtyBounds = new List<InkCanvas.Core.Ink.Rect>();
+        foreach (var old in _snapshot)
+            if (!incoming.Contains(old.Stroke)) dirtyBounds.Add(old.Bounds);
+        foreach (var stroke in strokes)
+        {
+            if (previous.TryGetValue(stroke, out var old) && old.Version == stroke.GeometryVersion
+                && old.Color == stroke.Attributes.EffectiveColor.PackedArgb && old.Nib == stroke.Attributes.NibTransform) continue;
+            dirtyBounds.Add(stroke.Bounds);
+            if (previous.ContainsKey(stroke)) dirtyBounds.Add(old.Bounds);
+        }
+        var transform = _linear * Matrix3x2.CreateTranslation(_rasterOffset);
+        var changed = dirtyBounds.Select(bounds => TransformBounds(bounds, transform).Inflate(2 * pixel)).ToArray();
+        float side = 512 * pixel;
+        foreach (var pair in _tiles.ToArray())
+        {
+            var bounds = new InkCanvas.Core.Ink.Rect(pair.Key.X * side - 2 * pixel, pair.Key.Y * side - 2 * pixel,
+                (pair.Key.X + 1) * side + 2 * pixel, (pair.Key.Y + 1) * side + 2 * pixel);
+            if (changed.Any(area => area.Intersects(bounds)))
+            {
+                _tileRasterBytes -= (long)pair.Value.Target.SizeInPixels.Width * pair.Value.Target.SizeInPixels.Height * 4;
+                pair.Value.Target.Dispose();
+                _tiles.Remove(pair.Key);
+            }
+            else pair.Value.DrawnCount = strokes.Length;
+        }
     }
 
     private static bool CanReuseRaster(Matrix3x2 delta)

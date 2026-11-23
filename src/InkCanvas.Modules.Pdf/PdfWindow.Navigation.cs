@@ -16,8 +16,15 @@ public sealed partial class PdfWindow
     private float _touchStartScale;
     private double _scrollFrame;
     private static double NavigationTime => Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
-    private PdfScrollBounds ScrollBounds => PdfScrollBounds.Create(new(_layout.Width, _layout.Height), ViewportSize,
-        MathF.Sqrt(MathF.Abs(DocumentView.GetDeterminant())));
+    private const float DocumentBottomPadding = 84;
+    private PdfScrollBounds ScrollBounds
+    {
+        get
+        {
+            float scale = MathF.Sqrt(MathF.Abs(DocumentView.GetDeterminant()));
+            return PdfScrollBounds.Create(new(_layout.Width, _layout.Height + DocumentBottomPadding / scale), ViewportSize, scale);
+        }
+    }
 
     private void ConfigureNavigation()
     {
@@ -53,11 +60,13 @@ public sealed partial class PdfWindow
         if (_touchNavigating && !_touchZoomed && Controller.Tool != InkTool.Pan && !Controller.HasActiveInteraction && _scrollInertia.Start(NavigationTime))
             StartScrollRendering();
         _touchNavigating = false;
+        QueueViewportUpdate();
     }
 
     internal void SmoothScrollBy(Vector2 delta)
     {
         if (Controller.HasActiveInteraction) return;
+        StopPictureMotion();
         _scrollInertia.Stop();
         _fitMode = FitMode.Free;
         _wheelTarget = ScrollBounds.Clamp((_wheelTarget ?? DocumentView.Translation) + delta);
@@ -74,8 +83,14 @@ public sealed partial class PdfWindow
 
     private void StopScrollMotion()
     {
+        if (_scrollRendering && !_closed && !Controller.HasActiveInteraction)
+        {
+            // Catch up to the visible compositor position before a new finger takes over.
+            AdvanceScrollMotion(NavigationTime);
+        }
         _scrollInertia.Stop();
         _wheelTarget = null;
+        EndNavigationPicture();
         if (!_scrollRendering) return;
         CompositionTarget.Rendering -= RenderScrollMotion;
         _scrollRendering = false;
@@ -84,7 +99,13 @@ public sealed partial class PdfWindow
     private void RenderScrollMotion(object sender, object args)
     {
         if (_closed || Controller.HasActiveInteraction || !_idleResources.IsActive) { StopScrollMotion(); return; }
-        double now = NavigationTime, elapsed = now - _scrollFrame;
+        AdvanceScrollMotion(NavigationTime);
+        if (_wheelTarget is null && !_scrollInertia.IsRunning) { StopScrollMotion(); UpdateActivePage(); }
+    }
+
+    private void AdvanceScrollMotion(double now)
+    {
+        double elapsed = now - _scrollFrame;
         _scrollFrame = now;
         var before = DocumentView.Translation;
         Vector2 delta;
@@ -101,6 +122,5 @@ public sealed partial class PdfWindow
         view.Translation += after - before;
         Controller.ViewTransform = view;
         if (after != before) Controller.NotifyElementsChanged();
-        if (_wheelTarget is null && !_scrollInertia.IsRunning) { StopScrollMotion(); UpdateActivePage(); }
     }
 }

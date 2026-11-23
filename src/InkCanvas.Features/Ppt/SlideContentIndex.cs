@@ -72,6 +72,14 @@ public sealed class SlideContentIndex
 
         IReadOnlyList<PptSlideInfo> slides = details?.Slides ?? Array.Empty<PptSlideInfo>();
         IReadOnlyList<PptStoredSlide> stored = archive?.Slides ?? Array.Empty<PptStoredSlide>();
+        var storedById = new Dictionary<int, PptStoredSlide>();
+        var storedByIndex = new Dictionary<int, PptStoredSlide>();
+        foreach (var ink in stored)
+        {
+            if (ink is null) continue;
+            if (ink.SlideId > 0) storedById.TryAdd(ink.SlideId, ink);
+            else storedByIndex.TryAdd(ink.SlideIndex, ink);
+        }
         var previousBySlideId = new Dictionary<int, SlideContentEntry>();
         var previousByIndex = new Dictionary<int, SlideContentEntry>();
         if (previous?.Slides is not null)
@@ -87,15 +95,18 @@ public sealed class SlideContentIndex
         {
             if (slide is null) continue;
 
-            PptStoredSlide ink = FindStored(stored, slide.SlideId, slide.Index);
+            var ink = storedById.GetValueOrDefault(slide.SlideId) ?? storedByIndex.GetValueOrDefault(slide.Index);
             SlideContentEntry kept = Lookup(previousBySlideId, previousByIndex, slide.SlideId, slide.Index);
+            int strokeCount = ink?.IsDeferred == true
+                ? ink.StoredStrokeCount ?? kept?.InkStrokeCount ?? 0
+                : ink?.Strokes?.Count ?? 0;
             index.Slides.Add(new SlideContentEntry
             {
                 SlideId = slide.SlideId,
                 Index = slide.Index,
                 Name = slide.Name ?? "",
-                HasInk = ink is { Strokes.Count: > 0 },
-                InkStrokeCount = ink?.Strokes?.Count ?? 0,
+                HasInk = strokeCount > 0,
+                InkStrokeCount = strokeCount,
                 Favorite = kept?.Favorite ?? false,
                 HasAi = kept?.HasAi ?? false,
                 ThumbnailPath = kept?.ThumbnailPath ?? "",
@@ -105,23 +116,6 @@ public sealed class SlideContentIndex
         }
 
         return index;
-    }
-
-    private static PptStoredSlide FindStored(IReadOnlyList<PptStoredSlide> stored, int slideId, int slideIndex)
-    {
-        foreach (PptStoredSlide item in stored)
-        {
-            if (item is null) continue;
-            if (slideId > 0 && item.SlideId == slideId) return item;
-        }
-
-        foreach (PptStoredSlide item in stored)
-        {
-            if (item is null) continue;
-            if (item.SlideId <= 0 && item.SlideIndex == slideIndex) return item;
-        }
-
-        return null;
     }
 
     private static SlideContentEntry Lookup(

@@ -1,3 +1,5 @@
+using InkCanvas.Core.AiAssistant;
+using InkCanvas.Features.AiAssistant;
 using System.Numerics;
 using InkCanvas.Core.Ink;
 using InkCanvas.Core.Selection;
@@ -10,6 +12,7 @@ public sealed class BoardSelectionElement : IImageSelectionElement
 {
     private readonly BoardService _board;
     private readonly InkController _page;
+    internal InkController Page => _page;
     private int _restoreIndex = -1;
     public BoardImageAsset Image { get; }
     public BoardMediaAsset Media { get; }
@@ -27,6 +30,22 @@ public sealed class BoardSelectionElement : IImageSelectionElement
     }
     public byte[] ImageData => Image?.Data;
     public string ImageContentType => Image?.ContentType;
+    private string _annotationMetadata;
+    private IReadOnlyList<IReadOnlyList<ShapeAnnotationPoint>> _annotations = Array.Empty<IReadOnlyList<ShapeAnnotationPoint>>();
+    public IReadOnlyList<IReadOnlyList<ShapeAnnotationPoint>> ImageAnnotations
+    {
+        get
+        {
+            if (Image is null || string.Equals(_annotationMetadata, Image.Metadata, StringComparison.Ordinal))
+                return _annotations;
+            _annotationMetadata = Image.Metadata;
+            var metadata = AiPasteMetadata.TryParse(_annotationMetadata);
+            _annotations = metadata?.Kind == AiPasteKind.Shape && metadata.Annotations is { Count: > 0 }
+                ? metadata.Annotations.Select(line => ShapeAnnotationGeometry.Normalize(line, Image.Width, Image.Height)).ToArray()
+                : Array.Empty<IReadOnlyList<ShapeAnnotationPoint>>();
+            return _annotations;
+        }
+    }
     public float Opacity
     {
         get => Image?.Opacity ?? 1;
@@ -74,8 +93,7 @@ public sealed class BoardSelectionElement : IImageSelectionElement
         Refresh();
     }
     public ISelectionElement Duplicate() => Image is not null
-        ? new BoardSelectionElement(_board, new BoardImageAsset { Name = Image.Name, Data = Image.Data, ContentType = Image.ContentType,
-            Left = Image.Left, Top = Image.Top, Width = Image.Width, Height = Image.Height, Transform = Image.Transform?.ToArray(), Opacity = Image.Opacity, LayerOrder = Image.LayerOrder }, _page)
+        ? new BoardSelectionElement(_board, Image.Copy(preserveId: false, copyData: false), _page)
         : new BoardSelectionElement(_board, new BoardMediaAsset { Name = Media.Name, Data = Media.Data, ContentType = Media.ContentType,
             Left = Media.Left, Top = Media.Top, Width = Media.Width, Height = Media.Height, Transform = Media.Transform?.ToArray(), LayerOrder = Media.LayerOrder,
             PosterData = Media.PosterData, NaturalWidth = Media.NaturalWidth, NaturalHeight = Media.NaturalHeight }, _page);

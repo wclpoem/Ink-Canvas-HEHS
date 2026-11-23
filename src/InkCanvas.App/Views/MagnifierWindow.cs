@@ -42,6 +42,9 @@ public sealed class MagnifierWindow : Window
     private int _lastY;
     private bool _hasLast;
     private bool _disposed;
+    private readonly bool _aiAvailable;
+    private Button _askAi;
+    public void SetAiAvailable(bool available) { if (_askAi is not null) _askAi.Visibility = available ? Visibility.Visible : Visibility.Collapsed; }
     private ScreenRect _sourceRect;
 
     /// <summary>请求把当前取景贴到白板（false）或交给 AI 识别（true）。</summary>
@@ -73,8 +76,9 @@ public sealed class MagnifierWindow : Window
             WindowChrome.GetHwnd(this), InkCanvas.Platform.Interop.NativeMethods.SW_SHOWNOACTIVATE);
     }
 
-    public MagnifierWindow()
+    public MagnifierWindow(bool aiAvailable = false)
     {
+        _aiAvailable = aiAvailable;
         Title = "放大镜";
 
         _lens = new CanvasControl { ClearColor = Windows.UI.Color.FromArgb(0, 0, 0, 0) };
@@ -175,6 +179,8 @@ public sealed class MagnifierWindow : Window
         paste.Click += (_, _) => CaptureRequested?.Invoke(false);
 
         var ask = SmallButton("问 AI");
+        _askAi = ask;
+        SetAiAvailable(_aiAvailable);
         ask.Click += (_, _) => CaptureRequested?.Invoke(true);
 
         row.Children.Add(smaller);

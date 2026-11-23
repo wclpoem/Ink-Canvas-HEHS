@@ -10,6 +10,7 @@ public sealed class WindowFrame : Grid
 {
     private readonly Window _window;
     private FrameworkElement _body;
+    private SystemBackdrop _backdrop;
     public TitleBar Header { get; } = new()
     {
         MinHeight = 48,
@@ -52,11 +53,28 @@ public sealed class WindowFrame : Grid
 
     public void RefreshTitle() => Header.Title = _window.Title;
 
+    /// <summary>Use the native window material, including system theme and accessibility fallbacks.</summary>
+    public WindowFrame UseMica() => UseBackdrop(_backdrop as MicaBackdrop ?? new MicaBackdrop());
+
+    public WindowFrame UseAcrylic() => UseBackdrop(_backdrop as DesktopAcrylicBackdrop ?? new DesktopAcrylicBackdrop());
+
+    private WindowFrame UseBackdrop(SystemBackdrop backdrop)
+    {
+        RequestedTheme = _body.RequestedTheme;
+        _body.RequestedTheme = ElementTheme.Default;
+        _backdrop = backdrop;
+        _window.SystemBackdrop = _backdrop;
+        OnThemeChanged(_body, null);
+        return this;
+    }
+
     private void OnThemeChanged(FrameworkElement sender, object args)
     {
         bool dark = sender.ActualTheme == ElementTheme.Dark;
         Header.RequestedTheme = dark ? ElementTheme.Dark : ElementTheme.Light;
-        Background = new SolidColorBrush(dark ? Windows.UI.Color.FromArgb(255, 31, 31, 31) : Windows.UI.Color.FromArgb(255, 240, 243, 249));
+        Background = new SolidColorBrush(_backdrop is not null ? Microsoft.UI.Colors.Transparent
+            : dark ? Windows.UI.Color.FromArgb(255, 31, 31, 31) : Windows.UI.Color.FromArgb(255, 240, 243, 249));
+        if (_backdrop is not null) Header.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
         _window.AppWindow.TitleBar.ButtonForegroundColor = dark ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black;
         _window.AppWindow.TitleBar.ButtonInactiveForegroundColor = dark
             ? Windows.UI.Color.FromArgb(255, 156, 156, 156) : Windows.UI.Color.FromArgb(255, 112, 112, 112);
@@ -65,6 +83,11 @@ public sealed class WindowFrame : Grid
     private void OnClosed(object sender, WindowEventArgs args)
     {
         _window.Closed -= OnClosed;
+        if (_backdrop is not null)
+        {
+            if (ReferenceEquals(_window.SystemBackdrop, _backdrop)) _window.SystemBackdrop = null;
+            _backdrop = null;
+        }
         if (_body is not null) _body.ActualThemeChanged -= OnThemeChanged;
     }
 }

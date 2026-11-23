@@ -23,6 +23,13 @@ public sealed partial class ShellController
     {
         if (silent) return CanInstallUpdateSilently();
         if (ActiveController.HasActiveInteraction) { await ShowUpdateNoticeAsync("更新", "请先完成当前笔画或拖动，再安装更新。"); return false; }
+        if (Services.Settings.Archive.ScreenCapture.SaveOnExit)
+        {
+            await SaveScreenArchiveAsync("更新前屏幕存档");
+            await WaitForScreenArchivesAsync();
+            if (Services.ScreenArchives.LastError is not null && Services.ScreenArchives.IsEnabled(_lastSlideShowState)
+                && Services.OverlayInk.Document.Count > 0 && _board is null) return false;
+        }
         if (_documentWorkspace is not null && !await _documentWorkspace.CloseAsync()) return false;
         var boardWindow = _board;
         var stores = new[] { Services.ScreenImages, Services.Board };
@@ -51,7 +58,7 @@ public sealed partial class ShellController
                 await ShowUpdateNoticeAsync("更新", "备份期间画板内容发生了变化。请完成编辑后重新安装更新。");
                 return false;
             }
-            boardWindow?.Close();
+            if (boardWindow is not null) { await boardWindow.SaveArchiveBeforeCloseAsync("安装更新"); boardWindow.Close(); }
             Services.SaveSettings();
             return true;
         }

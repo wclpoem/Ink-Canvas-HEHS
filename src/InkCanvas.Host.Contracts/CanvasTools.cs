@@ -8,6 +8,7 @@ public sealed record CanvasToolTarget(InkController Controller, string Kind, boo
 
 public interface ICanvasToolsHost
 {
+    IAiDocumentBridge DocumentAi => null;
     CanvasToolTarget CaptureTarget();
     bool IsCurrent(CanvasToolTarget target);
     void ConfigureWindow(Window window, int width = 1180, int height = 880);

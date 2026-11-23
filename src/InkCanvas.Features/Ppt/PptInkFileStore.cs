@@ -17,7 +17,13 @@ public sealed class PptInkFileStore : IPptInkStore
     private const string PositionName = "Position";
     private const string SlideFilePrefix = "slide-";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
-    private readonly string _root;
+    private readonly object _manifestLock = new();
+    private string _cachedManifestPath;
+    private DateTime _cachedManifestWriteUtc;
+    private long _cachedManifestLength;
+    private Dictionary<int, string> _cachedSlideFiles;
+    private string _root;
+    public void SetAutoSaveRoot(string root) => _root = InkCanvas.Core.Settings.ArchivePolicy.ResolveDirectory(root);
 
     public PptInkFileStore(string autoSaveRoot)
     {
@@ -28,13 +34,18 @@ public sealed class PptInkFileStore : IPptInkStore
 
     public PptInkArchive Load(PptPresentationInfo presentation) => Load(presentation, out _);
 
+    /// <summary>Reads modern archive metadata without decoding every slide's ink.</summary>
+    public PptInkArchive LoadForSession(PptPresentationInfo presentation) => Load(presentation, out _, metadataOnly: true);
+
     /// <summary>
     /// 同 <see cref="Load(PptPresentationInfo)"/>，并通过 <paramref name="diagnostic"/> 输出
     /// 旧存档目录回填的结果（来源目录、复制数量或失败原因）。回填只复制文件到当前命名目录，
     /// 不修改/删除旧目录；回填成功后重新读取当前目录，使本次返回值即包含回填的 .icink 与 manifest。
     /// 回填失败（或回填后重读异常）时返回回填前第一次读取的结果，且不向调用方抛出异常。
     /// </summary>
-    public PptInkArchive Load(PptPresentationInfo presentation, out string diagnostic)
+    public PptInkArchive Load(PptPresentationInfo presentation, out string diagnostic) => Load(presentation, out diagnostic, metadataOnly: false);
+
+    private PptInkArchive Load(PptPresentationInfo presentation, out string diagnostic, bool metadataOnly)
     {
         ArgumentNullException.ThrowIfNull(presentation);
         diagnostic = null;
@@ -50,7 +61,7 @@ public sealed class PptInkFileStore : IPptInkStore
         ArchiveReadResult read;
         try
         {
-            read = ReadArchive(directory);
+            read = ReadArchive(directory, metadataOnly);
         }
         catch (Exception ex)
         {
@@ -65,7 +76,7 @@ public sealed class PptInkFileStore : IPptInkStore
             // 重读失败时保留第一次的结果，绝不因回填流程向外抛异常。
             try
             {
-                read = ReadArchive(directory);
+                read = ReadArchive(directory, metadataOnly);
             }
             catch (Exception ex)
             {
@@ -82,7 +93,7 @@ public sealed class PptInkFileStore : IPptInkStore
     /// 按当前目录结构读取一次存档（manifest 优先，其次无 manifest 的按页号命名文件），
     /// 不执行任何回填或写入。目录不存在时返回空结果。
     /// </summary>
-    private static ArchiveReadResult ReadArchive(string directory)
+    private static ArchiveReadResult ReadArchive(string directory, bool metadataOnly)
     {
         bool directoryExists = Directory.Exists(directory);
         var slides = new List<PptStoredSlide>();
@@ -110,7 +121,12 @@ public sealed class PptInkFileStore : IPptInkStore
                     {
                         string file = SafeManifestFile(directory, entry.File);
                         if (file is null || !File.Exists(file)) continue;
-                        try { slides.Add(new PptStoredSlide(entry.SlideId, entry.SlideIndex, InkFileStore.Load(file))); }
+                        try
+                        {
+                            bool deferred = metadataOnly && manifest.Version >= CurrentManifestVersion;
+                            slides.Add(new PptStoredSlide(entry.SlideId, entry.SlideIndex,
+                                deferred ? Array.Empty<InkStroke>() : InkFileStore.Load(file), deferred, entry.StrokeCount));
+                        }
                         catch { /* Other slides remain available when one file is damaged. */ }
                     }
                 }
@@ -328,6 +344,7 @@ public sealed class PptInkFileStore : IPptInkStore
                     SlideId = entry.SlideId,
                     SlideIndex = entry.SlideIndex,
                     File = entry.File,
+                    StrokeCount = entry.StrokeCount,
                 });
             }
 
@@ -359,6 +376,7 @@ public sealed class PptInkFileStore : IPptInkStore
                     SlideId = old.SlideId,
                     SlideIndex = slideIndex,
                     File = old.File,
+                    StrokeCount = old.StrokeCount,
                 });
                 slideIds.Add(old.SlideId);
                 files.Add(old.File);
@@ -411,11 +429,13 @@ public sealed class PptInkFileStore : IPptInkStore
         };
         foreach (PptStoredSlide item in archive.Slides ?? Array.Empty<PptStoredSlide>())
         {
-            if (item is null || item.SlideId <= 0 || item.SlideIndex <= 0 || item.Strokes is null || item.Strokes.Count == 0)
+            if (item is null || item.IsDeferred || item.SlideId <= 0 || item.SlideIndex <= 0 || item.Strokes is null)
                 continue;
+            // An explicitly empty slide is a saved erase, not a missing partial update.
+            // Retain its manifest entry so a later merge cannot resurrect the previous ink.
             string fileName = $"slide-{item.SlideId}.icink";
             InkFileStore.Save(Path.Combine(directory, fileName), item.Strokes);
-            manifest.Slides.Add(new ManifestSlide { SlideId = item.SlideId, SlideIndex = item.SlideIndex, File = fileName });
+            manifest.Slides.Add(new ManifestSlide { SlideId = item.SlideId, SlideIndex = item.SlideIndex, File = fileName, StrokeCount = item.Strokes.Count });
         }
 
         // 本次 archive 可能只是部分页（例如导航只回写了当前可见页），
@@ -465,7 +485,7 @@ public sealed class PptInkFileStore : IPptInkStore
             if (currentFiles.Contains(old.File)) continue;
             string existing = SafeManifestFile(directory, old.File);
             if (existing is null || !File.Exists(existing)) continue;
-            current.Add(new ManifestSlide { SlideId = old.SlideId, SlideIndex = old.SlideIndex, File = old.File });
+            current.Add(new ManifestSlide { SlideId = old.SlideId, SlideIndex = old.SlideIndex, File = old.File, StrokeCount = old.StrokeCount });
             currentSlideIds.Add(old.SlideId);
             currentFiles.Add(old.File);
         }
@@ -482,12 +502,39 @@ public sealed class PptInkFileStore : IPptInkStore
         try
         {
             string directory = GetPresentationDirectory(presentation);
-            string file = Path.Combine(directory, $"{SlideFilePrefix}{slideId}{InkFileStore.Extension}");
+            string file = FindSlideFile(directory, slideId);
+            if (file is null) return null;
             if (!File.Exists(file)) return null;
             List<InkStroke> strokes = InkFileStore.Load(file);
-            return strokes is { Count: > 0 } ? strokes : null;
+            return strokes;
         }
         catch { return null; }
+    }
+
+    private string FindSlideFile(string directory, int slideId)
+    {
+        string path = Path.Combine(directory, ManifestName);
+        var info = new FileInfo(path);
+        if (!info.Exists) return Path.Combine(directory, $"{SlideFilePrefix}{slideId}{InkFileStore.Extension}");
+        lock (_manifestLock)
+        {
+            if (_cachedManifestPath != path || _cachedManifestWriteUtc != info.LastWriteTimeUtc || _cachedManifestLength != info.Length)
+            {
+                var manifest = JsonSerializer.Deserialize<Manifest>(File.ReadAllText(path), JsonOptions);
+                var files = new Dictionary<int, string>();
+                foreach (var entry in manifest?.Slides ?? new())
+                {
+                    if (entry is null || entry.SlideId <= 0) continue;
+                    string file = SafeManifestFile(directory, entry.File);
+                    if (file is not null) files.TryAdd(entry.SlideId, file);
+                }
+                _cachedSlideFiles = files;
+                _cachedManifestPath = path;
+                _cachedManifestWriteUtc = info.LastWriteTimeUtc;
+                _cachedManifestLength = info.Length;
+            }
+            return _cachedSlideFiles.GetValueOrDefault(slideId);
+        }
     }
 
     /// <summary>Public so callers can back up or migrate exactly the directory Load reads.</summary>
@@ -561,5 +608,6 @@ public sealed class PptInkFileStore : IPptInkStore
         public int SlideId { get; set; }
         public int SlideIndex { get; set; }
         public string File { get; set; }
+        public int? StrokeCount { get; set; }
     }
 }

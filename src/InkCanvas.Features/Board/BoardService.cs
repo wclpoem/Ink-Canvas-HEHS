@@ -11,6 +11,10 @@ namespace InkCanvas.Features.Board;
 
 public enum BoardBackground { Black, White, Grid, Lined, Green, Cream, Coordinate }
 
+/// <summary>Lightweight page summary for thumbnail/list UIs (no bitmap rendering required).</summary>
+public readonly record struct BoardPageThumbnail(
+    int Index, string Name, BoardBackground Background, int StrokeCount, int ImageCount);
+
 public sealed record BoardPageInfo(InkController Controller, BoardBackground Background, float GridSpacing,
     IReadOnlyList<BoardImageAsset> Images, IReadOnlyList<BoardMediaAsset> Media,
     IReadOnlyList<BoardTextObject> TextObjects = null, IReadOnlyList<BoardFormulaObject> FormulaObjects = null);
@@ -46,6 +50,7 @@ public sealed class BoardImageAsset
     public long? LayerOrder { get; set; }
     public string Name { get; set; } = "Image";
     public byte[] Data { get; set; } = Array.Empty<byte>();
+    public string Metadata { get; set; } = "";
     public string ContentType { get; set; } = "image/png";
     public float Left { get; set; }
     public float Top { get; set; }
@@ -53,8 +58,6 @@ public sealed class BoardImageAsset
     public float Height { get; set; }
     public float Opacity { get; set; } = 1;
 
-    /// <summary>Optional camelCase JSON payload (for example AI paste source); empty for plain images.</summary>
-    public string Metadata { get; set; } = "";
 
     /// <summary>
     /// Cumulative canvas-space transform, the port of the WPF element RenderTransform
@@ -71,11 +74,12 @@ public sealed class BoardImageAsset
         Name = Name,
         Data = copyData ? Data.ToArray() : Data,
         ContentType = ContentType,
+        Metadata = Metadata,
         Left = Left,
         Top = Top,
         Width = Width,
         Height = Height,
-        Metadata = Metadata ?? "",
+
         Opacity = Opacity,
         Transform = Transform?.ToArray(),
     };
@@ -83,9 +87,7 @@ public sealed class BoardImageAsset
 
 public readonly record struct BoardImageGeometry(float Left, float Top, float Width, float Height);
 
-/// <summary>Lightweight page summary for thumbnail/list UIs (no bitmap rendering required).</summary>
-public readonly record struct BoardPageThumbnail(
-    int Index, string Name, BoardBackground Background, int StrokeCount, int ImageCount);
+
 /// <summary>A video file embedded on a whiteboard page, with DIP placement/size.</summary>
 public sealed class BoardMediaAsset
 {
@@ -182,10 +184,9 @@ public static class BoardElementMath
 }
 
 /// <summary>
-/// Multi-page blackboard/whiteboard. Every page owns its ink controller, undo history, image
-/// collection and <see cref="BoardPageState"/> (name, background, grid spacing, view transform).
-/// Coordinates and sizes in both collections are stored in WinUI device-independent pixels,
-/// not physical screen pixels.
+/// Multi-page blackboard/whiteboard. Every page owns its ink controller, undo history and image
+/// collection. Coordinates and sizes in both collections are stored in WinUI device-independent
+/// pixels, not physical screen pixels.
 /// </summary>
 public sealed partial class BoardService
 {
@@ -202,14 +203,13 @@ public sealed partial class BoardService
     };
 
     private readonly List<InkController> _pages = new();
-    private sealed record BoardPaper(BoardBackground Background = BoardBackground.Black, float GridSpacing = 40f);
+    private readonly UndoStack _pageHistory = new(100);
+    private int _nextPageNumber = 2;
+    private sealed record BoardPaper(BoardBackground Background = BoardBackground.Black, float GridSpacing = 40f, string Name = null);
     private readonly Dictionary<InkController, BoardPaper> _papers = new();
     private readonly Dictionary<Guid, BoardSelectionElement> _selectionElements = new();
     private readonly List<List<BoardImageAsset>> _images = new() { new List<BoardImageAsset>() };
     private readonly List<BoardPageState> _states = new() { new BoardPageState { Name = "页面 1" } };
-
-    /// <summary>Page-level undo/redo for structural operations (insert, copy, move, rename, delete).</summary>
-    private readonly UndoStack _pageHistory = new(100);
     private readonly List<List<BoardMediaAsset>> _media = new() { new List<BoardMediaAsset>() };
 
     /// <summary>Native AI text objects, parallel to <see cref="_pages"/>; never baked images.</summary>
@@ -222,7 +222,7 @@ public sealed partial class BoardService
     {
         var page = initialController ?? new InkController();
         _pages.Add(page);
-        _papers.Add(page, new());
+        _papers.Add(page, new(Name: "页面 1"));
         page.GetSelectableElements = () => GetSelectionElements(page);
         ImagesChanged += () => Current.NotifyElementsChanged();
     }
@@ -235,9 +235,9 @@ public sealed partial class BoardService
         if (index < 0) yield break;
         var images = _images[index];
         var mediaObjects = _media[index];
-        var present = _images.SelectMany(items => items).Select(image => image.Id)
-            .Concat(_media.SelectMany(items => items).Select(media => media.Id)).ToHashSet();
-        foreach (var id in _selectionElements.Keys.Where(id => !present.Contains(id)).ToArray()) _selectionElements.Remove(id);
+        var present = images.Select(image => image.Id).Concat(mediaObjects.Select(media => media.Id)).ToHashSet();
+        foreach (var id in _selectionElements.Where(pair => ReferenceEquals(pair.Value.Page, page) && !present.Contains(pair.Key))
+            .Select(pair => pair.Key).ToArray()) _selectionElements.Remove(id);
         foreach (var image in images)
         {
             if (!_selectionElements.TryGetValue(image.Id, out var element) || !ReferenceEquals(element.Image, image))
@@ -299,7 +299,7 @@ public sealed partial class BoardService
     /// <summary>Page creation is limited only by the runtime collection capacity; <see cref="MaximumPages"/> is a UI soft limit.</summary>
     public bool CanAddPages(int count = 1) => count > 0 && count <= Array.MaxLength - PageCount;
 
-    public bool HasContent => _pages.Any(page => page.Document.Count > 0)
+    public bool HasContent => _extensions.Count > 0 || _pages.Any(page => page.Document.Count > 0)
         || _images.Any(images => images.Count > 0)
         || _media.Any(media => media.Count > 0)
         || _textObjects.Any(texts => texts.Count > 0)
@@ -319,7 +319,7 @@ public sealed partial class BoardService
 
     public IReadOnlyList<InkController> Pages => _pages;
 
-    /// <summary>与主展板一起保存/加载的板中板服务；为 null 时主文件不写 SideBoard 节点。</summary>
+/// <summary>与主展板一起保存/加载的板中板服务；为 null 时主文件不写 SideBoard 节点。</summary>
     public BoardService SideBoardSource { get; set; }
 
     /// <summary>Visual state (name/background/grid/view) of the current page.</summary>
@@ -337,6 +337,7 @@ public sealed partial class BoardService
     public bool CanUndoPage => _pageHistory.CanUndo;
 
     public bool CanRedoPage => _pageHistory.CanRedo;
+
     public IReadOnlyList<BoardMediaAsset> CurrentMedia => _media[CurrentIndex];
     public event Action<BoardImageAsset> ImagePlacementChanged;
     public event Action<BoardMediaAsset> MediaPlacementChanged;
@@ -417,6 +418,7 @@ public sealed partial class BoardService
         if (index == CurrentIndex) ImagesChanged?.Invoke();
     }
 
+
     public void SetTextPresent(InkController page, BoardTextObject text, bool present, int restoreIndex = -1)
     {
         int index = _pages.IndexOf(page);
@@ -447,13 +449,14 @@ public sealed partial class BoardService
         if (index == CurrentIndex) ImagesChanged?.Invoke();
     }
 
+
     public event Action PageChanged;
 
     public event Action BackgroundChanged;
 
     public event Action ImagesChanged;
 
-    /// <summary>AI 板书对象增删改（AI 卡片带 <see cref="AiPasteMetadata"/>）；普通图片不触发。</summary>
+/// <summary>AI 板书对象增删改（AI 卡片带 <see cref="AiPasteMetadata"/>）；普通图片不触发。</summary>
     public event Action<BoardAiObjectChange> AiObjectsChanged;
 
     public bool UndoPage() => _pageHistory.Undo();
@@ -467,6 +470,7 @@ public sealed partial class BoardService
         CurrentState.Background = background;
         SyncPaper(CurrentIndex);
         BackgroundChanged?.Invoke();
+
     }
 
     public void NextPage()
@@ -516,7 +520,7 @@ public sealed partial class BoardService
         return true;
     }
 
-    /// <summary>Deep-copy the current page (strokes, images and visual state) into a page right after it.</summary>
+/// <summary>Deep-copy the current page (strokes, images and visual state) into a page right after it.</summary>
     public bool CopyCurrentPage()
     {
         if (!CanAddPages()) return false;
@@ -668,6 +672,7 @@ public sealed partial class BoardService
     public IReadOnlyList<BoardPageThumbnail> GetPageThumbnails()
         => Enumerable.Range(0, _pages.Count).Select(GetPageThumbnail).ToList();
 
+
     /// <summary>Transfer prepared pages in one UI update. A rejected batch leaves all pages intact.</summary>
     public bool InsertPagesAfterCurrent(IReadOnlyList<(InkController Ink, IReadOnlyList<BoardImageAsset> Images)> pages)
     {
@@ -798,13 +803,15 @@ public sealed partial class BoardService
     }
 
 
-    public bool DuplicateCurrentPage()
+    public bool DuplicateCurrentPage() => DuplicateCurrentPage(copyData: false);
+
+    private bool DuplicateCurrentPage(bool copyData)
     {
         if (!CanAddPages()) return false;
         var source = Current;
         var strokes = InkStroke.CloneObjects(source.Document.Strokes);
-        var images = CurrentImages.Select(image => image.Copy(preserveId: false, copyData: false)).ToList();
-        var media = CurrentMedia.Select(item => item.Copy(preserveId: false, copyData: false)).ToList();
+        var images = CurrentImages.Select(image => image.Copy(preserveId: false, copyData: copyData)).ToList();
+        var media = CurrentMedia.Select(item => item.Copy(preserveId: false, copyData: copyData)).ToList();
         var texts = CurrentTextObjects.Select(text => text.Copy(preserveId: false)).ToList();
         var formulas = CurrentFormulaObjects.Select(formula => formula.Copy(preserveId: false)).ToList();
         AddPageAt(CurrentIndex + 1);
@@ -816,6 +823,7 @@ public sealed partial class BoardService
         CarryDrawingState(source, Current);
         Current.ViewTransform = source.ViewTransform;
         _states[CurrentIndex].ViewTransform = source.ViewTransform;
+        if (CurrentIndex > 0) _states[CurrentIndex].Name = $"{_states[CurrentIndex - 1].Name} 副本";
         PageChanged?.Invoke(); ImagesChanged?.Invoke();
         return true;
     }
@@ -1665,6 +1673,7 @@ public sealed partial class BoardService
         if (ai) RaiseAiObjectsChanged("remove", pageIndex, new[] { image });
     }
 
+
     /// <summary>
     /// Replace an existing image's raster data and metadata (for example after re-rendering an AI
     /// paste card), keeping its id, position and size. The change is undoable and raises
@@ -1700,6 +1709,7 @@ public sealed partial class BoardService
         if (ai) RaiseAiObjectsChanged("update", pageIndex, new[] { target });
         return true;
     }
+
 
     /// <summary>Record one completed image move/resize as a single page-local undo step.</summary>
     public void RecordImageTransform(BoardImageAsset image, BoardImageGeometry before, BoardImageGeometry after)
@@ -1752,7 +1762,7 @@ public sealed partial class BoardService
     /// Record one completed element change (move/resize/rotate/flip/gesture) as a single
     /// page-local undo step. <paramref name="before"/> is a <see cref="BoardImageAsset.Copy"/>
     /// snapshot taken by the caller at gesture start; the after-state is captured here.
-    /// Port of WPF TimeMachine.CommitStrokeManipulationHistory for elements.
+    /// Element-level manipulation history mirroring the stroke undo path.
     /// </summary>
     public void RecordImageChange(BoardImageAsset image, BoardImageAsset before, string name)
     {
@@ -1810,6 +1820,8 @@ public sealed partial class BoardService
         foreach (var page in _pages) page.Dispose();
         _pages.Clear();
         _papers.Clear();
+        _pageHistory.Clear();
+        _nextPageNumber = 1;
         _images.Clear();
         _media.Clear();
         _textObjects.Clear();
@@ -1824,7 +1836,11 @@ public sealed partial class BoardService
             controller.Document.AddRange(page.Strokes);
             controller.ViewTransform = viewTransform;
             _pages.Add(controller);
-            _papers.Add(controller, page.Paper);
+            _papers.Add(controller, page.Paper with { Name = page.Paper.Name ?? $"页面 {_nextPageNumber}" });
+            _nextPageNumber++;
+            controller.ViewTransform = page.View;
+            if (page.Viewport is { Length: 2 } && page.Viewport.All(value => float.IsFinite(value) && value > 0))
+                controller.ViewCenter = new(page.Viewport[0] / 2, page.Viewport[1] / 2);
             _images.Add(page.Images);
             _media.Add(page.Media);
             var texts = page.TextObjects ?? new List<BoardTextObject>();
@@ -1847,9 +1863,14 @@ public sealed partial class BoardService
         ImagesChanged?.Invoke();
     }
 
-    private sealed record PreparedPage(List<InkStroke> Strokes, List<BoardImageAsset> Images, List<BoardMediaAsset> Media, BoardPaper Paper,
+private sealed record PreparedPage(List<InkStroke> Strokes, List<BoardImageAsset> Images, List<BoardMediaAsset> Media, BoardPaper Paper,
         string Name = null, float[] ViewTransform = null,
-        List<BoardTextObject> TextObjects = null, List<BoardFormulaObject> FormulaObjects = null);
+        List<BoardTextObject> TextObjects = null, List<BoardFormulaObject> FormulaObjects = null)
+    {
+        public Matrix3x2 View { get; init; } = Matrix3x2.Identity;
+
+        public float[] Viewport { get; init; }
+    }
 
     private static PreparedPage PreparePage(BoardPageFile page, BoardPaper fallback)
     {
@@ -1868,12 +1889,20 @@ public sealed partial class BoardService
         AdaptDefaultAiInkToBackground(paper, texts, formulas);
         return new(strokes, (page.Images ?? new()).Where(IsValidImage).ToList(),
             (page.Media ?? new()).Where(IsValidMedia).ToList(), paper,
-            page.Name, page.ViewTransform, texts, formulas);
+            string.IsNullOrWhiteSpace(page.Name) ? null : page.Name.Trim(), page.ViewTransform, texts, formulas)
+        { View = ReadViewTransform(page.ViewTransform), Viewport = page.Viewport };
     }
 
     private static BoardPaper ReadPaper(string background, float? spacing, BoardPaper fallback) => new(
         Enum.TryParse(background, true, out BoardBackground parsed) && Enum.IsDefined(parsed) ? parsed : fallback.Background,
         spacing is float value && float.IsFinite(value) && value > 0 ? Math.Clamp(value, 12f, 160f) : fallback.GridSpacing);
+
+    private static Matrix3x2 ReadViewTransform(float[] values)
+    {
+        if (values is not { Length: 6 } || !values.All(float.IsFinite)) return Matrix3x2.Identity;
+        var transform = new Matrix3x2(values[0], values[1], values[2], values[3], values[4], values[5]);
+        return Matrix3x2.Invert(transform, out _) ? transform : Matrix3x2.Identity;
+    }
 
     private void ReplacePage(int index, PreparedPage page)
     {
@@ -1881,6 +1910,7 @@ public sealed partial class BoardService
         controller.CancelLassoErase(); controller.ClearSelection();
         controller.Document.Clear();
         controller.History.Clear();
+
         controller.Selection.Clear();
         var viewTransform = FromTransformArray(page.ViewTransform);
         controller.ViewTransform = viewTransform;
@@ -1899,6 +1929,7 @@ public sealed partial class BoardService
         _states[index].Background = page.Paper.Background;
         _states[index].GridSpacing = page.Paper.GridSpacing;
         _states[index].ViewTransform = viewTransform;
+        _pageHistory.Clear();
     }
 
     private void AddPageAt(int index)
@@ -1988,10 +2019,15 @@ public sealed partial class BoardService
     {
         if (values is null || values.Length < 6) return Matrix3x2.Identity;
         return new Matrix3x2(values[0], values[1], values[2], values[3], values[4], values[5]);
+
     }
 
     private static bool IsValidImage(BoardImageAsset image)
         => image is not null && image.Data is { Length: > 0 } && image.Width > 0 && image.Height > 0;
+
+private static bool IsValidMedia(BoardMediaAsset media)
+        => media is not null && media.Data is { Length: > 0 } && media.Width > 0 && media.Height > 0
+           && media.ContentType?.StartsWith("video/", StringComparison.OrdinalIgnoreCase) == true;
 
     private void SetImageContent(BoardImageAsset image, byte[] data, string metadata)
     {
@@ -1999,8 +2035,7 @@ public sealed partial class BoardService
         image.Metadata = metadata ?? "";
         ImagesChanged?.Invoke();
     }
-
-    /// <summary>AI 卡片判定：metadata 必须是 <see cref="AiPasteMetadata"/> 风格且包含 kind 字段。</summary>
+/// <summary>AI 卡片判定：metadata 必须是 <see cref="AiPasteMetadata"/> 风格且包含 kind 字段。</summary>
     private static bool IsAiBoardImage(BoardImageAsset image)
     {
         if (image is null || string.IsNullOrWhiteSpace(image.Metadata)) return false;
@@ -2065,9 +2100,7 @@ public sealed partial class BoardService
             RemovedStrokes = removedStrokes ?? Array.Empty<InkStroke>(),
         });
     }
-    private static bool IsValidMedia(BoardMediaAsset media)
-        => media is not null && media.Data is { Length: > 0 } && media.Width > 0 && media.Height > 0
-           && media.ContentType?.StartsWith("video/", StringComparison.OrdinalIgnoreCase) == true;
+
 
     private void SetImageGeometry(BoardImageAsset image, BoardImageGeometry geometry)
     {
@@ -2135,6 +2168,10 @@ public sealed partial class BoardService
 
     private sealed class BoardFile
     {
+        [System.Text.Json.Serialization.JsonIgnore]
+        public Dictionary<string, byte[]> Extensions { get; set; } = new(StringComparer.Ordinal);
+        [System.Text.Json.Serialization.JsonIgnore]
+        public BoardArchiveMetadata Archive { get; set; }
         public string Format { get; set; }
         public int Version { get; set; }
         public string Background { get; set; }
@@ -2147,10 +2184,11 @@ public sealed partial class BoardService
 
     private sealed class BoardPageFile
     {
+        public float[] Viewport { get; set; }
         public string Name { get; set; }
+        public float[] ViewTransform { get; set; }
         public string Background { get; set; }
         public float? GridSpacing { get; set; }
-        public float[] ViewTransform { get; set; }
         public List<StrokeFile> Strokes { get; set; } = new();
         public List<BoardImageAsset> Images { get; set; } = new();
         public List<BoardMediaAsset> Media { get; set; } = new();

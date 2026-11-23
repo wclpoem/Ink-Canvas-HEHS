@@ -84,6 +84,7 @@ public sealed class InkStroke
     /// <summary>Set when the stroke was produced by shape recognition rather than freehand.</summary>
     public bool IsRecognizedShape { get; set; }
 
+
     public TaperKind TaperKind
     {
         get => _taper?.Kind ?? Attributes.EffectiveTaper;
@@ -332,6 +333,7 @@ public sealed class InkStroke
         _objectFrame = null;
     }
 }
+
 
 /// <summary>UI-independent rectangle.</summary>
 public readonly record struct Rect(float Left, float Top, float Right, float Bottom)

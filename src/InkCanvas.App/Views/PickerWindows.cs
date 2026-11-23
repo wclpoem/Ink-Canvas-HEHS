@@ -15,7 +15,6 @@ namespace InkCanvas.App.Views;
 public sealed class PenPaletteWindow : Window
 {
     public void ConfigureNibMode(bool visible, bool enabled, Action<bool> changed) => _palette.ConfigureNibMode(visible, enabled, changed);
-    private static bool _lastPinned;
     private readonly PenPalette _palette;
     private readonly Viewbox _host;
     private double _designW, _designH;
@@ -39,8 +38,6 @@ public sealed class PenPaletteWindow : Window
         Title = highlighter ? "荧光笔" : "墨迹选项";
 
         _palette = new PenPalette(highlighter) { Controller = controller };
-        _palette.Header.IsPinned = _lastPinned;
-        _palette.Header.PinChanged += () => _lastPinned = _palette.Header.IsPinned;
         _palette.RequestClose = Close;
         _palette.ApplyChrome(theme);
         MeasureDesign();
@@ -286,9 +283,6 @@ public sealed class PenPaletteWindow : Window
 /// </summary>
 public sealed class ShapePickerWindow : Window
 {
-    /// <summary>WPF's auto-hide toggle is main-window state: it survives popup re-opens.</summary>
-    private static bool _lastAutoHide = true;
-
     private readonly ShapePreview _preview;
     private readonly Viewbox _host;
     private double _designW, _designH;
@@ -310,8 +304,6 @@ public sealed class ShapePickerWindow : Window
 
         _preview = new ShapePreview(controller, theme, boardMode);
         _preview.Header.CloseRequested += Close;
-        _preview.AutoHide = _lastAutoHide;
-        _preview.AutoHideChanged += () => _lastAutoHide = _preview.AutoHide;
         _preview.SelectionMade += (_, sticky) =>
         {
             onPicked?.Invoke();
@@ -378,8 +370,6 @@ public sealed class ShapePickerWindow : Window
                 else ResizeAtCurrentPosition();
             });
         };
-        // Carry the pin state to the next open, like the original main-window toggle.
-        Closed += (_, _) => _lastAutoHide = _preview.AutoHide;
     }
 
     private double UserScale => _scalePercent / 100.0;
@@ -395,7 +385,7 @@ public sealed class ShapePickerWindow : Window
     public bool AutoHide
     {
         get => _preview.AutoHide;
-        set { _preview.AutoHide = value; _lastAutoHide = value; }
+        set => _preview.AutoHide = value;
     }
 
     internal void Detach()

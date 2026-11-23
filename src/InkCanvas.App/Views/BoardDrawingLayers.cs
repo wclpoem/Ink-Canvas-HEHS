@@ -21,7 +21,7 @@ internal sealed class BoardDrawingLayers : Canvas, IDisposable
     private readonly List<Run> _runs = new();
     private readonly Dictionary<Guid, int> _indices = new();
     private InkController _controller;
-    private InkSceneRenderer _scene = new() { ShowSelectionOutline = false };
+    private InkSceneRenderer _scene = new(4096) { ShowSelectionOutline = false };
     private bool _suspended;
 
     public BoardDrawingLayers()
@@ -39,6 +39,8 @@ internal sealed class BoardDrawingLayers : Canvas, IDisposable
 
     public int LayerIndex(Guid id) => _indices.GetValueOrDefault(id);
     public int CachedImageCount => _scene.Images.CachedBitmapCount;
+    internal long RasterBytes => _runs.Sum(run => run.Cache.RasterBytes);
+    internal int SurfaceCount => _runs.Count;
 
     internal async Task SaveSceneAsync(string path)
     {
@@ -58,9 +60,9 @@ internal sealed class BoardDrawingLayers : Canvas, IDisposable
         if (!ReferenceEquals(_controller, controller))
         {
             if (_controller is not null) _controller.DotAnimationChanged -= Invalidate;
-            ClearRuns();
+            foreach (var run in _runs) run.Cache.Dispose();
             _scene.Dispose();
-            _scene = new InkSceneRenderer { ShowSelectionOutline = false };
+            _scene = new InkSceneRenderer(4096) { ShowSelectionOutline = false };
             _scene.Images.Changed += Invalidate;
             _controller = controller;
             _controller.DotAnimationChanged += Invalidate;
@@ -111,6 +113,7 @@ internal sealed class BoardDrawingLayers : Canvas, IDisposable
                 Children.Add(run.Canvas);
             }
             var current = _runs[index];
+            current.Cache.RasterBudgetBytes = 64L * 1024 * 1024 / groups.Count;
             if (!current.Objects.SequenceEqual(groups[index].Objects)) current.Objects = groups[index].Objects;
             SetZIndex(current.Canvas, groups[index].Index);
             current.Cache.Invalidate();

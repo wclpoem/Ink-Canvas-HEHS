@@ -5,13 +5,20 @@
     <Platform Name="x64" />
   </Configurations>
   <Folder Name="/src/">
+    <Project Path="src/InkCanvas.McpHost/InkCanvas.McpHost.csproj"><Platform Project="x64" /></Project>
+    <Project Path="src/InkCanvas.Modules.Mcp/InkCanvas.Modules.Mcp.csproj"><Platform Project="x64" /></Project>
+    <Project Path="src/InkCanvas.Plugins.LegacyImport/InkCanvas.Plugins.LegacyImport.csproj"><Platform Project="x64" /></Project>
+    <Project Path="src/InkCanvas.Modules.CloudSync/InkCanvas.Modules.CloudSync.csproj"><Platform Project="x64" /></Project>
     <Project Path="src/InkCanvas.UpdateHost/InkCanvas.UpdateHost.csproj"><Platform Project="x64" /></Project>
     <Project Path="src/InkCanvas.Extensibility/InkCanvas.Extensibility.csproj"><Platform Project="x64" /></Project>
     <Project Path="src/InkCanvas.Extensions/InkCanvas.Extensions.csproj"><Platform Project="x64" /></Project>
     <Project Path="src/InkCanvas.Host.Contracts/InkCanvas.Host.Contracts.csproj"><Platform Project="x64" /></Project>
     <Project Path="src/InkCanvas.PluginHost/InkCanvas.PluginHost.csproj"><Platform Project="x64" /></Project>
     <Project Path="src/InkCanvas.Modules.ScreenTracking/InkCanvas.Modules.ScreenTracking.csproj"><Platform Project="x64" /></Project>
+    <Project Path="src/InkCanvas.Modules.TimeMachine/InkCanvas.Modules.TimeMachine.csproj"><Platform Project="x64" /></Project>
     <Project Path="src/InkCanvas.Pdf/InkCanvas.Pdf.csproj"><Platform Project="x64" /></Project>
+    <Project Path="src/InkCanvas.Modules.AiAssistant/InkCanvas.Modules.AiAssistant.csproj"><Platform Project="x64" /></Project>
+    <Project Path="src/InkCanvas.Modules.Library/InkCanvas.Modules.Library.csproj"><Platform Project="x64" /></Project>
     <Project Path="src/InkCanvas.Modules.Pdf/InkCanvas.Modules.Pdf.csproj"><Platform Project="x64" /></Project>
     <Project Path="src/InkCanvas.AnalyticGeometry/InkCanvas.AnalyticGeometry.csproj"><Platform Project="x64" /></Project>
     <Project Path="src/InkCanvas.Modules.AnalyticGeometry/InkCanvas.Modules.AnalyticGeometry.csproj"><Platform Project="x64" /></Project>
@@ -35,6 +42,11 @@
     </Project>
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/InkCanvas.Ai.Tests/InkCanvas.Ai.Tests.csproj"><Platform Project="x64" /></Project>
+    <Project Path="tests/InkCanvas.Classroom.Tests/InkCanvas.Classroom.Tests.csproj"><Platform Project="x64" /></Project>
+    <Project Path="tests/InkCanvas.TimeMachine.Tests/InkCanvas.TimeMachine.Tests.csproj"><Platform Project="x64" /></Project>
+    <Project Path="tests/InkCanvas.P0.Tests/InkCanvas.P0.Tests.csproj"><Platform Project="x64" /></Project>
+    <Project Path="tests/InkCanvas.LegacyImport.Tests/InkCanvas.LegacyImport.Tests.csproj"><Platform Project="x64" /></Project>
     <Project Path="tests/InkCanvas.PluginFixture/InkCanvas.PluginFixture.csproj"><Platform Project="x64" /></Project>
     <Project Path="tests/InkCanvas.Core.Tests/InkCanvas.Core.Tests.csproj">
       <Platform Project="x64" />

@@ -70,6 +70,9 @@ public sealed class ScreenAnnotationCoordinator : IDisposable, IScreenTrackingSe
         ApplySnapshot(snapshot);
     }
 
+    public (IReadOnlyList<InkCanvas.Core.Ink.InkStroke> Strokes, Matrix3x2 WorldToContent)? CapturePowerPointInk(string fullName, int slideId)
+        => _memory.CapturePreview(":" + ScreenContentReader.Hash(fullName) + ":" + slideId);
+
     public void ApplySnapshot(ScreenViewSnapshot snapshot)
     {
         var settings = _host.Settings;
@@ -117,7 +120,7 @@ public sealed class ScreenAnnotationCoordinator : IDisposable, IScreenTrackingSe
         finally { presenter.EndSceneUpdate(); }
     }
 
-    private void Reanchor()
+    internal void Reanchor()
     {
         if (_reader?.Latest is not { IsValid: true } snapshot || _host.Controller.HasActiveInteraction) return;
         _reanchorEpoch = _reader.ResetAnchor();

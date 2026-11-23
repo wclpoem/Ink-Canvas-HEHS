@@ -337,6 +337,23 @@ public sealed class PdfAnnotationFile : IDisposable
         }
     }
 
+    public async Task<string> ReadPageTextAsync(int index, CancellationToken token = default)
+    {
+        await _gate.WaitAsync(token);
+        try
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (index < 0 || index >= Pages.Count) throw new ArgumentOutOfRangeException(nameof(index), "PDF 页码不存在。");
+            return await Task.Run(() =>
+            {
+                token.ThrowIfCancellationRequested();
+                using var document = UglyToad.PdfPig.PdfDocument.Open(RenderPath, new UglyToad.PdfPig.ParsingOptions { Password = Password });
+                return document.GetPage(index + 1).Text;
+            }, token);
+        }
+        finally { _gate.Release(); }
+    }
+
     public async Task<IReadOnlyList<PdfSearchHit>> SearchAsync(string query, CancellationToken token = default)
     {
         await _gate.WaitAsync(token);

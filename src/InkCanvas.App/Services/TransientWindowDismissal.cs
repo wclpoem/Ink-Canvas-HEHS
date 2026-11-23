@@ -10,7 +10,7 @@ namespace InkCanvas.App.Services;
 internal static class TransientWindowDismissal
 {
     public static void Attach(Window window, Func<IntPtr> owner, Func<bool> enabled = null, Func<RectInt32> anchor = null,
-        Func<RectInt32> interactionRegion = null)
+        Func<RectInt32> interactionRegion = null, Action dismiss = null)
     {
         var dispatcher = DispatcherQueue.GetForCurrentThread();
         var timer = dispatcher.CreateTimer();
@@ -36,7 +36,7 @@ internal static class TransientWindowDismissal
         void DismissAt(NativeMethods.POINT point)
         {
             if (closed || enabled?.Invoke() == false || !window.AppWindow.IsVisible || InInteractionRegion(point)) return;
-            if (!BelongsTo(WindowFromPoint(point), WindowChrome.GetHwnd(window))) window.Close();
+            if (!BelongsTo(WindowFromPoint(point), WindowChrome.GetHwnd(window))) (dismiss ?? window.Close)();
         }
         HookProc callback = (code, message, data) =>
         {
@@ -47,7 +47,7 @@ internal static class TransientWindowDismissal
                 // A combo's popup can disappear before the queued callback runs.
                 // Classify its HWND while the press still targets that child popup.
                 // Snapshot toolbar hit testing before the drag moves it away from this press.
-                if (!closed && !ownerGesture && !BelongsTo(WindowFromPoint(point), popup))
+                if (!closed && enabled?.Invoke() != false && !ownerGesture && !BelongsTo(WindowFromPoint(point), popup))
                     dispatcher.TryEnqueue(DispatcherQueuePriority.Low, () => DismissAt(point));
             }
             return CallNextHookEx(IntPtr.Zero, code, message, data);
@@ -60,7 +60,8 @@ internal static class TransientWindowDismissal
             bool click = mouse && !mouseDown, dismissKey = escape && !escapeDown;
             mouseDown = mouse; escapeDown = escape;
             if (closed || !window.AppWindow.IsVisible) return;
-            if (dismissKey) { window.Close(); return; }
+            if (dismiss is not null && enabled?.Invoke() == false) return;
+            if (dismissKey && (dismiss is null || enabled?.Invoke() != false)) { (dismiss ?? window.Close)(); return; }
             var current = NativeMethods.GetForegroundWindow();
             // A toolbar drag can temporarily change the foreground HWND. Remember where the
             // press began, including the first poll after release, rather than dismiss mid-drag.
@@ -70,7 +71,7 @@ internal static class TransientWindowDismissal
                 && !BelongsTo(current, owner())
                 && !BelongsTo(current, WindowChrome.GetHwnd(window));
             foreground = current;
-            if (enabled?.Invoke() != false && movedAway) { window.Close(); return; }
+            if (enabled?.Invoke() != false && movedAway) { (dismiss ?? window.Close)(); return; }
             if (hook == IntPtr.Zero && click && NativeMethods.GetCursorPos(out var point)) DismissAt(point);
         };
         timer.Start();

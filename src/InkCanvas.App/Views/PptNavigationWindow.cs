@@ -1,312 +1,371 @@
+﻿using System.Diagnostics;
+using System.Runtime.InteropServices;
 using InkCanvas.App.Services;
+using InkCanvas.Controls.Animation;
 using InkCanvas.Controls.Controls;
+using InkCanvas.Controls.Theming;
 using InkCanvas.Features.Ppt;
 using InkCanvas.Platform.Interop;
-using InkCanvas.Platform.Windows;
+using InkCanvas.Platform.System;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Shapes;
+using Microsoft.UI.Xaml.Hosting;
+using System.Numerics;
 
 namespace InkCanvas.App.Views;
 
 public enum PptNavigationPlacement { BottomLeft, BottomRight, SideLeft, SideRight }
 
-/// <summary>
-/// PPT slideshow navigation panel, corresponding to the four WPF controls
-/// <c>PPTNavigationBottomLeft/Right</c> and <c>PPTNavigationSidesLeft/Right</c>.
-/// It is an independent WinUI window so it can sit over a slideshow without being clipped by
-/// the bottom toolbar's window bounds. A single instance now moves between the four corners
-/// and is placed by <see cref="NavigationLayout"/> against the show window's rectangle.
-/// </summary>
+/// <summary>The four WPF-style previous/page/next panels, with independent idle opacity.</summary>
 public sealed class PptNavigationWindow : Window
 {
-    private const string RotateGlyph = "\uE72C";
-    private const string CollapseGlyph = "\uE711";
-    private const double IdleOpacity = 0.35;
-    private const int ButtonDip = 44;
-    private const int SpacingDip = 2;
-
-    private readonly IShellActions _shell;
-    private readonly Button _previous;
-    private readonly Button _next;
+    private const double CellSize = FloatingBar.ChromeHeight - 2 * FloatingBar.ChromeBorderThickness;
+    private readonly FloatingBarWindow _owner;
+    private readonly PptPreviewContext _previewContext;
+    private readonly Canvas _layout = new();
+    private readonly Viewbox _cardHost;
+    private readonly Border _previewSurface;
+    private PptPageNavigator _preview;
+    private bool _previewOpen;
+    private int _previewAnimation;
+    private readonly int _theme;
+    private readonly Border _card;
+    private readonly Viewbox _scaled;
     private readonly Button _counter;
-    private readonly Button _penToggle;
-    private readonly Button _slideList;
-    private readonly Button _rotate;
-    private readonly Button _collapse;
     private readonly TextBlock _counterText;
-    private readonly StackPanel _panel;
-    private readonly Border _root;
-    private PptNavigationPlacement _placement;
-    private ShowWindowInfo _showBounds;
-    private bool _counterVisible = true;
-    private bool _closed;
+    private readonly FontIcon _previousIcon, _nextIcon;
+    private readonly Rectangle _separator1, _separator2;
+    private readonly DispatcherQueueTimer _idleTimer, _fadeTimer;
+    private readonly Stopwatch _fadeClock = new();
+    private Action _detachAnchor;
     private XamlRoot _trackedRoot;
-    private IntPtr _showWindow;
-    private bool _windowedShow;
+    private PptSnapshot _snapshot;
+    private bool _closed, _placing, _placeQueued;
+    private double _opacity = 1, _fadeFrom = 1, _fadeTo = 1;
 
-    public PptNavigationWindow(PptNavigationPlacement placement, IShellActions shell, int theme)
+    public PptNavigationPlacement Placement { get; }
+    internal double WindowOpacity => _opacity;
+    internal double TargetOpacity => _fadeTo;
+    internal Border NavigationCard => _card;
+    internal Border PreviewSurface => _previewSurface;
+    internal PptPageNavigator Preview => _preview;
+    internal bool PreviewOpen => _previewOpen;
+    private bool IsVertical => Placement is PptNavigationPlacement.SideLeft or PptNavigationPlacement.SideRight;
+
+    public PptNavigationWindow(PptNavigationPlacement placement, IShellActions shell,
+        int theme, FloatingBarWindow owner = null)
+        : this(placement, shell, theme, owner, null) { }
+
+    internal PptNavigationWindow(PptNavigationPlacement placement, IShellActions shell,
+        int theme, FloatingBarWindow owner, PptPreviewContext previewContext)
     {
-        _placement = placement;
-        _shell = shell;
+        Placement = placement;
+        _owner = owner;
+        _previewContext = previewContext;
+        _theme = theme;
         Title = "PowerPoint 导航";
-
-        _previous = NavButton(Glyphs.ChevronLeft, "上一页", () => _shell.PptPrevious());
-        _next = NavButton(Glyphs.ChevronRight, "下一页", () => _shell.PptNext());
-        _counterText = new TextBlock
+        _previousIcon = Icon(IsVertical ? "\uF2B7" : "\uF2AB");
+        _nextIcon = Icon(IsVertical ? "\uF2A4" : "\uF2B1");
+        _counterText = new TextBlock { Text = "0/0", FontSize = 12, IsTextScaleFactorEnabled = false,
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        var row = new StackPanel { Orientation = IsVertical ? Orientation.Vertical : Orientation.Horizontal };
+        row.Children.Add(Cell(_previousIcon, "上一页", shell.PptPrevious));
+        var count = new Grid();
+        _separator1 = new Rectangle { Width = IsVertical ? 26 : 1, Height = IsVertical ? 1 : 26, Opacity = .35 };
+        _separator2 = new Rectangle { Width = _separator1.Width, Height = _separator1.Height, Opacity = _separator1.Opacity };
+        if (IsVertical)
         {
-            Text = "0 / 0",
-            FontSize = 11,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        _counter = new Button
-        {
-            Content = _counterText,
-            MinWidth = 52,
-            MinHeight = 40,
-            Padding = new Thickness(4),
-            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-            BorderThickness = new Thickness(0),
-        };
-        ToolTipService.SetToolTip(_counter, "打开 PowerPoint 幻灯片导航窗格并切换到鼠标模式");
-        _counter.Click += (_, _) => _shell.PptOpenNavigation();
-
-        _penToggle = NavButton(Glyphs.Pen, "切换批注/穿透（鼠标）模式", () => _shell.ToggleClickThrough());
-        _slideList = NavButton(Glyphs.SlideList, "课件页导航：按批注/收藏跳页", () => _shell.ToggleSlideNavigator());
-        _rotate = NavButton(RotateGlyph, "切换导航栏位置", () => _shell.RotatePptNavigationCorner());
-        _collapse = NavButton(CollapseGlyph, "收起导航栏", () => _shell.CollapsePptNavigation());
-
-        _panel = new StackPanel { Spacing = SpacingDip };
-        _panel.Children.Add(_previous);
-        _panel.Children.Add(_counter);
-        _panel.Children.Add(_next);
-        _panel.Children.Add(_slideList);
-        _panel.Children.Add(_penToggle);
-        _panel.Children.Add(_rotate);
-        _panel.Children.Add(_collapse);
-        ApplyOrientation();
-
-        _root = new Border
-        {
-            Background = (Brush)Application.Current.Resources["IcSurfaceAltBrush"],
-            BorderBrush = (Brush)Application.Current.Resources["IcStrokeBrush"],
-            BorderThickness = new Thickness(1),
-            CornerRadius = (CornerRadius)Application.Current.Resources["IcBarCorner"],
-            Padding = new Thickness(2),
-            Opacity = IdleOpacity,
-            Child = _panel,
-        };
-        // Low opacity at rest so the panel does not obscure slide content; full opacity only
-        // while the pointer is over it. Click-through state is deliberately not touched here.
-        _root.PointerEntered += (_, _) => _root.Opacity = 1.0;
-        _root.PointerExited += (_, _) => _root.Opacity = IdleOpacity;
-        Content = _root;
-
-        // noActivate keeps focus on the slideshow; the explicit WS_EX_NOACTIVATE below keeps the
-        // panel out of alt-tab the way the WPF child panels were.
-        WindowChrome.MakeBorderless(this, topmost: true, noActivate: true);
-        WindowChrome.ApplyTheme(this, theme);
-        NativeMethods.AddExStyle(WindowChrome.GetHwnd(this), NativeMethods.WS_EX_NOACTIVATE);
-        Closed += OnClosed;
-        Activated += OnActivated;
-        _root.Loaded += (_, _) => TrackRoot();
-        Place(_counterVisible);
-        SetVisible(false);
-    }
-
-    /// <summary>Corner the window is currently docked to; the shell rotates it on demand.</summary>
-    public PptNavigationPlacement Placement
-    {
-        get => _placement;
-        set => _placement = value;
-    }
-
-    private static Button NavButton(string glyph, string name, Action invoke)
-    {
-        var b = new Button
-        {
-            Content = new FontIcon
-            {
-                Glyph = glyph,
-                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
-                FontSize = 16,
-            },
-            MinWidth = ButtonDip,
-            MinHeight = ButtonDip,
-            Padding = new Thickness(6),
-            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-            BorderThickness = new Thickness(0),
-        };
-        ToolTipService.SetToolTip(b, name);
-        b.Click += (_, _) => invoke();
-        return b;
-    }
-
-    public void Update(PptSnapshot snapshot, bool panelVisible, bool counterVisible)
-        => Update(snapshot, panelVisible, counterVisible, default);
-
-    /// <summary>
-    /// Positions the panel inside <paramref name="showBounds"/> (the slideshow window) and
-    /// refreshes the slide counter. A default/invalid rectangle falls back to the work area of
-    /// the monitor that hosts the show window, so multi-monitor and DPI tracking stay correct.
-    /// </summary>
-    public void Update(PptSnapshot snapshot, bool panelVisible, bool counterVisible, ShowWindowInfo showBounds)
-    {
-        if (_closed) return;
-        _showWindow = snapshot?.WindowHandle ?? IntPtr.Zero;
-        _windowedShow = snapshot?.IsWindowedShow == true;
-        _counter.Visibility = counterVisible ? Visibility.Visible : Visibility.Collapsed;
-        _counterVisible = counterVisible;
-        _showBounds = showBounds;
-
-        int position = snapshot?.ShowPosition > 0 ? snapshot.ShowPosition : snapshot?.Slide?.Index ?? 0;
-        int count = snapshot?.Presentation?.SlideCount ?? 0;
-        _counterText.Text = $"{position} / {count}";
-
-        ApplyOrientation();
-        Place(counterVisible);
-        SetVisible(panelVisible);
-    }
-
-    private void SetVisible(bool visible)
-    {
-        if (_closed) return;
-        var hwnd = WindowChrome.GetHwnd(this);
-        if (hwnd == IntPtr.Zero) return;
-        if (NativeMethods.IsWindowVisible(hwnd) == visible) return;
-        NativeMethods.ShowWindow(hwnd, visible ? NativeMethods.SW_SHOWNOACTIVATE : NativeMethods.SW_HIDE);
-    }
-
-    private void OnClosed(object sender, WindowEventArgs args)
-    {
-        _closed = true;
-        Activated -= OnActivated;
-        if (_trackedRoot is not null) _trackedRoot.Changed -= OnRootChanged;
-        _trackedRoot = null;
-    }
-
-    private void OnActivated(object sender, WindowActivatedEventArgs args)
-    {
-        if (_closed) return;
-        TrackRoot();
-    }
-
-    private void TrackRoot()
-    {
-        if (_closed) return;
-        try
-        {
-            if (_trackedRoot is not null) _trackedRoot.Changed -= OnRootChanged;
-            // 窗口已关闭后访问 Content 会抛 COMException (0x800710DD)；_closed 先拦一层，
-            // try/catch 再兜住 Activated/Loaded 与 Closed 竞争时的残余竞态。
-            _trackedRoot = (Content as FrameworkElement)?.XamlRoot;
-            if (_trackedRoot is not null) _trackedRoot.Changed += OnRootChanged;
-            Place(_counterVisible);
-        }
-        catch (Exception ex)
-        {
-            // The window may already be torn down; nothing to track or place any more.
-            Core.Diagnostics.FileLog.WriteLogToFile(
-                $"[PptNavigation] 跳过导航栏根视觉跟踪：窗口已关闭，{ex.GetType().Name}: {ex.Message}",
-                Core.Diagnostics.LogType.Trace);
-        }
-    }
-
-    private void OnRootChanged(XamlRoot sender, XamlRootChangedEventArgs args)
-    {
-        if (_closed) return;
-        Place(_counterVisible);
-    }
-
-    private NavigationCorner Corner => _placement switch
-    {
-        PptNavigationPlacement.BottomRight => NavigationCorner.BottomRight,
-        PptNavigationPlacement.SideLeft => NavigationCorner.SideLeft,
-        PptNavigationPlacement.SideRight => NavigationCorner.SideRight,
-        _ => NavigationCorner.BottomLeft,
-    };
-
-    private bool IsVertical => _placement is PptNavigationPlacement.SideLeft or PptNavigationPlacement.SideRight;
-
-    private void ApplyOrientation()
-    {
-        bool vertical = IsVertical;
-        _panel.Orientation = vertical ? Orientation.Vertical : Orientation.Horizontal;
-        if (_previous.Content is FontIcon previous) previous.Glyph = vertical ? Glyphs.ChevronUp : Glyphs.ChevronLeft;
-        if (_next.Content is FontIcon next) next.Glyph = vertical ? Glyphs.ChevronDown : Glyphs.ChevronRight;
-        _counter.MinWidth = vertical ? ButtonDip : 52;
-        _counter.MinHeight = vertical ? 48 : 40;
-    }
-
-    /// <summary>Physical pixel size needed by the six controls plus border/padding chrome.</summary>
-    private static (int Width, int Height) ContentSize(bool vertical, double dpiScale)
-    {
-        double scale = dpiScale > 0 ? dpiScale : 1;
-        int length = ButtonDip * 6 + SpacingDip * 6 + (vertical ? 48 : 52);
-        int contentWidth = vertical ? ButtonDip : length;
-        int contentHeight = vertical ? length : ButtonDip;
-        return ((int)Math.Ceiling((contentWidth + 6) * scale),
-                (int)Math.Ceiling((contentHeight + 6) * scale));
-    }
-
-    private void Place(bool counterVisible)
-    {
-        if (_closed) return;
-        try { PlaceCore(counterVisible); }
-        catch (Exception ex)
-        {
-            Core.Diagnostics.FileLog.WriteLogToFile(
-                $"[PptNavigation] 跳过导航栏定位：窗口已关闭，{ex.GetType().Name}: {ex.Message}",
-                Core.Diagnostics.LogType.Trace);
-        }
-    }
-
-    private void PlaceCore(bool counterVisible)
-    {
-        // Follow the monitor that hosts the slideshow window; IntPtr.Zero resolves to the
-        // nearest/primary monitor, which keeps the constructor call safe before any show.
-        var monitor = Platform.System.ScreenService.FromWindow(_showWindow);
-        var work = monitor.WorkArea;
-        ScreenBox box;
-        if (_showBounds.Width > 0 && _showBounds.Height > 0)
-        {
-            box = new ScreenBox(_showBounds.X, _showBounds.Y, _showBounds.Width, _showBounds.Height);
-        }
-        else if (_windowedShow && _showWindow != IntPtr.Zero)
-        {
-            var client = WindowChrome.GetClientBounds(_showWindow).FitInside(work);
-            box = new ScreenBox(client.X, client.Y, client.Width, client.Height);
+            count.RowDefinitions.Add(new() { Height = new(1) });
+            count.RowDefinitions.Add(new() { Height = new(CellSize - 2) });
+            count.RowDefinitions.Add(new() { Height = new(1) });
+            Grid.SetRow(_counterText, 1); Grid.SetRow(_separator2, 2);
         }
         else
         {
-            box = new ScreenBox(work.X, work.Y, work.Width, work.Height);
+            count.ColumnDefinitions.Add(new() { Width = new(1) });
+            count.ColumnDefinitions.Add(new() { Width = new(CellSize + 10) });
+            count.ColumnDefinitions.Add(new() { Width = new(1) });
+            Grid.SetColumn(_counterText, 1); Grid.SetColumn(_separator2, 2);
         }
-
-        double dpi = _showWindow != IntPtr.Zero && monitor.DpiScale > 0
-            ? monitor.DpiScale
-            : WindowChrome.GetDpiScale(this);
-        NavigationPlacementResult placement = NavigationLayout.Place(Corner, box, dpi, counterVisible);
-
-        bool vertical = IsVertical;
-        var (neededWidth, neededHeight) = ContentSize(vertical, dpi);
-        int width = Math.Max(placement.Width, neededWidth);
-        int height = Math.Max(placement.Height, neededHeight);
-
-        int x = placement.Corner is NavigationCorner.BottomRight or NavigationCorner.SideRight
-            ? placement.X + placement.Width - width
-            : placement.X;
-        int y = placement.Corner is NavigationCorner.SideLeft or NavigationCorner.SideRight
-            ? placement.Y + placement.Height / 2 - height / 2
-            : placement.Y + placement.Height - height;
-
-        int maxX = box.X + Math.Max(0, box.Width - width);
-        int maxY = box.Y + Math.Max(0, box.Height - height);
-        x = maxX >= box.X ? Math.Clamp(x, box.X, maxX) : box.X;
-        y = maxY >= box.Y ? Math.Clamp(y, box.Y, maxY) : box.Y;
-
-        var position = AppWindow.Position;
-        if (position.X != x || position.Y != y || AppWindow.Size.Width != width || AppWindow.Size.Height != height)
-            WindowChrome.Place(this, x, y, width, height);
+        count.Children.Add(_separator1); count.Children.Add(_counterText); count.Children.Add(_separator2);
+        _counter = Cell(count, "幻灯片页码", () =>
+        {
+            if (_previewContext is null) shell.PptOpenNavigation();
+            else SetPreviewOpen(!PreviewOpen);
+        });
+        _counter.Width = IsVertical ? CellSize : CellSize + 12;
+        row.Children.Add(_counter);
+        row.Children.Add(Cell(_nextIcon, "下一页", shell.PptNext));
+        _card = new Border { Child = row, BorderThickness = new(FloatingBar.ChromeBorderThickness), CornerRadius = new(FloatingBar.ChromeCornerRadius) };
+        _cardHost = new Viewbox { Child = _card, Stretch = Stretch.Uniform };
+        _previewSurface = new Border { BorderThickness = new(1), CornerRadius = new(12), Visibility = Visibility.Collapsed,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
+        _layout.Children.Add(_cardHost); _layout.Children.Add(_previewSurface);
+        _scaled = new Viewbox { Child = _layout, Stretch = Stretch.Uniform,
+            HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
+        Content = _scaled;
+        _idleTimer = DispatcherQueue.CreateTimer();
+        _idleTimer.Interval = TimeSpan.FromSeconds(5);
+        _idleTimer.IsRepeating = false;
+        _idleTimer.Tick += (_, _) => { if (!PreviewOpen) FadeTo(.75); };
+        _fadeTimer = DispatcherQueue.CreateTimer();
+        _fadeTimer.Interval = TimeSpan.FromMilliseconds(16);
+        _fadeTimer.Tick += (_, _) => AdvanceFade();
+        _scaled.AddHandler(UIElement.PointerPressedEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler((_, _) => RecordInteraction()), true);
+        _scaled.AddHandler(UIElement.PointerMovedEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler((_, _) => RecordInteraction()), true);
+        _scaled.AddHandler(UIElement.PointerWheelChangedEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler((_, _) => RecordInteraction()), true);
+        _scaled.KeyDown += (_, _) => RecordInteraction();
+        WindowChrome.MakeBorderless(this, topmost: true, noActivate: true);
+        WindowChrome.ClipToSurfaces(this, () => _preview?.IsOverview == true && _previewSurface.Visibility == Visibility.Visible
+            ? new[] { _previewSurface } : new[] { _card, _previewSurface });
+        ApplyChrome();
+        if (_owner is not null)
+        {
+            _owner.Bar.ThemeRefreshed += ApplyChrome;
+            _detachAnchor = WindowChrome.TrackAnchor(this, WindowChrome.GetHwnd(_owner), Place);
+        }
+        _scaled.Loaded += (_, _) =>
+        {
+            _trackedRoot = _scaled.XamlRoot;
+            if (_trackedRoot is not null) _trackedRoot.Changed += OnRootChanged;
+            Place();
+        };
+        _card.SizeChanged += (_, _) => QueuePlace();
+        Closed += (_, _) =>
+        {
+            _closed = true;
+            _preview?.Dispose();
+            _idleTimer.Stop(); _fadeTimer.Stop();
+            _detachAnchor?.Invoke(); _detachAnchor = null;
+            if (_owner is not null) _owner.Bar.ThemeRefreshed -= ApplyChrome;
+            if (_trackedRoot is not null) _trackedRoot.Changed -= OnRootChanged;
+        };
+        Place();
     }
+
+    private static FontIcon Icon(string glyph) => new()
+    {
+        Glyph = glyph, FontFamily = new(IconFontStyle.Family),
+        FontSize = 16 * FloatingBar.WpfScale, Width = 28, Height = 28, IsTextScaleFactorEnabled = false,
+    };
+
+    private Button Cell(UIElement content, string name, Action invoke)
+    {
+        var cell = new Button { Content = content, Width = CellSize, Height = CellSize, MinWidth = 0, MinHeight = 0,
+            Padding = new(0), BorderThickness = new(0), CornerRadius = new(0),
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center };
+        cell.Resources["ButtonBackgroundPointerOver"] = cell.Background;
+        cell.Resources["ButtonBackgroundPressed"] = cell.Background;
+        cell.Resources["ButtonBorderBrushPointerOver"] = cell.Background;
+        cell.Resources["ButtonBorderBrushPressed"] = cell.Background;
+        AutomationProperties.SetName(cell, name);
+        ToolTipService.SetToolTip(cell, name);
+        cell.Click += (_, _) => { RecordInteraction(); invoke(); };
+        return cell;
+    }
+
+    private void ApplyChrome()
+    {
+        int theme = _owner?.Bar.Settings?.Appearance.Theme ?? _theme;
+        if (theme == 0) theme = _owner?.Bar.Theme ?? 1;
+        WindowChrome.ApplyTheme(this, theme);
+        _card.Background = _owner?.Bar.ColorfulBackground == true ? PopupBrushes.FloatBarColorful() : PopupBrushes.FloatBarBackground(theme);
+        _card.BorderBrush = PopupBrushes.FloatBarBorder(theme);
+        var foreground = PopupBrushes.FloatBarForeground(theme);
+        _previousIcon.Foreground = _nextIcon.Foreground = _counterText.Foreground = foreground;
+        _separator1.Fill = _separator2.Fill = foreground;
+        _previewSurface.BorderBrush = PopupBrushes.ToolPanelBorder(theme);
+        _preview?.ApplyTheme(theme);
+    }
+
+    public void Update(PptSnapshot snapshot, bool panelVisible, bool counterVisible)
+    {
+        if (PreviewOpen && (!panelVisible || !counterVisible || snapshot?.IsSlideShowRunning != true)) SetPreviewOpen(false);
+        _snapshot = snapshot;
+        _preview?.Update(snapshot);
+        _counter.Visibility = counterVisible ? Visibility.Visible : Visibility.Collapsed;
+        int position = snapshot?.ShowPosition > 0 ? snapshot.ShowPosition : snapshot?.Slide?.Index ?? 0;
+        string text = $"{position}/{snapshot?.Presentation?.SlideCount ?? 0}";
+        if (_counterText.Text != text) _counterText.Text = text;
+        Place();
+        if (panelVisible == AppWindow.IsVisible) return;
+        if (panelVisible)
+        {
+            WindowChrome.ShowWithoutActivation(this);
+            SetOpacity(1);
+            RecordInteraction();
+        }
+        else
+        {
+            _idleTimer.Stop(); _fadeTimer.Stop();
+            AppWindow.Hide();
+        }
+    }
+
+    internal void RecordInteraction()
+    {
+        if (_closed || !AppWindow.IsVisible) return;
+        FadeTo(1);
+        _idleTimer.Stop(); _idleTimer.Start();
+    }
+
+    internal void SetPreviewOpen(bool open)
+    {
+        if (_closed || open == _previewOpen || open && (_previewContext is null || _snapshot?.Presentation is null)) return;
+        _previewOpen = open;
+        int generation = ++_previewAnimation;
+        if (open)
+        {
+            _previewContext.Opening(this);
+            if (_preview is null)
+            {
+                _preview = new PptPageNavigator(_previewContext, _owner?.Bar.Theme ?? _theme);
+                TransientWindowDismissal.Attach(this,
+                    () => _snapshot?.WindowHandle ?? WindowChrome.GetHwnd((Window)_owner ?? this), () => PreviewOpen,
+                    dismiss: () => SetPreviewOpen(false));
+            }
+            _preview.CloseRequested -= ClosePreview;
+            _preview.CloseRequested += ClosePreview;
+            _preview.ViewModeChanged -= Place;
+            _preview.ViewModeChanged += Place;
+            _previewSurface.Child = _preview;
+            _previewSurface.Visibility = Visibility.Visible;
+            SystemBackdrop = new MicaBackdrop { Kind = Microsoft.UI.Composition.SystemBackdrops.MicaKind.BaseAlt };
+            _preview.SetOpen(true, _snapshot);
+            _idleTimer.Stop(); _fadeTimer.Stop(); SetOpacity(1);
+        }
+        else _preview?.SetOpen(false, null);
+        _previewSurface.IsHitTestVisible = open;
+        Place();
+        _ = AnimatePreviewAsync(open, generation);
+    }
+
+    private void ClosePreview() => SetPreviewOpen(false);
+
+    private async Task AnimatePreviewAsync(bool open, int generation)
+    {
+        ElementCompositionPreview.SetIsTranslationEnabled(_previewSurface, true);
+        var visual = ElementCompositionPreview.GetElementVisual(_previewSurface);
+        visual.StopAnimation("Translation"); visual.StopAnimation("Opacity");
+        if (Motion.AnimationsEnabled)
+        {
+            float offset = Placement is PptNavigationPlacement.BottomLeft or PptNavigationPlacement.SideLeft ? -24 : 24;
+            var slide = visual.Compositor.CreateVector3KeyFrameAnimation();
+            slide.InsertKeyFrame(0, new Vector3(open ? offset : 0, 0, 0));
+            slide.InsertKeyFrame(1, new Vector3(open ? 0 : offset, 0, 0)); slide.Duration = Motion.Normal;
+            var fade = visual.Compositor.CreateScalarKeyFrameAnimation();
+            fade.InsertKeyFrame(0, open ? 0 : 1); fade.InsertKeyFrame(1, open ? 1 : 0); fade.Duration = Motion.Normal;
+            visual.StartAnimation("Translation", slide); visual.StartAnimation("Opacity", fade);
+            await Task.Delay(Motion.Normal);
+        }
+        if (_closed || generation != _previewAnimation) return;
+        visual.StopAnimation("Translation"); visual.StopAnimation("Opacity");
+        visual.Properties.InsertVector3("Translation", Vector3.Zero); visual.Opacity = 1;
+        if (!open)
+        {
+            _previewSurface.Visibility = Visibility.Collapsed;
+            _preview.SetOverview(false);
+            SystemBackdrop = null;
+            Place(); RecordInteraction();
+        }
+    }
+
+    private void FadeTo(double target)
+    {
+        _fadeTimer.Stop();
+        _fadeFrom = _opacity; _fadeTo = target;
+        if (!Motion.AnimationsEnabled || Math.Abs(_opacity - target) < .001) { SetOpacity(target); return; }
+        _fadeClock.Restart();
+        _fadeTimer.Start();
+    }
+
+    private void AdvanceFade()
+    {
+        double progress = Math.Clamp(_fadeClock.Elapsed.TotalMilliseconds / Math.Max(1, Motion.Normal.TotalMilliseconds), 0, 1);
+        double eased = progress * progress * (3 - 2 * progress);
+        SetOpacity(_fadeFrom + (_fadeTo - _fadeFrom) * eased);
+        if (progress >= 1) _fadeTimer.Stop();
+    }
+
+    private void SetOpacity(double opacity)
+    {
+        _opacity = opacity;
+        var hwnd = WindowChrome.GetHwnd(this);
+        NativeMethods.AddExStyle(hwnd, NativeMethods.WS_EX_LAYERED);
+        SetLayeredWindowAttributes(hwnd, 0, (byte)Math.Round(opacity * 255), 2 /* LWA_ALPHA */);
+    }
+
+    private void OnRootChanged(XamlRoot sender, XamlRootChangedEventArgs args) => QueuePlace();
+    private void QueuePlace()
+    {
+        if (_closed || _placeQueued) return;
+        _placeQueued = true;
+        DispatcherQueue.TryEnqueue(() => { _placeQueued = false; Place(); });
+    }
+
+    private void Place()
+    {
+        if (_closed || _placing) return;
+        _placing = true;
+        try
+        {
+            var monitor = ScreenService.FromWindow(_snapshot?.WindowHandle ?? WindowChrome.GetHwnd((Window)_owner ?? this));
+            var area = _owner is not null ? _owner.GetPlacementArea()
+                : _snapshot?.IsWindowedShow == true ? WindowChrome.GetClientBounds(_snapshot.WindowHandle).FitInside(monitor.WorkArea)
+                : monitor.Bounds;
+            WindowChrome.MoveToMonitor(this, monitor);
+            double dpi = WindowChrome.GetDpiScale(this);
+            _card.Measure(new(double.PositiveInfinity, double.PositiveInfinity));
+            var design = _card.DesiredSize;
+            double scale = Math.Min(_owner?.EffectiveScale ?? 1, Math.Min(area.Width / (design.Width * dpi), area.Height / (design.Height * dpi)));
+            _cardHost.Width = design.Width * scale; _cardHost.Height = design.Height * scale;
+            ScreenBox toolbar = default;
+            if (_owner?.AppWindow.IsVisible == true)
+            {
+                var origin = WindowChrome.GetClientPosition(_owner);
+                var size = _owner.AppWindow.ClientSize;
+                toolbar = new(origin.X, origin.Y, size.Width, size.Height);
+            }
+            int gap = (int)Math.Round((IsVertical ? 6 : Placement == PptNavigationPlacement.BottomLeft ? 2 : 0) * dpi);
+            var placed = NavigationLayout.Place((NavigationCorner)Placement, new(area.X, area.Y, area.Width, area.Height),
+                (int)Math.Ceiling(_cardHost.Width * dpi), (int)Math.Ceiling(_cardHost.Height * dpi), gap, toolbar);
+            bool showingOverview = _preview?.IsOverview == true && _previewSurface.Visibility == Visibility.Visible;
+            _cardHost.Opacity = showingOverview ? 0 : 1;
+            _cardHost.IsHitTestVisible = !showingOverview;
+            int x = placed.X, y = placed.Y, right = x + placed.Width, bottom = y + placed.Height;
+            if (_previewSurface.Visibility == Visibility.Visible)
+            {
+                bool overview = _preview?.IsOverview == true;
+                int inset = overview ? 0 : (int)Math.Ceiling(8 * dpi);
+                int previewWidth = overview ? area.Width : Math.Min((int)Math.Ceiling(BoardPageNavigator.SidebarWidth * dpi), Math.Max(1, area.Width - 2 * inset));
+                int previewBottom = overview || IsVertical ? area.Y + area.Height - inset : placed.Y - inset;
+                int previewY = area.Y + inset;
+                int previewHeight = Math.Max(1, previewBottom - previewY);
+                bool left = Placement is PptNavigationPlacement.BottomLeft or PptNavigationPlacement.SideLeft;
+                int previewX = overview ? area.X : IsVertical ? left ? right + inset : x - inset - previewWidth
+                    : left ? area.X + inset : area.X + area.Width - inset - previewWidth;
+                previewX = Math.Clamp(previewX, area.X, area.X + area.Width - previewWidth);
+                x = Math.Min(x, previewX); y = Math.Min(y, previewY);
+                right = Math.Max(right, previewX + previewWidth); bottom = Math.Max(bottom, previewY + previewHeight);
+                _previewSurface.Width = previewWidth / dpi; _previewSurface.Height = previewHeight / dpi;
+                _previewSurface.CornerRadius = new CornerRadius(overview ? 0 : 12);
+                Canvas.SetLeft(_previewSurface, (previewX - x) / dpi); Canvas.SetTop(_previewSurface, (previewY - y) / dpi);
+            }
+            Canvas.SetLeft(_cardHost, (placed.X - x) / dpi); Canvas.SetTop(_cardHost, (placed.Y - y) / dpi);
+            _layout.Width = _scaled.Width = (right - x) / dpi;
+            _layout.Height = _scaled.Height = (bottom - y) / dpi;
+            var current = WindowChrome.GetClientPosition(this);
+            if (current.X != x || current.Y != y || AppWindow.ClientSize.Width != right - x || AppWindow.ClientSize.Height != bottom - y)
+                WindowChrome.PlaceClient(this, x, y, right - x, bottom - y);
+        }
+        finally { _placing = false; }
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool SetLayeredWindowAttributes(nint hwnd, uint colorKey, byte alpha, uint flags);
 }

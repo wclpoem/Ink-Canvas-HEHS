@@ -106,6 +106,7 @@ public sealed class FloatingBarWindow : Window
     }
 
     internal double UserScale => Math.Clamp(_scalePercent, 50, 200) / 100.0;
+    internal double EffectiveScale => _scaledBar.Height > 0 ? _scaledBar.Height / _bar.ComputeLayoutSize().Height : UserScale;
 
     /// <summary>
     /// 浮条窗口是否仍可重排。关闭板会经 FloatingBar.set_Controller → LayoutChanged 重排浮条，
@@ -225,7 +226,7 @@ public sealed class FloatingBarWindow : Window
         CreateFoldHandles();
     }
 
-    private ScreenRect GetPlacementArea()
+    internal ScreenRect GetPlacementArea()
     {
         if (!_presentationMode)
         {
@@ -299,7 +300,7 @@ public sealed class FloatingBarWindow : Window
         _bar.Build();
     }
 
-/// <summary>
+    /// <summary>
     /// Applies an explicit appearance theme to the window chrome and to the hosted bar.
     /// 0 = follow system, 1 = light, 2 = dark.
     /// </summary>

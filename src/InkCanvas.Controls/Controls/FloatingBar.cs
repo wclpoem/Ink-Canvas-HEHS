@@ -32,15 +32,16 @@ public interface IShellActions
     void OpenStrokes();
     void OpenReplay();
     void OpenTimeMachine();
-    void ToggleRecordingPause();
+    void ToggleRecordingPause() { }
     void OpenGuide();
-    void OpenAiAssistant();
-    void OpenGroupScore();
-    void OpenHandout();
-    void CyclePreset();
-    void OpenPresetEditor();
-    void PasteSpotlightToBoard();
-    void AskAiFromSpotlight();
+    void OpenAiAssistant() { }
+    bool AiAssistantAvailable => false;
+    void OpenGroupScore() { }
+    void OpenHandout() { }
+    void CyclePreset() { }
+    void OpenPresetEditor() { }
+    void PasteSpotlightToBoard() { }
+    void AskAiFromSpotlight() { }
     /// <summary>对当前选中 AI 对象或预览 plan 应用本地连续修改指令（不调用 AI）。</summary>
     void ApplyAiBoardEdit(string instruction) { }
     void OpenPenPalette(bool highlighter);
@@ -51,16 +52,16 @@ public interface IShellActions
     bool ClearCanvas() => false;
     void ToggleFold();
     void ToggleClickThrough();
-    void ToggleBlackScreen();
+    void ToggleBlackScreen() { }
     void PptNext();
     void PptPrevious();
     void PptExit();
     void PptOpenNavigation();
-    void PptGotoSlide(int oneBasedIndex);
-    void ToggleSlideNavigator();
-    void RotatePptNavigationCorner();
-    void CollapsePptNavigation();
-    void TogglePptNavigationWindow();
+    void PptGotoSlide(int oneBasedIndex) { }
+    void ToggleSlideNavigator() { }
+    void RotatePptNavigationCorner() { }
+    void CollapsePptNavigation() { }
+    void TogglePptNavigationWindow() { }
     void Exit();
     IReadOnlyList<ExtensionCommand> ExtensionCommands => Array.Empty<ExtensionCommand>();
     Task ExecuteExtensionCommandAsync(ExtensionCommand command) => Task.CompletedTask;
@@ -82,22 +83,25 @@ public enum BarPanelKind { More, Gesture, Eraser }
 /// </summary>
 public sealed class FloatingBar : UserControl
 {
-/// <summary>WPF Viewbox Height=50 over 36px content.</summary>
+    /// <summary>WPF Viewbox Height=50 over 36px content.</summary>
     public const double WpfScale = 50.0 / 36.0;
+    public const double ChromeHeight = 36 * WpfScale;
+    public const double ChromeCornerRadius = 5 * WpfScale;
+    public const double ChromeBorderThickness = WpfScale;
     private const double S = WpfScale;
-    private const double PartH = 36 * S;          // 50
+    private const double PartH = ChromeHeight;
     private const double BtnW = 30 * S;           // 41.7
     private const double BtnH = 32 * S;           // 44.4
     private const double IconSz = 16 * S;         // 22.2
     private const double LabelSz = 8 * S;         // 11.1
-    private const double PartCorner = 5 * S;      // 6.94
-    private const double PartBorder = 1 * S;      // 1.39
+    private const double PartCorner = ChromeCornerRadius;
+    private const double PartBorder = ChromeBorderThickness;
     private const double PartGap = 2 * S;         // 2.78 inter-rect gap (WPF Margin 2,0,0,0)
     private const double MainPadH = 4 * S;        // padding(2)+margin(2)
     private const double MainPadV = 1 * S;
-    private const double MoreBtn = 45 * S;        // 62.5
+    private const double MoreBtn = 52 * S;        // 72.2
     private const double MoreIcon = 22 * S;       // 30.6
-    private const double MoreLabel = 10 * S;      // 13.9
+    private const double MoreLabel = 9 * S;       // 12.5
     private const double PptExitW = 34 * S;       // 47.2
     private const double GestureRowH = 25 * S;
     private const double GestureRowSpacing = -2.5 * S;
@@ -106,14 +110,16 @@ public sealed class FloatingBar : UserControl
     private readonly StackPanel _canvasControls = new() { Orientation = Orientation.Horizontal, Spacing = 0 };
     private readonly StackPanel _barRow = new() { Orientation = Orientation.Horizontal, Spacing = 0 };
     private readonly StackPanel _moreRows = new() { Orientation = Orientation.Vertical, Spacing = 0 };
+    private readonly ScrollViewer _moreScroll = new() { MaxHeight = 520, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+    private InsertFlyout _insertFlyout;
     private readonly StackPanel _gestureRows = new() { Orientation = Orientation.Vertical, Spacing = GestureRowSpacing };
-    private readonly Border _barBorder, _mainHost, _dragHandle, _gestureBorder, _pptExitBorder;
+    private readonly Border _mainHost, _dragHandle, _gestureBorder, _pptExitBorder;
     private readonly FontIcon _dragIcon;
 
     private TouchIconButton _cursorButton, _penButton, _highlighterButton, _clearButton;
     private TouchIconButton _eraserButton, _selectButton, _aiButton, _shapeButton;
     private TouchIconButton _undoButton, _redoButton, _clearMouseButton;
-    private TouchIconButton _boardButton, _sideBoardButton, _toolsButton, _foldButton, _gestureButton, _hideControlButton, _lrSwitchButton;
+    private TouchIconButton _boardButton, _sideBoardButton, _timeMachineButton, _toolsButton, _foldButton, _gestureButton, _hideControlButton, _lrSwitchButton;
     private TouchIconButton _exitButton;
     private readonly List<TouchIconButton> _captioned = new();
     private readonly List<StackPanel> _gestureOptionRows = new();
@@ -133,6 +139,7 @@ public sealed class FloatingBar : UserControl
 
     public FloatingBar()
     {
+        _moreScroll.Content = _moreRows;
         _fg = PopupBrushes.FloatBarForeground(1);
         _bg = PopupBrushes.FloatBarBackground(1);
         _border = PopupBrushes.FloatBarBorder(1);
@@ -142,7 +149,7 @@ public sealed class FloatingBar : UserControl
 
         _dragIcon = new FontIcon
         {
-            FontFamily = new FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
+            FontFamily = IconFontStyle.Font,
             Glyph = Glyphs.Emoji,
             FontSize = 20 * S,
             Width = 28 * S,
@@ -152,6 +159,7 @@ public sealed class FloatingBar : UserControl
         };
         _dragHandle = MakePart(new Grid { Children = { _dragIcon } }, PartH, PartH);
         ToolTipService.SetToolTip(_dragHandle, "拖动移动工具栏；点击收起/展开主工具栏");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_dragHandle, "拖动移动工具栏");
 
         _mainHost = MakePart(_primary, double.NaN, PartH);
         _mainHost.Margin = new Thickness(PartGap, 0, 0, 0);
@@ -175,7 +183,7 @@ public sealed class FloatingBar : UserControl
         _barRow.HorizontalAlignment = HorizontalAlignment.Left;
         _barRow.VerticalAlignment = VerticalAlignment.Top;
 
-        _barBorder = new Border
+        Content = new Border
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Stretch,
@@ -185,9 +193,8 @@ public sealed class FloatingBar : UserControl
             Padding = new Thickness(0),
             Child = _barRow,
         };
-        Content = _barBorder;
 
-Loaded += (_, _) =>
+        Loaded += (_, _) =>
         {
             // ActualTheme 在构造期尚未稳定：进入可视树后再解析一次，高对比度与
             // 显式主题（ApplyTheme）也依赖这次刷新。
@@ -267,7 +274,7 @@ Loaded += (_, _) =>
     /// <summary>Called by the host when a popup window closed on its own (outside click/Escape).</summary>
     public void NotifyPanelClosed(BarPanelKind kind)
     {
-        if (kind == BarPanelKind.More) _moreOpen = false;
+        if (kind == BarPanelKind.More) { _moreOpen = false; _insertFlyout?.Hide(); _insertFlyout = null; }
         else if (kind == BarPanelKind.Gesture) _gestureOpen = false;
         else _eraserOpen = false;
     }
@@ -277,7 +284,7 @@ Loaded += (_, _) =>
     public bool ColorfulBackground => Cfg.Appearance.IsColorfulViewboxFloatingBar;
 
     /// <summary>The 更多设置 rows, hosted by <see cref="BarPanelKind.More"/> popup window.</summary>
-    public UIElement CreateMorePanelContent() => _moreRows;
+    public UIElement CreateMorePanelContent() => _moreScroll;
 
     /// <summary>The 手势选项 rows, hosted by <see cref="BarPanelKind.Gesture"/> popup window.</summary>
     public UIElement CreateGesturePanelContent() => _gestureRows;
@@ -318,6 +325,8 @@ Loaded += (_, _) =>
 
     private void ClosePanels()
     {
+        _insertFlyout?.Hide();
+        _insertFlyout = null;
         _moreOpen = false;
         _gestureOpen = false;
         _eraserOpen = false;
@@ -440,8 +449,8 @@ Loaded += (_, _) =>
         _gestureRows.Children.Clear();
         _captioned.Clear();
         _gestureOptionRows.Clear();
-        _boardDividers.Clear();
         _badgeBorders.Clear();
+        _boardDividers.Clear();
         _gestureIcons.Clear();
         _gestureLabels.Clear();
 
@@ -453,7 +462,7 @@ Loaded += (_, _) =>
         });
         _cursorButton.Margin = new Thickness(-PartGap, 0, -PartGap, 0);
 
-_penButton = AddPrimary(Glyphs.PenWpf, "批注", "批注（选中后再次点击打开选项）— 快捷键 Alt+D", () =>
+        _penButton = AddPrimary(Glyphs.PenWpf, "批注", "批注（选中后再次点击打开选项）— 快捷键 Alt+D", () =>
         {
             bool active = !ClickThroughActive && Controller?.Tool == InkTool.Pen;
             SetTool(InkTool.Pen);
@@ -466,9 +475,11 @@ _penButton = AddPrimary(Glyphs.PenWpf, "批注", "批注（选中后再次点击
             SetTool(InkTool.Highlighter);
             if (active) Shell?.OpenPenPalette(true);
         });
-        _highlighterButton.IconFont = "ms-appx:///Assets/SegoeMDL2Assets.ttf#Segoe MDL2 Assets";
+        _highlighterButton.IconFont = IconFontStyle.Family;
         _clearButton = AddPrimary(Glyphs.Delete, "清空", "清空（有选中时删除选中墨迹）— 快捷键 Ctrl+E", ClearOrDeleteSelection);
 
+        _aiButton = AddPrimary(Glyphs.Ai, "AI 助手", "打开通用 AI 助手", () => Shell?.OpenAiAssistant());
+        _aiButton.Visibility = Shell?.AiAssistantAvailable == true ? Visibility.Visible : Visibility.Collapsed;
         _primary.Children.Add(_canvasControls);
         _eraserButton = AddPrimary(_canvasControls, Glyphs.Eraser, "橡皮", "橡皮（选中后再次点击打开选项）— 快捷键 Alt+E", () =>
         {
@@ -479,7 +490,6 @@ _penButton = AddPrimary(Glyphs.PenWpf, "批注", "批注（选中后再次点击
             PanelRequested?.Invoke(BarPanelKind.Eraser, _eraserOpen);
         });
         _selectButton = AddComposite(_canvasControls, Glyphs.SelectWpf, Glyphs.SelectOverlay, 10 * S, "选择", "选择 — 快捷键 Alt+S", () => SetTool(InkTool.Select));
-        _aiButton = AddPrimary(_canvasControls, Glyphs.Ai, "AI 识别", "AI 识别（先框选内容）", () => Shell?.OpenAiAssistant());
         _shapeButton = AddPrimary(_canvasControls, Glyphs.ShapesWpf, "图形", "图形（选中后再次点击打开选项）", () =>
         {
             bool active = !ClickThroughActive && Controller?.Tool == InkTool.Shape;
@@ -502,6 +512,7 @@ _penButton = AddPrimary(Glyphs.PenWpf, "批注", "批注（选中后再次点击
         _boardButton.Margin = new Thickness(PartBorder, 0, 0, 0);
         AddBoardDivider(_boardButton);
         _sideBoardButton = AddPrimary(Glyphs.Add, "板中板", "板中板 — 快捷键 Alt+N", () => Shell?.ToggleSideBoard());
+        _timeMachineButton = AddPrimary(Glyphs.TimeMachine, "时光机", "打开板书时光机（录制回放与录音管理）", () => Shell?.OpenTimeMachine());
         _toolsButton = AddPrimary(Glyphs.Tools, "工具", "更多设置", ToggleOverflow);
         _foldButton = AddPrimary(Glyphs.FoldWpf, "隐藏", "收纳工具栏到屏幕侧边 — 快捷键 Alt+V", () => Shell?.ToggleFold());
         _foldButton.Margin = new Thickness(-PartGap, 0, -PartGap, 0);
@@ -519,34 +530,7 @@ _penButton = AddPrimary(Glyphs.PenWpf, "批注", "批注（选中后再次点击
         _gestureBorder.Child = _gestureButton;
         _captioned.Add(_gestureButton);
 
-        // ---- 更多设置 rows (WPF BorderTools), hosted in a popup window ----
-        var row1 = MoreRow();
-        row1.Margin = new Thickness(0, 4 * S, 0, 0);
-        AddMore(row1, Glyphs.TimerWpf, "倒计时", () => Shell?.OpenTimer());
-        AddMore(row1, Glyphs.Rand, "随机抽选", () => Shell?.OpenLottery());
-        AddMore(row1, Glyphs.Rand, "单次抽选", () => Shell?.OpenLotteryQuick(), badge: true);
-        var row2 = MoreRow();
-        AddMore(row2, Glyphs.SaveStrokes, "保存墨迹", () => Shell?.SaveStrokes());
-        AddMore(row2, Glyphs.OpenStrokes, "打开墨迹", () => Shell?.OpenStrokes());
-        AddMore(row2, Glyphs.ReplayWpf, "播放墨迹", () => Shell?.OpenReplay());
-        AddMore(row2, Glyphs.InsertMedia, "插入图片", () => Shell?.InsertImage());
-        AddMore(row2, Glyphs.Video, "插入视频", () => Shell?.InsertVideo());
-        var row3 = MoreRow();
-        AddMore(row3, Glyphs.Camera, "截屏", async () => { if (Shell is not null) await Shell.ScreenshotAsync(); });
-        AddMore(row3, Glyphs.Help, "操作指南", () => Shell?.OpenGuide());
-        AddMore(row3, Glyphs.Settings, "设置", () => Shell?.OpenSettings());
-        _exitButton = AddMore(row3, Glyphs.ExitWpf, "退出", () => Shell?.Exit());
-        _moreRows.Children.Add(row1);
-        _moreRows.Children.Add(row2);
-        _moreRows.Children.Add(row3);
-        // 本地教学闭环入口（AI 助教 / 课堂工具箱 / 时光机）独立成行，避免撑宽既有行。
-        var localRow = MoreRow();
-        AddMore(localRow, Glyphs.Ai, "AI 助教", () => Shell?.OpenAiAssistant());
-        AddMore(localRow, Glyphs.BoardWpf, "课堂工具", () => Shell?.OpenToolkit());
-        AddMore(localRow, Glyphs.TimeMachine, "板书时光机", () => Shell?.OpenTimeMachine());
-        _moreRows.Children.Add(localRow);
-        _fixedMoreRowCount = _moreRows.Children.Count;
-        AppendExtensionCommands();
+        BuildMorePanel();
 
         // ---- 手势选项 rows (WPF TwoFingerGestureBorder), hosted in a popup window ----
         _multiTouchSwitch = AddGestureRow(Glyphs.People, "多指书写", v => Gesture.IsEnableMultiTouchMode = v);
@@ -611,7 +595,7 @@ _penButton = AddPrimary(Glyphs.PenWpf, "批注", "批注（选中后再次点击
 
     private static FontIcon NewIcon(string glyph, double size) => new()
     {
-        FontFamily = new FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
+        FontFamily = IconFontStyle.Font,
         Glyph = glyph,
         FontSize = size,
         IsTextScaleFactorEnabled = false,
@@ -670,34 +654,97 @@ _penButton = AddPrimary(Glyphs.PenWpf, "批注", "批注（选中后再次点击
         }
     }
 
-    private readonly List<Border> _boardDividers = new();
-
     public void RefreshExtensionCommands()
     {
-        while (_moreRows.Children.Count > _fixedMoreRowCount) _moreRows.Children.RemoveAt(_moreRows.Children.Count - 1);
-        AppendExtensionCommands();
+        var aiVisibility = Shell?.AiAssistantAvailable == true ? Visibility.Visible : Visibility.Collapsed;
+        bool aiChanged = _aiButton.Visibility != aiVisibility;
+        _aiButton.Visibility = aiVisibility;
+        BuildMorePanel();
+        ApplyThemeBrushes();
+        RefreshSettingsVisuals();
+        if (aiChanged) LayoutChanged?.Invoke();
     }
 
-    private void AppendExtensionCommands()
+    private void BuildMorePanel()
     {
-        var commands = Shell?.ExtensionCommands ?? Array.Empty<ExtensionCommand>();
-        // Keep the floating panel bounded. The full command list is in module settings.
-        foreach (var batch in commands.Take(8).Chunk(4))
+        _insertFlyout?.Hide();
+        _insertFlyout = null;
+        _moreRows.Children.Clear();
+        _badgeBorders.Clear();
+        var classroom = MoreRow();
+        classroom.Margin = new Thickness(0, 4 * S, 0, 0);
+        AddMore(classroom, Glyphs.TimerWpf, "倒计时", () => Shell?.OpenTimer());
+        AddMore(classroom, Glyphs.Rand, "随机抽选", () => Shell?.OpenLottery());
+        AddMore(classroom, Glyphs.Rand, "单次抽选", () => Shell?.OpenLotteryQuick(), badge: true);
+        AddMore(classroom, Glyphs.Board, "课堂工具", () => Shell?.OpenToolkit());
+        _moreRows.Children.Add(classroom);
+
+        var drawing = MoreRow();
+        AddMore(drawing, Glyphs.ReplayWpf, "播放墨迹", () => Shell?.OpenReplay());
+        TouchIconButton insert = null;
+        insert = AddMore(drawing, Glyphs.InsertMedia, "插入", () => ShowInsertMenu(insert), closePanel: false);
+        AddMore(drawing, Glyphs.Camera, "截屏", async () => { if (Shell is not null) await Shell.ScreenshotAsync(); });
+        _moreRows.Children.Add(drawing);
+
+        var presentation = MoreRow();
+        AddMore(presentation, Glyphs.SlideList, "课件页导航", () => Shell?.ToggleSlideNavigator());
+        AddMore(presentation, Glyphs.ChevronRight, "翻页悬浮窗", () => Shell?.TogglePptNavigationWindow());
+        AddMore(presentation, Glyphs.Lock, "黑屏 / 恢复", () => Shell?.ToggleBlackScreen());
+        _moreRows.Children.Add(presentation);
+
+        // 本地教学闭环入口（AI 助教 / 时光机）独立成行，避免撑宽既有行。
+        var localRow = MoreRow();
+        AddMore(localRow, Glyphs.Ai, "AI 助教", () => Shell?.OpenAiAssistant());
+        AddMore(localRow, Glyphs.TimeMachine, "板书时光机", () => Shell?.OpenTimeMachine());
+        _moreRows.Children.Add(localRow);
+
+        var commands = (Shell?.ExtensionCommands ?? Array.Empty<ExtensionCommand>())
+            .Where(command => command.PluginId is not ("inkcanvas.ai-assistant" or "inkcanvas.library")
+                && !(command.PluginId == "inkcanvas.pdf" && command.CommandId == "import"));
+        foreach (var batch in commands.Chunk(4))
         {
             var row = MoreRow();
             foreach (var command in batch)
                 AddMore(row, ExtensionCommandIcons.For(command), command.Title, async () => { if (Shell is not null) await Shell.ExecuteExtensionCommandAsync(command); });
             _moreRows.Children.Add(row);
         }
+
+        var files = MoreRow();
+        files.Margin = new Thickness(0, 8, 0, 4);
+        AddMore(files, Glyphs.SaveStrokes, "保存墨迹", () => Shell?.SaveStrokes());
+        AddMore(files, Glyphs.OpenStrokes, "打开文件", () => Shell?.OpenStrokes());
+        AddMore(files, Glyphs.Help, "操作指南", () => Shell?.OpenGuide());
+        AddMore(files, Glyphs.Settings, "设置", () => Shell?.OpenSettings());
+        _exitButton = AddMore(files, Glyphs.ExitWpf, "退出", () => Shell?.Exit());
+        _moreRows.Children.Add(files);
+    }
+
+    private void ShowInsertMenu(FrameworkElement anchor)
+    {
+        var pdf = Shell?.ExtensionCommands.FirstOrDefault(command => command.PluginId == "inkcanvas.pdf" && command.CommandId == "import");
+        _insertFlyout = new InsertFlyout(_theme,
+            () => RunInsertion(() => Shell?.InsertImage()),
+            () => RunInsertion(() => Shell?.InsertVideo()),
+            pdf is null ? null : () => RunInsertion(async () => { if (Shell is not null) await Shell.ExecuteExtensionCommandAsync(pdf); }));
+        _insertFlyout.ShowAt(anchor);
+    }
+
+    private void RunInsertion(Action action)
+    {
+        _moreOpen = false;
+        PanelRequested?.Invoke(BarPanelKind.More, false);
+        action();
     }
 
     private StackPanel MoreRow() => new() { Orientation = Orientation.Horizontal, Spacing = 0, Height = MoreBtn, HorizontalAlignment = HorizontalAlignment.Center };
 
-    private TouchIconButton AddMore(StackPanel row, string glyph, string label, Action onClick, bool badge = false)
+    private TouchIconButton AddMore(StackPanel row, string glyph, string label, Action onClick, bool badge = false, bool closePanel = true)
     {
         var button = new TouchIconButton { Glyph = glyph, Label = label };
         ConfigureBarButton(button, more: true);
         button.ShowLabel = true; // more-panel captions always visible in WPF
+        button.LabelMaxWidth = MoreBtn - 6;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, label);
         if (badge)
         {
             var grid = new Grid { Width = MoreBtn, Height = MoreIcon };
@@ -739,8 +786,11 @@ _penButton = AddPrimary(Glyphs.PenWpf, "批注", "批注（选中后再次点击
             button.Click += (_, _) =>
             {
                 // Dismiss the launching popup before an action opens another window.
-                _moreOpen = false;
-                PanelRequested?.Invoke(BarPanelKind.More, false);
+                if (closePanel)
+                {
+                    _moreOpen = false;
+                    PanelRequested?.Invoke(BarPanelKind.More, false);
+                }
                 onClick();
             };
         }
@@ -749,7 +799,7 @@ _penButton = AddPrimary(Glyphs.PenWpf, "批注", "批注（选中后再次点击
     }
 
     private readonly List<Border> _badgeBorders = new();
-    private int _fixedMoreRowCount;
+    private readonly List<Border> _boardDividers = new();
 
     /// <summary>系统高对比度探测一次；API 不可用时按“无高对比度”处理，绝不抛异常。</summary>
     private static readonly AccessibilitySettings SystemAccessibility = CreateAccessibilitySettings();
@@ -873,7 +923,7 @@ _penButton = AddPrimary(Glyphs.PenWpf, "批注", "批注（选中后再次点击
         LayoutChanged?.Invoke();
     }
 
-private void SetTool(InkTool tool)
+    private void SetTool(InkTool tool)
     {
         if (Controller is null) return;
         if (ClickThroughActive) Shell?.ToggleClickThrough();

@@ -10,6 +10,8 @@ public static class ExtensionCommandIcons
         ("inkcanvas.pdf", "open") => Glyphs.Pdf,
         ("inkcanvas.pdf", "import") => Glyphs.Import,
         ("inkcanvas.analytic-geometry", "open") => Glyphs.Calculator,
+        ("inkcanvas.ai-assistant", "open") => Glyphs.Ai,
+        ("inkcanvas.library", "open") => Glyphs.SlideList,
         _ => Glyphs.Tools,
     };
 }

@@ -39,8 +39,8 @@ foreach ($build in $builds) {
     }
 }
 # Old release archives and extension packages outside the retained builds are also build output.
-Get-ChildItem -LiteralPath $artifactsRoot -Filter '*.zip' -File -Recurse | Where-Object {
-    $_.Name -like 'InkCanvas-*.zip' -or $_.Name -like 'inkcanvas.*.zip' -or $_.Name -like 'sample.guide-lines-*.zip'
+Get-ChildItem -LiteralPath $artifactsRoot -File -Recurse | Where-Object {
+    $_.Name -like 'InkCanvas-*.zip' -or $_.Name -like 'InkCanvas-*.msi' -or $_.Name -like 'inkcanvas.*.zip' -or $_.Name -like 'sample.guide-lines-*.zip'
 } | ForEach-Object {
     $archive = $_.FullName
     $insideRetained = @($retainedPaths | Where-Object {

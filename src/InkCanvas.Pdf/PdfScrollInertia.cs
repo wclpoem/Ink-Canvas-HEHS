@@ -8,6 +8,8 @@ public sealed class PdfScrollInertia
     private Vector2 _lastPosition, _velocity;
     private double _lastSample;
     public bool IsRunning { get; private set; }
+    public double RemainingSeconds => IsRunning ? Math.Max(0, Math.Log(_velocity.Length() / 12) / 7.5) : 0;
+    public Vector2 Project(double seconds) => _velocity * (float)((1 - Math.Exp(-7.5 * Math.Max(0, seconds))) / 7.5);
 
     public void Reset(Vector2 position, double seconds)
     {

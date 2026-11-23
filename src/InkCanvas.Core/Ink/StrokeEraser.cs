@@ -34,13 +34,16 @@ public static class StrokeEraser
         bool touched = false;
         var fragments = new List<List<InkPoint>>();
         var current = new List<InkPoint>();
+        Span<float> cuts = stackalloc float[4];
 
         for (int segment = 1; segment < points.Count; segment++)
         {
             InkPoint a = points[segment - 1], b = points[segment];
             Vector2 p0 = a.Position, d = b.Position - p0, f = p0 - center;
             float aa = Vector2.Dot(d, d);
-            var cuts = new List<float> { 0f, 1f };
+            cuts[0] = 0f;
+            cuts[1] = 1f;
+            int cutCount = 2;
 
             if (aa > 1e-8f)
             {
@@ -52,13 +55,13 @@ public static class StrokeEraser
                     float root = MathF.Sqrt(discriminant);
                     float t1 = (-bb - root) / (2f * aa);
                     float t2 = (-bb + root) / (2f * aa);
-                    if (t1 > 0f && t1 < 1f) cuts.Add(t1);
-                    if (t2 > 0f && t2 < 1f) cuts.Add(t2);
+                    if (t1 > 0f && t1 < 1f) cuts[cutCount++] = t1;
+                    if (t2 > 0f && t2 < 1f) cuts[cutCount++] = t2;
                 }
             }
-            cuts.Sort();
+            cuts[..cutCount].Sort();
 
-            for (int i = 1; i < cuts.Count; i++)
+            for (int i = 1; i < cutCount; i++)
             {
                 float t0 = cuts[i - 1], t1 = cuts[i];
                 float tm = (t0 + t1) * 0.5f;

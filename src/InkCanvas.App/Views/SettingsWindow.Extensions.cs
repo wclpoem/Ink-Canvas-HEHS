@@ -13,18 +13,19 @@ public sealed partial class SettingsWindow
 
     private void BuildExtensionsCategory()
     {
-        _content.Children.Add(InfoRow("书写、选择、擦除和画布由主体维护。内置模块按依赖顺序启动，模块开关重启后生效。外部插件使用独立进程，可即时启用或停用。"));
-        AddSection("内置模块");
+        BuildRepositoryExtensions();
+        _content.Children.Add(InfoRow("原生功能插件提供 AI 助手、PDF 和解析几何等独立功能，安装于 Modules 目录，开关重启后生效。外部命令插件使用独立进程，可即时启用或停用。"));
+        AddSection("原生功能插件");
         if (_services.Modules.Status.Count == 0) _content.Children.Add(InfoRow("模块状态在主工具栏启动后显示。"));
         foreach (var module in _services.Modules.Status)
         {
             if (module.State == ExtensionState.NotInstalled)
             {
-                _content.Children.Add(ToggleRow(module.Name + " · 内置模块", () => false, _ => { }, enabled: false,
-                    disabledReason: "此发行包未安装该模块，请将模块 ZIP 解压到 Modules 目录并重启。"));
+                _content.Children.Add(ToggleRow(module.Name + " · 原生插件", () => false, _ => { }, enabled: false,
+                    disabledReason: "尚未安装，可从上方仓库插件中下载，重启后生效。"));
                 continue;
             }
-            _content.Children.Add(ToggleRow(module.Name + " · 内置模块", () => !_services.ExtensionPreferences.DisabledModules.Contains(module.Id), enabled =>
+            _content.Children.Add(ToggleRow(module.Name + " · 原生插件", () => !_services.ExtensionPreferences.DisabledModules.Contains(module.Id), enabled =>
             {
                 bool previous = !_services.ExtensionPreferences.DisabledModules.Contains(module.Id);
                 if (enabled) _services.ExtensionPreferences.DisabledModules.Remove(module.Id); else _services.ExtensionPreferences.DisabledModules.Add(module.Id);
@@ -37,7 +38,7 @@ public sealed partial class SettingsWindow
             }, note: module.Id + " · " + module.Version + " · " + StateText(module.State) + (module.Error is null ? "" : "\n" + module.Error)));
         }
         AddSection("外部插件");
-        _content.Children.Add(InfoRow("将插件包解压到程序目录的 Plugins，或用户配置目录的 Plugins 子目录，重新启动后在此启用。每个包使用独立目录，包含 plugin.json、插件 DLL 和依赖。"));
+        _content.Children.Add(InfoRow("仓库插件安装后重启即可在此启用。也可将其他插件包放入用户配置目录的 Plugins 子目录。"));
         _content.Children.Add(ButtonRow("打开用户插件目录", "配置目录中的插件可与主体程序独立更新", () =>
         {
             try

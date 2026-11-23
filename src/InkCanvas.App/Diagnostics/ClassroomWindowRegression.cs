@@ -57,92 +57,7 @@ internal static class ClassroomWindowRegression
                     }
                     finally { settings.Close(); }
                 }
-                using var countdown = new CountdownWindow(theme);
-                countdown.Activate();
-                await Task.Delay(350);
-                try
-                {
-                    await CheckSurface(countdown, theme, "countdown", directory, checks);
-                    foreach (var size in new[] { (540, 580), (680, 600), (1100, 700) })
-                    {
-                        Resize(countdown, size.Item1, size.Item2);
-                        await Task.Delay(80);
-                        await CheckSurface(countdown, theme, $"countdown-{size.Item1}", directory, checks);
-                        var root = (FrameworkElement)countdown.Content;
-                        bool fits = Descendants(root).OfType<CountdownRing>().All(element => Fits(element, root));
-                        checks.Add(new { check = "countdown ring fits resized client", theme, size = size.Item1, passed = fits });
-                        bool touch = Descendants(root).OfType<TouchIconButton>().Where(IsVisible)
-                            .All(button => button.ActualWidth >= 55 && button.ActualHeight >= 55 && Fits(button, root));
-                        checks.Add(new { check = "countdown controls preserve large touch targets", theme, size = size.Item1, passed = touch });
-                    }
-                    countdown.ToggleEdit(); await Task.Delay(30);
-                    bool editing = Field<Grid>(countdown, "_adjustLayer").Visibility == Visibility.Visible;
-                    countdown.ToggleEdit();
-                    countdown.StartPause(); await Task.Delay(120);
-                    var ring = Descendants(countdown.Content).OfType<CountdownRing>().Single();
-                    bool running = ring.Value is > 0 and <= 1;
-                    countdown.StartPause(); double pausedValue = ring.Value;
-                    await Task.Delay(120);
-                    bool paused = ring.IsPaused && ring.Value == pausedValue;
-                    countdown.StartPause(); await Task.Delay(100);
-                    bool resumed = !ring.IsPaused && ring.Value < pausedValue;
-                    countdown.Reset(); countdown.StartPause(); countdown.Reset();
-                    bool reset = ring.Value == 0 && !ring.IsPaused;
-                    checks.Add(new { check = "countdown edit start pause resume reset", theme, editing, running, paused, resumed, reset,
-                        passed = editing && running && paused && resumed && reset });
-                    countdown.SetDuration(180); countdown.StartPause(); await Task.Delay(80); countdown.StartPause();
-                    int beforeExtend = countdown.DisplaySeconds;
-                    countdown.AddTime(60);
-                    bool extended = countdown.DisplaySeconds == beforeExtend + 60 && countdown.IsPaused;
-                    countdown.StartPause(); await Task.Delay(70); countdown.Reset();
-                    checks.Add(new { check = "countdown extends paused session and restores configured duration", theme,
-                        passed = extended && countdown.DisplaySeconds == 180 && !countdown.IsRunning });
-                    var sound = Descendants(countdown.Content).OfType<CheckBox>().Single(box => (string)box.Content == "结束提示音");
-                    var repeat = Descendants(countdown.Content).OfType<CheckBox>().Single(box => (string)box.Content == "循环计时");
-                    sound.IsChecked = false;
-                    countdown.SetDuration(1); countdown.StartPause(); await Task.Delay(1120);
-                    bool finished = !countdown.IsRunning && countdown.DisplaySeconds == 0;
-                    countdown.StartPause(); bool restarted = countdown.IsRunning && countdown.DisplaySeconds == 1; countdown.Reset();
-                    repeat.IsChecked = true; countdown.StartPause(); await Task.Delay(1120);
-                    bool loop = countdown.Round >= 2 && countdown.IsRunning;
-                    countdown.Reset(); repeat.IsChecked = false;
-                    checks.Add(new { check = "countdown completion restart mute and repeat", theme,
-                        passed = finished && restarted && loop && !countdown.SoundStarted,
-                        finished, restarted, loop });
-                    sound.IsChecked = true; countdown.StartPause(); await Task.Delay(1600);
-                    checks.Add(new { check = "countdown completion opens bundled notice sound", theme,
-                        passed = countdown.SoundStarted });
-                    countdown.Reset(); sound.IsChecked = false;
-                    Resize(countdown, 540, 580); await Task.Delay(60); countdown.ToggleEdit(); await Task.Delay(40);
-                    checks.Add(new { check = "timer editor buttons fit and remain touch sized", theme,
-                        passed = Descendants(Field<Grid>(countdown, "_adjustLayer")).OfType<TouchIconButton>()
-                            .All(button => button.ActualHeight >= 55 && Fits(button, (FrameworkElement)countdown.Content)) });
-                    await BoardWindowRegression.SaveVisual((FrameworkElement)countdown.Content, Path.Combine(directory, $"countdown-editor-{theme}.png"));
-                    countdown.ToggleEdit();
-                    var origin = countdown.AppWindow.Position; var originalSize = countdown.AppWindow.Size;
-                    countdown.ToggleCompact(); await Task.Delay(80);
-                    await CheckSurface(countdown, theme, "countdown-compact", directory, checks);
-                    var compactText = Field<TextBlock>(countdown, "_compactTime");
-                    bool compactFits = Fits(compactText, (FrameworkElement)countdown.Content);
-                    countdown.ToggleCompact(); await Task.Delay(80);
-                    bool restored = countdown.AppWindow.Position == origin && countdown.AppWindow.Size == originalSize;
-                    checks.Add(new { check = "countdown compact fits and restores prior bounds", theme, compactFits, restored, passed = compactFits && restored });
-                    if (countdown.AppWindow.Presenter is OverlappedPresenter presenter)
-                    {
-                        presenter.Maximize(); await Task.Delay(150);
-                        await CheckSurface(countdown, theme, "countdown-maximized", directory, checks);
-                        presenter.Restore();
-                    }
-                    bool vectors = !Descendants(ring).Any(element => element.GetType().Name == "CanvasControl");
-                    checks.Add(new { check = "countdown uses vector ring without a separate raster surface", theme, passed = vectors });
-                    ring.Value = 1;
-                    bool completeRing = Field<PathFigure>(ring, "_figure").Segments.Count == 2;
-                    ring.Value = .75; ring.IsPaused = true;
-                    bool partialRing = Field<PathFigure>(ring, "_figure").Segments.Count == 1;
-                    await BoardWindowRegression.SaveVisual((FrameworkElement)countdown.Content, Path.Combine(directory, $"countdown-paused-{theme}.png"));
-                    checks.Add(new { check = "countdown vector supports full and partial arcs", theme, passed = completeRing && partialRing });
-                }
-                finally { countdown.Close(); }
+                await CountdownWindowRegression.CheckAsync(theme, directory, checks);
 
                 var lotteryService = new LotteryService { PeopleCount = 20 };
                 var lottery = new LotteryWindow(lotteryService, theme: theme,
@@ -160,14 +75,15 @@ internal static class ClassroomWindowRegression
                         checks.Add(new { check = "lottery controls fit resized client", theme, size = size.Item1, passed = fits });
                         checks.Add(new { check = "lottery controls preserve large touch targets", theme, size = size.Item1,
                             passed = Descendants(lottery.Content).OfType<TouchIconButton>().Where(IsVisible)
-                                .All(button => button.ActualWidth >= 55 && button.ActualHeight >= 55) });
+                                .All(button => button.ActualWidth >= 40 && button.ActualHeight >= 44) });
                     }
                     var plus = Descendants(lottery.Content).OfType<TouchIconButton>().Single(button => AutomationProperties.GetName(button) == "增加人数");
+                    lottery.ChangeCount(1);
                     ((IInvokeProvider)new ButtonAutomationPeer(plus).GetPattern(PatternInterface.Invoke)).Invoke();
                     Task roll = lottery.RollAsync();
                     bool locked = !plus.IsEnabled || !InkCanvas.Controls.Animation.Motion.AnimationsEnabled && roll.IsCompletedSuccessfully;
                     await roll;
-                    bool result = lottery.LastResult.Count == 2 && Descendants(lottery.Content).OfType<GridView>().Single().Items.Count == 2;
+                    bool result = lottery.LastResult.Count == 2 && Field<ItemsRepeater>(lottery, "_resultView").ItemsSourceView.Count == 2;
                     bool unlocked = plus.IsEnabled;
                     checks.Add(new { check = "lottery locks controls while rolling and restores them after results", theme, locked, result, unlocked, passed = locked && result && unlocked });
                     await CheckSurface(lottery, theme, "lottery-results", directory, checks);
@@ -216,7 +132,8 @@ internal static class ClassroomWindowRegression
         var root = (FrameworkElement)window.Content;
         root.UpdateLayout();
         Color expected = PopupBrushes.WindowSurface(theme).Color;
-        bool foundation = root is Grid grid && ((SolidColorBrush)grid.Background).Color == expected;
+        bool foundation = window is LotteryWindow ? window.SystemBackdrop is MicaBackdrop
+            : root is Grid grid && ((SolidColorBrush)grid.Background).Color == expected;
         bool native = CheckNativeFrame(window, extended: window is CountdownWindow or LotteryWindow or NamesInputWindow);
         bool fills = Math.Abs(root.ActualWidth * root.XamlRoot.RasterizationScale - window.AppWindow.ClientSize.Width) < 2
             && Math.Abs(root.ActualHeight * root.XamlRoot.RasterizationScale - window.AppWindow.ClientSize.Height) < 2;

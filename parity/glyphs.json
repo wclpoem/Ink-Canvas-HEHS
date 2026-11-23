@@ -1,179 +1,564 @@
 {
-  "note": "target: Symbol 名或 custom:<id>，Phase D 填充；清单与当前 Glyphs.cs 严格一致（历史图标见 glyphs-legacy.json）",
+  "note": "codepoint=Fluent System Icons（MIT，两平台共用同字体同码点）；target=sys.symbol 回退映射；segoeCodepoint=原 Segoe 稳定 ID；权威映射 parity/icon-map.json",
   "glyphs": [
     {
       "name": "Pen",
-      "codepoint": "U+E70F",
-      "char": "",
-      "target": "sys.symbol.pencil_tip"
+      "codepoint": "U+F3DD",
+      "char": "",
+      "target": "sys.symbol.pencil_tip",
+      "fluentName": "edit",
+      "segoeCodepoint": "U+E70F"
     },
     {
       "name": "Highlight",
-      "codepoint": "U+E7E6",
-      "char": "",
-      "target": "sys.symbol.highlighter_tip"
+      "codepoint": "U+F481",
+      "char": "",
+      "target": "sys.symbol.highlighter_tip",
+      "fluentName": "highlight",
+      "segoeCodepoint": "U+E7E6"
     },
     {
       "name": "Eraser",
-      "codepoint": "U+E75C",
-      "char": "",
-      "target": "sys.symbol.eraser_line"
+      "codepoint": "U+E5F2",
+      "char": "",
+      "target": "sys.symbol.eraser_line",
+      "fluentName": "eraser",
+      "segoeCodepoint": "U+E75C"
     },
     {
       "name": "Select",
-      "codepoint": "U+E8B3",
-      "char": "",
-      "target": "custom:text"
+      "codepoint": "U+F6A1",
+      "char": "",
+      "target": "sys.symbol.square_dashed",
+      "fluentName": "select_object",
+      "segoeCodepoint": "U+E8B3"
     },
     {
       "name": "Shapes",
       "codepoint": "U+25B3",
       "char": "△",
-      "target": "custom:text"
+      "target": "custom:text",
+      "segoeCodepoint": "U+25B3"
     },
     {
       "name": "Undo",
-      "codepoint": "U+E7A7",
-      "char": "",
-      "target": "sys.symbol.undo"
+      "codepoint": "U+F19A",
+      "char": "",
+      "target": "sys.symbol.undo",
+      "fluentName": "arrow_undo",
+      "segoeCodepoint": "U+E7A7"
     },
     {
       "name": "Redo",
-      "codepoint": "U+E7A6",
-      "char": "",
-      "target": "sys.symbol.redo"
+      "codepoint": "U+F16F",
+      "char": "",
+      "target": "sys.symbol.redo",
+      "fluentName": "arrow_redo",
+      "segoeCodepoint": "U+E7A6"
     },
     {
       "name": "Delete",
-      "codepoint": "U+E74D",
-      "char": "",
-      "target": "sys.symbol.trash"
+      "codepoint": "U+F34D",
+      "char": "",
+      "target": "sys.symbol.trash",
+      "fluentName": "delete",
+      "segoeCodepoint": "U+E74D"
     },
     {
       "name": "Add",
-      "codepoint": "U+E710",
-      "char": "",
-      "target": "sys.symbol.plus"
+      "codepoint": "U+F10A",
+      "char": "",
+      "target": "sys.symbol.plus",
+      "fluentName": "add",
+      "segoeCodepoint": "U+E710"
     },
     {
       "name": "Settings",
-      "codepoint": "U+E713",
-      "char": "",
-      "target": "sys.symbol.gearshape"
+      "codepoint": "U+F6B3",
+      "char": "",
+      "target": "sys.symbol.gearshape",
+      "fluentName": "settings",
+      "segoeCodepoint": "U+E713"
     },
     {
       "name": "Camera",
-      "codepoint": "U+E722",
-      "char": "",
-      "target": "sys.symbol.camera"
+      "codepoint": "U+F255",
+      "char": "",
+      "target": "sys.symbol.camera",
+      "fluentName": "camera",
+      "segoeCodepoint": "U+E722"
+    },
+    {
+      "name": "Video",
+      "codepoint": "U+F865",
+      "char": "",
+      "target": "sys.symbol.video",
+      "fluentName": "video",
+      "segoeCodepoint": "U+E714"
     },
     {
       "name": "Stopwatch",
-      "codepoint": "U+E916",
-      "char": "",
-      "target": "sys.symbol.timer"
+      "codepoint": "U+F840",
+      "char": "",
+      "target": "sys.symbol.timer",
+      "fluentName": "timer",
+      "segoeCodepoint": "U+E916"
     },
     {
       "name": "People",
-      "codepoint": "U+E716",
-      "char": "",
-      "target": "sys.symbol.person_2"
+      "codepoint": "U+F5B3",
+      "char": "",
+      "target": "sys.symbol.person_2",
+      "fluentName": "people",
+      "segoeCodepoint": "U+E716"
     },
     {
       "name": "Board",
-      "codepoint": "U+E7F4",
-      "char": "",
-      "target": "custom:text"
+      "codepoint": "U+F8C3",
+      "char": "",
+      "target": "sys.symbol.square_and_pencil",
+      "fluentName": "whiteboard",
+      "segoeCodepoint": "U+E7F4"
     },
     {
       "name": "ChevronUp",
-      "codepoint": "U+E70E",
-      "char": "",
-      "target": "sys.symbol.chevron_up"
+      "codepoint": "U+F2B7",
+      "char": "",
+      "target": "sys.symbol.chevron_up",
+      "fluentName": "chevron_up",
+      "segoeCodepoint": "U+E70E"
     },
     {
       "name": "ChevronDown",
-      "codepoint": "U+E70D",
-      "char": "",
-      "target": "sys.symbol.chevron_down"
+      "codepoint": "U+F2A4",
+      "char": "",
+      "target": "sys.symbol.chevron_down",
+      "fluentName": "chevron_down",
+      "segoeCodepoint": "U+E70D"
     },
     {
       "name": "ChevronLeft",
-      "codepoint": "U+E76B",
-      "char": "",
-      "target": "sys.symbol.chevron_left"
+      "codepoint": "U+F2AB",
+      "char": "",
+      "target": "sys.symbol.chevron_left",
+      "fluentName": "chevron_left",
+      "segoeCodepoint": "U+E76B"
     },
     {
       "name": "ChevronRight",
-      "codepoint": "U+E76C",
-      "char": "",
-      "target": "sys.symbol.chevron_right"
+      "codepoint": "U+F2B1",
+      "char": "",
+      "target": "sys.symbol.chevron_right",
+      "fluentName": "chevron_right",
+      "segoeCodepoint": "U+E76C"
     },
     {
       "name": "Lock",
-      "codepoint": "U+E72E",
-      "char": "",
-      "target": "sys.symbol.lock"
+      "codepoint": "U+E79E",
+      "char": "",
+      "target": "sys.symbol.lock",
+      "fluentName": "lock_closed",
+      "segoeCodepoint": "U+E72E"
     },
     {
       "name": "Unlock",
-      "codepoint": "U+E785",
-      "char": "",
-      "target": "sys.symbol.lock_open"
+      "codepoint": "U+E7A4",
+      "char": "",
+      "target": "sys.symbol.lock_open",
+      "fluentName": "lock_open",
+      "segoeCodepoint": "U+E785"
     },
     {
       "name": "Close",
-      "codepoint": "U+E711",
-      "char": "",
-      "target": "sys.symbol.xmark"
+      "codepoint": "U+F36A",
+      "char": "",
+      "target": "sys.symbol.xmark",
+      "fluentName": "dismiss",
+      "segoeCodepoint": "U+E711"
     },
     {
       "name": "Exit",
-      "codepoint": "U+E8BB",
-      "char": "",
-      "target": "custom:text"
+      "codepoint": "U+F36A",
+      "char": "",
+      "target": "sys.symbol.xmark",
+      "fluentName": "dismiss",
+      "segoeCodepoint": "U+E8BB"
     },
     {
       "name": "Play",
-      "codepoint": "U+E768",
-      "char": "",
-      "target": "sys.symbol.play"
+      "codepoint": "U+F610",
+      "char": "",
+      "target": "sys.symbol.play",
+      "fluentName": "play",
+      "segoeCodepoint": "U+E768"
     },
     {
       "name": "Pause",
-      "codepoint": "U+E769",
-      "char": "",
-      "target": "sys.symbol.pause"
+      "codepoint": "U+F5AC",
+      "char": "",
+      "target": "sys.symbol.pause",
+      "fluentName": "pause",
+      "segoeCodepoint": "U+E769"
     },
     {
       "name": "Restart",
-      "codepoint": "U+E72C",
-      "char": "",
-      "target": "sys.symbol.arrow_counterclockwise"
+      "codepoint": "U+F1A0",
+      "char": "",
+      "target": "sys.symbol.arrow_counterclockwise",
+      "fluentName": "arrow_reset",
+      "segoeCodepoint": "U+E72C"
     },
     {
       "name": "Replay",
-      "codepoint": "U+E823",
-      "char": "",
-      "target": "sys.symbol.arrow_counterclockwise"
+      "codepoint": "U+F140",
+      "char": "",
+      "target": "sys.symbol.arrow_counterclockwise",
+      "fluentName": "arrow_counterclockwise",
+      "segoeCodepoint": "U+E823"
     },
     {
       "name": "Help",
-      "codepoint": "U+E897",
-      "char": "",
-      "target": "sys.symbol.questionmark_circle"
+      "codepoint": "U+F648",
+      "char": "",
+      "target": "sys.symbol.questionmark_circle",
+      "fluentName": "question_circle",
+      "segoeCodepoint": "U+E897"
     },
     {
       "name": "Info",
-      "codepoint": "U+E946",
-      "char": "",
-      "target": "sys.symbol.info_circle"
+      "codepoint": "U+F4AB",
+      "char": "",
+      "target": "sys.symbol.info_circle",
+      "fluentName": "info",
+      "segoeCodepoint": "U+E946"
     },
     {
       "name": "Download",
-      "codepoint": "U+E896",
-      "char": "",
-      "target": "sys.symbol.arrow_down_circle"
+      "codepoint": "U+F151",
+      "char": "",
+      "target": "sys.symbol.arrow_down_circle",
+      "fluentName": "arrow_download",
+      "segoeCodepoint": "U+E896"
+    },
+    {
+      "name": "TimeMachine",
+      "codepoint": "U+F486",
+      "char": "",
+      "target": "sys.symbol.clock",
+      "fluentName": "history",
+      "segoeCodepoint": "U+E81C"
+    },
+    {
+      "name": "SlideList",
+      "codepoint": "U+F6F3",
+      "char": "",
+      "target": "sys.symbol.doc_text",
+      "fluentName": "slide_layout",
+      "segoeCodepoint": "U+E8FD"
+    },
+    {
+      "name": "Pdf",
+      "codepoint": "U+F3AD",
+      "char": "",
+      "target": "sys.symbol.doc_text",
+      "fluentName": "document_pdf",
+      "segoeCodepoint": "U+EA90"
+    },
+    {
+      "name": "Import",
+      "codepoint": "U+F15A",
+      "char": "",
+      "target": "sys.symbol.import",
+      "fluentName": "arrow_import",
+      "segoeCodepoint": "U+E8B5"
+    },
+    {
+      "name": "Calculator",
+      "codepoint": "U+E247",
+      "char": "",
+      "target": "sys.symbol.calculator",
+      "fluentName": "calculator",
+      "segoeCodepoint": "U+E8EF"
+    },
+    {
+      "name": "Pages",
+      "codepoint": "U+E52D",
+      "char": "",
+      "target": null
+    },
+    {
+      "name": "Search",
+      "codepoint": "U+F69A",
+      "char": "",
+      "target": null
+    },
+    {
+      "name": "SaveCopy",
+      "codepoint": "U+F68D",
+      "char": "",
+      "target": null
+    },
+    {
+      "name": "ZoomIn",
+      "codepoint": "U+F8DD",
+      "char": "",
+      "target": "sys.symbol.magnifyingglass",
+      "fluentName": "zoom_in",
+      "segoeCodepoint": "U+E8A3"
+    },
+    {
+      "name": "ZoomOut",
+      "codepoint": "U+F8DF",
+      "char": "",
+      "target": null
+    },
+    {
+      "name": "FitPage",
+      "codepoint": "U+F160",
+      "char": "",
+      "target": null
+    },
+    {
+      "name": "FitWidth",
+      "codepoint": "U+F8E6",
+      "char": "",
+      "target": null
+    },
+    {
+      "name": "Hand",
+      "codepoint": "U+E6ED",
+      "char": "",
+      "target": null
+    },
+    {
+      "name": "Cursor",
+      "codepoint": "U+E450",
+      "char": "",
+      "target": "sys.symbol.mouse",
+      "fluentName": "cursor",
+      "segoeCodepoint": "U+E8B0"
+    },
+    {
+      "name": "PenWpf",
+      "codepoint": "U+F253",
+      "char": "",
+      "target": "sys.symbol.pencil_tip",
+      "fluentName": "calligraphy_pen",
+      "segoeCodepoint": "U+EE56"
+    },
+    {
+      "name": "HighlightWpf",
+      "codepoint": "U+F481",
+      "char": "",
+      "target": "sys.symbol.highlighter_tip",
+      "fluentName": "highlight",
+      "segoeCodepoint": "U+E7E6"
+    },
+    {
+      "name": "EraserOverlayCircle",
+      "codepoint": "U+F2BC",
+      "char": "",
+      "target": "sys.symbol.badge_circle",
+      "fluentName": "circle",
+      "segoeCodepoint": "U+F0B6"
+    },
+    {
+      "name": "EraserOverlayStroke",
+      "codepoint": "U+EBCB",
+      "char": "",
+      "target": "sys.symbol.badge_stroke",
+      "fluentName": "subtract",
+      "segoeCodepoint": "U+F128"
+    },
+    {
+      "name": "SelectWpf",
+      "codepoint": "U+F6A1",
+      "char": "",
+      "target": "sys.symbol.square_dashed",
+      "fluentName": "select_object",
+      "segoeCodepoint": "U+E958"
+    },
+    {
+      "name": "SelectOverlay",
+      "codepoint": "U+F2C0",
+      "char": "",
+      "target": "sys.symbol.badge_dot",
+      "fluentName": "circle_small",
+      "segoeCodepoint": "U+F8AF"
+    },
+    {
+      "name": "ShapesWpf",
+      "codepoint": "U+F6B7",
+      "char": "",
+      "target": "sys.symbol.rectangle_stack",
+      "fluentName": "shapes",
+      "segoeCodepoint": "U+F158"
+    },
+    {
+      "name": "InsertMedia",
+      "codepoint": "U+F490",
+      "char": "",
+      "target": "sys.symbol.picture",
+      "fluentName": "image",
+      "segoeCodepoint": "U+EE71"
+    },
+    {
+      "name": "BoardWpf",
+      "codepoint": "U+F8C3",
+      "char": "",
+      "target": "sys.symbol.square_and_pencil",
+      "fluentName": "whiteboard",
+      "segoeCodepoint": "U+E929"
+    },
+    {
+      "name": "Tools",
+      "codepoint": "U+F467",
+      "char": "",
+      "target": "sys.symbol.wrench_and_screwdriver",
+      "fluentName": "grid",
+      "segoeCodepoint": "U+E8A9"
+    },
+    {
+      "name": "FoldWpf",
+      "codepoint": "U+F166",
+      "char": "",
+      "target": "sys.symbol.arrow_left_to_line",
+      "fluentName": "arrow_minimize",
+      "segoeCodepoint": "U+ED1A"
+    },
+    {
+      "name": "Emoji",
+      "codepoint": "U+F3E0",
+      "char": "",
+      "target": "custom:text",
+      "fluentName": "emoji",
+      "segoeCodepoint": "U+E76E"
+    },
+    {
+      "name": "EmojiDrag",
+      "codepoint": "U+F3C1",
+      "char": "",
+      "target": "sys.symbol.move",
+      "fluentName": "drag",
+      "segoeCodepoint": "U+E899"
+    },
+    {
+      "name": "Gesture",
+      "codepoint": "U+E6E5",
+      "char": "",
+      "target": "sys.symbol.hand_tap",
+      "fluentName": "hand_draw",
+      "segoeCodepoint": "U+F271"
+    },
+    {
+      "name": "TimerWpf",
+      "codepoint": "U+F2E2",
+      "char": "",
+      "target": "sys.symbol.timer",
+      "fluentName": "clock_alarm",
+      "segoeCodepoint": "U+EA8F"
+    },
+    {
+      "name": "Rand",
+      "codepoint": "U+EF37",
+      "char": "",
+      "target": "sys.symbol.shuffle",
+      "fluentName": "arrow_shuffle",
+      "segoeCodepoint": "U+E8B1"
+    },
+    {
+      "name": "SaveStrokes",
+      "codepoint": "U+F68A",
+      "char": "",
+      "target": "sys.symbol.save",
+      "fluentName": "save",
+      "segoeCodepoint": "U+E74E"
+    },
+    {
+      "name": "OpenStrokes",
+      "codepoint": "U+F433",
+      "char": "",
+      "target": "sys.symbol.folder",
+      "fluentName": "folder_open",
+      "segoeCodepoint": "U+ED25"
+    },
+    {
+      "name": "ReplayWpf",
+      "codepoint": "U+F140",
+      "char": "",
+      "target": "sys.symbol.arrow_counterclockwise",
+      "fluentName": "arrow_counterclockwise",
+      "segoeCodepoint": "U+EC57"
+    },
+    {
+      "name": "GuideWpf",
+      "codepoint": "U+E173",
+      "char": "",
+      "target": "sys.symbol.doc_plaintext",
+      "fluentName": "book",
+      "segoeCodepoint": "U+E82D"
+    },
+    {
+      "name": "ExitWpf",
+      "codepoint": "U+F619",
+      "char": "",
+      "target": "sys.symbol.arrow_right_to_line",
+      "fluentName": "power",
+      "segoeCodepoint": "U+E7E8"
+    },
+    {
+      "name": "HideControl",
+      "codepoint": "U+E603",
+      "char": "",
+      "target": "sys.symbol.eye_slash",
+      "fluentName": "eye_off",
+      "segoeCodepoint": "U+E7B3"
+    },
+    {
+      "name": "LRSwitch",
+      "codepoint": "U+F18E",
+      "char": "",
+      "target": "sys.symbol.arrow_left_arrow_right",
+      "fluentName": "arrow_swap",
+      "segoeCodepoint": "U+E8AB"
+    },
+    {
+      "name": "GestureTranslate",
+      "codepoint": "U+F169",
+      "char": "",
+      "target": "sys.symbol.move",
+      "fluentName": "arrow_move",
+      "segoeCodepoint": "U+E7C2"
+    },
+    {
+      "name": "GestureZoom",
+      "codepoint": "U+F8DD",
+      "char": "",
+      "target": "sys.symbol.magnifyingglass",
+      "fluentName": "zoom_in",
+      "segoeCodepoint": "U+E740"
+    },
+    {
+      "name": "GestureRotate",
+      "codepoint": "U+F13E",
+      "char": "",
+      "target": "sys.symbol.arrow_clockwise",
+      "fluentName": "arrow_clockwise",
+      "segoeCodepoint": "U+E7AD"
+    },
+    {
+      "name": "AddPage",
+      "codepoint": "U+E4E8",
+      "char": "",
+      "target": "sys.symbol.doc_badge_plus",
+      "fluentName": "document_add"
+    },
+    {
+      "name": "ExitBoard",
+      "codepoint": "U+F6E3",
+      "char": "",
+      "target": "sys.symbol.arrow_right_to_line",
+      "fluentName": "sign_out"
     }
   ]
 }

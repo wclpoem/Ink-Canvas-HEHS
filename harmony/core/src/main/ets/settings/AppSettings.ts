@@ -25,6 +25,8 @@ export interface AppearanceSettings {
   enableViewboxBlackBoardScaleTransform: number;
   floatingBarBottomMargin: number;
   isTransparentButtonBackground: boolean;
+  // 图标风格：Fluent System Icons Regular（true）/ Filled（false，默认）。
+  isIconRegularStyle: boolean;
   isShowExitButton: boolean;
   isShowEraserButton: boolean;
   isShowHideControlButton: boolean;
@@ -34,6 +36,15 @@ export interface AppearanceSettings {
 }
 
 export interface CanvasSettings {
+  // 基线演进（PascalCase 键）：墨韵宽度/墨韵参数（嵌套对象）/硬件压感/笔倾斜。
+  InkWashWidth: number;
+  InkWash: InkWashOptions;
+  UseHardwarePressure: boolean;
+  UsePenTilt: boolean;
+  // 笔/荧光笔颜色与图形种类（可空；null 省略写出，C# JsonIgnore WhenWritingNull）。
+  penColor?: number | null;
+  highlighterColor?: number | null;
+  shapeKind?: number | null;
   inkWidth: number;
   // 荧光笔独立宽度（null/缺省 = 跟随笔宽）；写出时 null 省略（C# JsonIgnore WhenWritingNull）。
   highlighterWidth?: number | null;
@@ -49,6 +60,9 @@ export interface CanvasSettings {
 }
 
 export interface GestureSettings {
+  // 基线演进（PascalCase 键）：笔优先/手掌擦除（PalmRejector 顶层参数）。
+  PenHasPriority: boolean;
+  PalmErases: boolean;
   isEnableMultiTouchMode: boolean;
   isEnableTwoFingerZoom: boolean;
   isEnableTwoFingerTranslate: boolean;
@@ -69,6 +83,8 @@ export interface PowerPointSettings {
   isShowCanvasAtNewSlideShow: boolean;
   isNoClearStrokeOnSelectWhenInPowerPoint: boolean;
   isShowStrokeOnSelectInPowerPoint: boolean;
+  // 离开批注模式后隐藏墨迹（基线演进新键）。
+  hideStrokesAfterLeavingAnnotation: boolean;
   isAutoSaveStrokesInPowerPoint: boolean;
   isAutoSaveScreenShotInPowerPoint: boolean;
   isNotifyPreviousPage: boolean;
@@ -105,6 +121,14 @@ export interface AutomationSettings {
 
 export interface InkToShapeSettings {
   isInkToShapeEnabled: boolean;
+  // 识别门控与对齐（PascalCase 键）：450ms 保持、5 度对齐角、多边形/圆/立方体/坐标轴。
+  HoldMilliseconds: number;
+  AutoAlign: boolean;
+  AlignmentAngle: number;
+  RecognizePolygons: boolean;
+  RecognizeRoundShapes: boolean;
+  RecognizeCube: boolean;
+  RecognizeAxes: boolean;
 }
 
 export interface StartupSettings {
@@ -119,6 +143,62 @@ export interface StartupSettings {
 export interface RandSettings {
   peopleCount: number;
   isNotRepeatName: boolean;
+  // 基线演进：抽样模式（0=软冷却 1=均匀 2=不回放轮抽）与冷却参数（写入侧夹取 0.25..3650 / 0.1..10）。
+  samplingMode: number;
+  cooldownHalfLifeDays: number;
+  cooldownPenaltyStrength: number;
+}
+
+// 墨韵笔刷参数（InkWashBrushOptions：Dryness/Flatness [0,1]，Angle 度）。
+export interface InkWashOptions {
+  Dryness: number;
+  Angle: number;
+  Flatness: number;
+}
+
+export interface DisplaySettings {
+  allDisplays: boolean;
+  enabledDevices: string[];
+}
+
+export interface StorageSettings {
+  AutomaticallyCleanCache: boolean;
+  UpdateCacheDays: number;
+}
+
+export interface AiSettings {
+  enableLocalCorrection: boolean;
+  enableEditablePaste: boolean;
+  enableVerification: boolean;
+  enableTwoStage: boolean;
+  teachingMode: string;
+  hasSeenLassoHint: boolean;
+}
+
+// 课堂工具箱配置（新字段只追加；-2147483648 = 未保存，默认居中）。
+export interface ClassroomSettings {
+  version: number;
+  presetId: string;
+  countdownMinutes: number;
+  toolkitCollapsed: boolean;
+  practicePageName: string;
+  customPresets: string;
+  groupSplitMode: string;
+  groupValueNote?: string;
+  groupSplitValue: number;
+  spotlightRegions: string;
+  toolkitX: number;
+  toolkitY: number;
+  magnifierX: number;
+  magnifierY: number;
+}
+
+// 第一轮功能区开关（默认全开）。
+export interface FeatureSettings {
+  enableAiTeaching: boolean;
+  enableExerciseFlow: boolean;
+  enableExampleLibrary: boolean;
+  enableResourceBundle: boolean;
 }
 
 // 基线演进：实验性屏幕内容跟踪（ScreenTracking）设置组；键名 PascalCase（C# 默认序列化名）。
@@ -145,6 +225,11 @@ export interface AppSettings {
   inkToShape: InkToShapeSettings;
   startup: StartupSettings;
   randSettings: RandSettings;
+  display: DisplaySettings;
+  storage: StorageSettings;
+  ai: AiSettings;
+  classroom: ClassroomSettings;
+  features: FeatureSettings;
 }
 
 export function createDefaultSettings(): AppSettings {
@@ -171,6 +256,7 @@ export function createDefaultSettings(): AppSettings {
       enableViewboxBlackBoardScaleTransform: 100.0,
       floatingBarBottomMargin: 100.0,
       isTransparentButtonBackground: true,
+      isIconRegularStyle: false,
       isShowExitButton: true,
       isShowEraserButton: true,
       isShowHideControlButton: false,
@@ -210,6 +296,7 @@ export function createDefaultSettings(): AppSettings {
       isShowCanvasAtNewSlideShow: true,
       isNoClearStrokeOnSelectWhenInPowerPoint: true,
       isShowStrokeOnSelectInPowerPoint: false,
+      hideStrokesAfterLeavingAnnotation: false,
       isAutoSaveStrokesInPowerPoint: true,
       isAutoSaveScreenShotInPowerPoint: false,
       isNotifyPreviousPage: false,
@@ -220,6 +307,10 @@ export function createDefaultSettings(): AppSettings {
       isSupportWPS: true
     },
     canvas: {
+      InkWashWidth: 30,
+      InkWash: { Dryness: 0.42, Angle: 44, Flatness: 0.44 },
+      UseHardwarePressure: true,
+      UsePenTilt: true,
       inkWidth: 2.5,
       highlighterWidth: null,
       inkAlpha: 140,
@@ -233,6 +324,8 @@ export function createDefaultSettings(): AppSettings {
       penNib: 0
     },
     gesture: {
+      PenHasPriority: true,
+      PalmErases: true,
       isEnableMultiTouchMode: true,
       isEnableTwoFingerZoom: true,
       isEnableTwoFingerTranslate: true,
@@ -243,7 +336,14 @@ export function createDefaultSettings(): AppSettings {
       isEnableStylusGesture: true
     },
     inkToShape: {
-      isInkToShapeEnabled: true
+      isInkToShapeEnabled: true,
+      HoldMilliseconds: 450,
+      AutoAlign: true,
+      AlignmentAngle: 5,
+      RecognizePolygons: true,
+      RecognizeRoundShapes: true,
+      RecognizeCube: true,
+      RecognizeAxes: true
     },
     startup: {
       isAutoUpdate: true,
@@ -255,7 +355,10 @@ export function createDefaultSettings(): AppSettings {
     },
     randSettings: {
       peopleCount: 60,
-      isNotRepeatName: false
+      isNotRepeatName: false,
+      samplingMode: 0,
+      cooldownHalfLifeDays: 10,
+      cooldownPenaltyStrength: 1
     },
     experimental: {
       ScreenContentTracking: false,
@@ -267,6 +370,43 @@ export function createDefaultSettings(): AppSettings {
       Word: true,
       PowerPoint: true,
       Edge: true
+    },
+    display: {
+      allDisplays: true,
+      enabledDevices: []
+    },
+    storage: {
+      AutomaticallyCleanCache: true,
+      UpdateCacheDays: 7
+    },
+    ai: {
+      enableLocalCorrection: true,
+      enableEditablePaste: true,
+      enableVerification: true,
+      enableTwoStage: true,
+      teachingMode: 'step',
+      hasSeenLassoHint: false
+    },
+    classroom: {
+      version: 1,
+      presetId: 'teach',
+      countdownMinutes: 3,
+      toolkitCollapsed: false,
+      practicePageName: '随堂练习',
+      customPresets: '',
+      groupSplitMode: 'groupCount',
+      groupSplitValue: 4,
+      spotlightRegions: '',
+      toolkitX: -2147483648,
+      toolkitY: -2147483648,
+      magnifierX: -2147483648,
+      magnifierY: -2147483648
+    },
+    features: {
+      enableAiTeaching: true,
+      enableExerciseFlow: true,
+      enableExampleLibrary: true,
+      enableResourceBundle: true
     }
   };
 }

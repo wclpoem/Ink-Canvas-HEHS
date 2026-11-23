@@ -33,10 +33,11 @@ public sealed class ResourceBundleUiContractTests
         Assert.Contains("ClassroomResourceBundle.Archive", source);
         Assert.Contains("ClassroomResourceBundle.Restore", source);
         Assert.Contains("EnableResourceBundle", source);
-        Assert.Contains("ClassroomSessionStore.DefaultDirectory", source);
+        Assert.Contains(".icink", source);
+        Assert.DoesNotContain("ClassroomSessionStore", source);
         Assert.Contains("课堂资源包", source);
         Assert.Contains("课堂资源包已关闭", source);
-        Assert.Contains("暂无可打包的课堂会话", source);
+        Assert.Contains("暂无可打包的板书存档", source);
     }
 
     [Fact]

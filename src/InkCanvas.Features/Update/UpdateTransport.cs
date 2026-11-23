@@ -5,9 +5,10 @@ using System.Text;
 
 namespace InkCanvas.Features.Update;
 
-/// <summary>Direct GitHub first, then HTTPS mirrors. Each failed attempt has a bounded lifetime.</summary>
+/// <summary>Races GitHub and HTTPS mirrors in batches of three, with bounded attempts and verified downloads.</summary>
 public sealed class UpdateTransport : IDisposable
 {
+    private const int SourceBatchSize = 3;
     private readonly HttpClient _http;
     private readonly string[] _mirrors;
     public TimeSpan HeaderTimeout { get; set; } = TimeSpan.FromSeconds(8);
@@ -36,21 +37,21 @@ public sealed class UpdateTransport : IDisposable
     public async Task<string> GetTextAsync(string url, Func<string, bool> validate, CancellationToken token)
     {
         LastSource = LastError = null;
-        foreach (var candidate in Candidates(url))
+        foreach (var batch in Candidates(url).Chunk(SourceBatchSize))
         {
-            try
+            var result = await FirstAvailableAsync(batch.ToList(), async (candidate, cancellation) =>
             {
-                StatusChanged?.Invoke("正在连接 " + candidate.Source);
-                using var response = await OpenAsync(candidate.Url, token).ConfigureAwait(false);
-                await using var input = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
+                using var response = await OpenAsync(candidate.Url, cancellation).ConfigureAwait(false);
+                await using var input = await response.Content.ReadAsStreamAsync(cancellation).ConfigureAwait(false);
                 using var memory = new MemoryStream();
-                await CopyAsync(input, memory, 4 * 1024 * 1024, null, token).ConfigureAwait(false);
+                await CopyAsync(input, memory, 4 * 1024 * 1024, null, cancellation).ConfigureAwait(false);
                 string text = Encoding.UTF8.GetString(memory.ToArray());
                 if (!validate(text)) throw new InvalidDataException("更新源返回了无效内容。");
-                LastSource = candidate.Source; LastError = null;
                 return text;
-            }
-            catch (Exception ex) when (Retryable(ex, token)) { Failed(candidate.Source, ex); }
+            }, token).ConfigureAwait(false);
+            if (result is null) continue;
+            LastSource = result.Candidate.Source; LastError = null;
+            return result.Value;
         }
         throw new HttpRequestException("所有更新源均无法连接。" + LastError);
     }
@@ -58,46 +59,114 @@ public sealed class UpdateTransport : IDisposable
     public async Task DownloadAsync(string url, string path, long size, string sha256, IProgress<double> progress, CancellationToken token)
     {
         LastSource = LastError = null;
-        foreach (var candidate in Candidates(url))
+        foreach (var batch in Candidates(url).Chunk(SourceBatchSize))
         {
-            string partial = path + ".partial";
-            try
+            var remaining = batch.ToList();
+            while (remaining.Count > 0)
             {
-                StatusChanged?.Invoke("正在下载 · " + candidate.Source);
-                ProgressChanged?.Invoke(new(UpdateStage.Downloading, Source: candidate.Source));
-                using var response = await OpenAsync(candidate.Url, token).ConfigureAwait(false);
-                long expected = size > 0 ? size : response.Content.Headers.ContentLength ?? 0;
-                if (response.Content.Headers.ContentLength is long contentLength && size > 0 && contentLength != size)
-                    throw new InvalidDataException("安装包长度与发行信息不一致。");
-                await using (var input = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false))
-                await using (var output = new FileStream(partial, FileMode.Create, FileAccess.ReadWrite, FileShare.None, 81920, true))
+                var result = await FirstAvailableAsync(remaining, async (candidate, cancellation) =>
                 {
-                    var watch = Stopwatch.StartNew();
-                    long lastReport = -1000;
-                    long count = await CopyAsync(input, output, expected > 0 ? expected : 1024L * 1024 * 1024,
-                        read =>
-                        {
-                            if (watch.ElapsedMilliseconds - lastReport < 100 && read != expected) return;
-                            lastReport = watch.ElapsedMilliseconds;
-                            double? fraction = expected > 0 ? (double)read / expected : null;
-                            if (fraction.HasValue) progress?.Report(fraction.Value);
-                            ProgressChanged?.Invoke(new(UpdateStage.Downloading, fraction, read, expected,
-                                read / Math.Max(.001, watch.Elapsed.TotalSeconds), candidate.Source));
-                        }, token).ConfigureAwait(false);
-                    if (expected > 0 && count != expected) throw new InvalidDataException("安装包下载不完整。");
-                    ProgressChanged?.Invoke(new(UpdateStage.Verifying, DownloadedBytes: count, TotalBytes: expected, Source: candidate.Source));
-                    output.Position = 0;
-                    string actual = Convert.ToHexStringLower(await SHA256.HashDataAsync(output, token).ConfigureAwait(false));
-                    if (!actual.Equals(sha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("安装包 SHA256 校验失败。");
+                    var response = await OpenAsync(candidate.Url, cancellation).ConfigureAwait(false);
+                    if (response.Content.Headers.ContentLength is long contentLength && size > 0 && contentLength != size)
+                    {
+                        response.Dispose();
+                        throw new InvalidDataException("安装包长度与发行信息不一致。");
+                    }
+                    return response;
+                }, token).ConfigureAwait(false);
+                if (result is null) break;
+                string partial = path + ".partial";
+                using var response = result.Value;
+                try
+                {
+                    StatusChanged?.Invoke("正在下载 · " + result.Candidate.Source);
+                    ProgressChanged?.Invoke(new(UpdateStage.Downloading, Source: result.Candidate.Source));
+                    long expected = size > 0 ? size : response.Content.Headers.ContentLength ?? 0;
+                    await using (var input = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false))
+                    await using (var output = new FileStream(partial, FileMode.Create, FileAccess.ReadWrite, FileShare.None, 81920, true))
+                    {
+                        var watch = Stopwatch.StartNew();
+                        long lastReport = -1000;
+                        long count = await CopyAsync(input, output, expected > 0 ? expected : 1024L * 1024 * 1024,
+                            read =>
+                            {
+                                if (watch.ElapsedMilliseconds - lastReport < 100 && read != expected) return;
+                                lastReport = watch.ElapsedMilliseconds;
+                                double? fraction = expected > 0 ? (double)read / expected : null;
+                                if (fraction.HasValue) progress?.Report(fraction.Value);
+                                ProgressChanged?.Invoke(new(UpdateStage.Downloading, fraction, read, expected,
+                                    read / Math.Max(.001, watch.Elapsed.TotalSeconds), result.Candidate.Source));
+                            }, token).ConfigureAwait(false);
+                        if (expected > 0 && count != expected) throw new InvalidDataException("安装包下载不完整。");
+                        ProgressChanged?.Invoke(new(UpdateStage.Verifying, DownloadedBytes: count, TotalBytes: expected, Source: result.Candidate.Source));
+                        output.Position = 0;
+                        string actual = Convert.ToHexStringLower(await SHA256.HashDataAsync(output, token).ConfigureAwait(false));
+                        if (!actual.Equals(sha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("安装包 SHA256 校验失败。");
+                    }
+                    File.Move(partial, path, true);
+                    LastSource = result.Candidate.Source; LastError = null;
+                    return;
                 }
-                File.Move(partial, path, true);
-                LastSource = candidate.Source; LastError = null;
-                return;
+                catch (Exception ex) when (Retryable(ex, token)) { Failed(result.Candidate.Source, ex); }
+                finally { if (File.Exists(partial)) File.Delete(partial); }
             }
-            catch (Exception ex) when (Retryable(ex, token)) { Failed(candidate.Source, ex); }
-            finally { if (File.Exists(partial)) File.Delete(partial); }
         }
         throw new HttpRequestException("安装包下载失败。" + LastError);
+    }
+
+    private sealed record SourceCandidate(string Url, string Source);
+    private sealed record SourceResult<T>(SourceCandidate Candidate, T Value);
+
+    private async Task<SourceResult<T>> FirstAvailableAsync<T>(List<SourceCandidate> candidates,
+        Func<SourceCandidate, CancellationToken, Task<T>> probe, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        StatusChanged?.Invoke("正在并发检测 · " + string.Join(" / ", candidates.Select(candidate => candidate.Source)));
+        var pending = new List<(SourceCandidate Candidate, CancellationTokenSource Lifetime, Task<T> Task)>();
+        try
+        {
+            foreach (var candidate in candidates)
+            {
+                var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
+                pending.Add((candidate, lifetime, probe(candidate, lifetime.Token)));
+            }
+            while (pending.Count > 0)
+            {
+                var completed = await Task.WhenAny(pending.Select(attempt => attempt.Task)).WaitAsync(token).ConfigureAwait(false);
+                int index = pending.FindIndex(attempt => attempt.Task == completed);
+                var attempt = pending[index];
+                pending.RemoveAt(index);
+                candidates.Remove(attempt.Candidate);
+                try
+                {
+                    T value = await completed.ConfigureAwait(false);
+                    if (token.IsCancellationRequested)
+                    {
+                        if (value is IDisposable resource) resource.Dispose();
+                        token.ThrowIfCancellationRequested();
+                    }
+                    return new(attempt.Candidate, value);
+                }
+                catch (Exception ex) when (Retryable(ex, token)) { Failed(attempt.Candidate.Source, ex); }
+                finally { attempt.Lifetime.Dispose(); }
+            }
+            return null;
+        }
+        finally
+        {
+            foreach (var attempt in pending)
+            {
+                attempt.Lifetime.Cancel();
+                _ = DiscardAsync(attempt.Task, attempt.Lifetime);
+            }
+        }
+    }
+
+    private static async Task DiscardAsync<T>(Task<T> task, CancellationTokenSource lifetime)
+    {
+        try { if (await task.ConfigureAwait(false) is IDisposable resource) resource.Dispose(); }
+        catch (Exception) { /* Losing probes may fail or finish after cancellation. Observe and release them. */ }
+        finally { lifetime.Dispose(); }
     }
 
     private async Task<HttpResponseMessage> OpenAsync(string url, CancellationToken token)
@@ -147,17 +216,17 @@ public sealed class UpdateTransport : IDisposable
         }
     }
 
-    private IEnumerable<(string Url, string Source)> Candidates(string url)
+    private IEnumerable<SourceCandidate> Candidates(string url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != "https"
             || uri.Host is not ("github.com" or "api.github.com") || !string.IsNullOrEmpty(uri.UserInfo))
             throw new InvalidDataException("更新地址必须来自 GitHub HTTPS。");
-        yield return (url, "GitHub");
+        yield return new(url, "GitHub");
         foreach (string mirror in _mirrors)
         {
             var origin = new Uri(mirror);
             if (origin.Scheme != "https") throw new InvalidDataException("镜像源必须使用 HTTPS。");
-            yield return (mirror.TrimEnd('/') + "/" + url, origin.Host);
+            yield return new(mirror.TrimEnd('/') + "/" + url, origin.Host);
         }
     }
 

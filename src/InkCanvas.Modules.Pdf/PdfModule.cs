@@ -14,11 +14,12 @@ public sealed class PdfModule : IApplicationModule
         _service = new PdfWorkspaceService(context.GetService<IDocumentWorkspaceHost>());
         context.RegisterCleanup(_service.Dispose);
         context.Export<IPdfWorkspaceService>(_service);
+        _service.RegisterAssistant(context);
     }
     public void Stop() { _service?.Dispose(); _service = null; }
 }
 
-internal sealed class PdfWorkspaceService(IDocumentWorkspaceHost host) : IPdfWorkspaceService, IDisposable
+internal sealed partial class PdfWorkspaceService(IDocumentWorkspaceHost host) : IPdfWorkspaceService, IDisposable
 {
     private PdfWindow _window;
     private bool _busy, _disposed;
@@ -26,11 +27,14 @@ internal sealed class PdfWorkspaceService(IDocumentWorkspaceHost host) : IPdfWor
     private CancellationTokenSource _operation;
     private Window _operationWindow;
 
-    public async Task OpenAsync(string path = null)
+    public Task OpenAsync(string path = null) => OpenCoreAsync(path, CancellationToken.None, reportErrors: true);
+    internal Task OpenForAssistantAsync(string path, CancellationToken token) => OpenCoreAsync(path, token, reportErrors: false);
+
+    private async Task OpenCoreAsync(string path, CancellationToken token, bool reportErrors)
     {
         if (_disposed || _busy) return;
         _busy = true;
-        _operation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        _operation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token, token);
         PdfAnnotationFile file = null; PdfRasterizer renderer = null;
         try
         {
@@ -55,8 +59,8 @@ internal sealed class PdfWorkspaceService(IDocumentWorkspaceHost host) : IPdfWor
             host.Attach(window);
             window.Activate();
         }
-        catch (OperationCanceledException) { }
-        catch (Exception ex) { if (!_disposed) await NoticeAsync("打开 PDF 失败", ex.GetBaseException().Message); }
+        catch (OperationCanceledException) when (reportErrors) { }
+        catch (Exception ex) when (reportErrors) { if (!_disposed) await NoticeAsync("打开 PDF 失败", ex.GetBaseException().Message); }
         finally
         {
             if (renderer is not null) await renderer.DisposeAsync();

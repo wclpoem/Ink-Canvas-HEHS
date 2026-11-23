@@ -56,6 +56,7 @@ public class TaperTests
     [InlineData(TaperKind.Tail)]
     [InlineData(TaperKind.Velocity)]
     [InlineData(TaperKind.Natural)]
+    [InlineData(TaperKind.InkWash)]
     public void NoPointEverGetsNarrower(TaperKind kind)
     {
         var s = NewStroke(kind);

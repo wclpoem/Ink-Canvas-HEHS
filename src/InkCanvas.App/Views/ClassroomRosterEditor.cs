@@ -1,4 +1,4 @@
-using InkCanvas.App.Services;
+﻿using InkCanvas.App.Services;
 using InkCanvas.Features.Tools;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -43,9 +43,9 @@ internal sealed class ClassroomRosterEditor : Grid
         _box.TextChanged += (_, _) => UpdateStatus();
         Grid.SetRow(_status, 2); Children.Add(_status);
         var actions = new Grid { ColumnSpacing = 8 };
-        Add("导入文件", "\uE8E5", () => _ = ImportAsync());
-        Add("粘贴名单", "\uE77F", () => _ = PasteAsync());
-        Add("保存名单", "\uE74E", () => _ = SaveAsync(), true);
+        Add("导入文件", "\uF433", () => _ = ImportAsync());
+        Add("粘贴名单", "\uF2D6", () => _ = PasteAsync());
+        Add("保存名单", "\uF68A", () => _ = SaveAsync(), true);
         Grid.SetRow(actions, 3); Children.Add(actions);
         Loaded += async (_, _) =>
         {

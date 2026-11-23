@@ -30,35 +30,35 @@ public sealed class SelectionToolbar : UserControl
         Action ungroup = null, Action<string> aiEdit = null)
     {
         _controller = controller;
-        _fold = Button("收起", "\uE76B", ToggleCollapsed);
-        _clone = Button("克隆", "\uE8C8", () => { Controller.CloneMode = !Controller.CloneMode; Refresh(); });
-        _style = Button("样式", "\uE790", () => ToggleSection("样式", BuildStyle));
+        _fold = Button("收起", "\uF2AB", ToggleCollapsed);
+        _clone = Button("克隆", "\uF32C", () => { Controller.CloneMode = !Controller.CloneMode; Refresh(); });
+        _style = Button("样式", "\uF2F6", () => ToggleSection("样式", BuildStyle));
         _geometry = Button("图形", Glyphs.ShapesWpf, () => ToggleSection("图形", BuildGeometry));
         _actions.Children.Add(_clone);
         _actions.Children.Add(_style);
         _actions.Children.Add(_geometry);
-        _actions.Children.Add(Button("变换", "\uE7AD", () => ToggleSection("变换", BuildTransform)));
-        _actions.Children.Add(Button("层级", "\uE81E", () => ToggleSection("层级", BuildLayers)));
+        _actions.Children.Add(Button("变换", "\uF13E", () => ToggleSection("变换", BuildTransform)));
+        _actions.Children.Add(Button("层级", "\uF7BE", () => ToggleSection("层级", BuildLayers)));
         var more = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             Children =
             {
                 Button("存为图片", "\uE91B", () => { ClosePanels(); export(); }),
-                Button(sendLabel, "\uE8A5", () => { ClosePanels(); sendToBoard(); }),
-                Button("取消选择", "\uE711", () => Controller.ClearSelection()),
+                Button(sendLabel, "\uF379", () => { ClosePanels(); sendToBoard(); }),
+                Button("取消选择", "\uF36A", () => Controller.ClearSelection()),
             },
         };
         if (ungroup is not null)
-            more.Children.Add(Button("取消 AI 分组", "\uE8C8", () => { ClosePanels(); ungroup(); }));
+            more.Children.Add(Button("取消 AI 分组", "\uF7BE", () => { ClosePanels(); ungroup(); }));
         if (aiEdit is not null)
         {
-            more.Children.Add(Button("AI 字号+", "\uE8E8", () => { ClosePanels(); aiEdit("字号大一点"); }));
-            more.Children.Add(Button("AI 两列", "\uE8EF", () => { ClosePanels(); aiEdit("改成两列"); }));
-            more.Children.Add(Button("只保留公式", "\uE8A1", () => { ClosePanels(); aiEdit("只保留公式"); }));
+            more.Children.Add(Button("AI 字号+", "\uF10A", () => { ClosePanels(); aiEdit("字号大一点"); }));
+            more.Children.Add(Button("AI 两列", "\uE833", () => { ClosePanels(); aiEdit("改成两列"); }));
+            more.Children.Add(Button("只保留公式", "\uE600", () => { ClosePanels(); aiEdit("只保留公式"); }));
         }
-        _actions.Children.Add(Button("更多", "\uE712", () => ToggleSection("更多", () => more)));
-        _actions.Children.Add(Button("删除", "\uE74D", () => Controller.DeleteSelection()));
+        _actions.Children.Add(Button("更多", "\uE833", () => ToggleSection("更多", () => more)));
+        _actions.Children.Add(Button("删除", "\uF34D", () => Controller.DeleteSelection()));
         _primary.Children.Add(_fold);
         _primary.Children.Add(_actions);
         Content = new StackPanel { Children = { _primary, _secondary } };
@@ -107,7 +107,7 @@ public sealed class SelectionToolbar : UserControl
         _collapsed = !_collapsed;
         _actions.Visibility = _collapsed ? Visibility.Collapsed : Visibility.Visible;
         _fold.Label = _collapsed ? "展开" : "收起";
-        _fold.Glyph = _collapsed ? "\uE76C" : "\uE76B";
+        _fold.Glyph = _collapsed ? "\uF2B1" : "\uF2AB";
         AutomationProperties.SetName(_fold, _fold.Label);
         ClosePanels();
         LayoutChanged?.Invoke();
@@ -187,9 +187,9 @@ public sealed class SelectionToolbar : UserControl
             colors,
             new StackPanel { Orientation = Orientation.Horizontal, Children =
             {
-                Button("加粗", "\uE948", () => Controller.ScaleSelectionWidth(1.25f)),
-                Button("变细", "\uE949", () => Controller.ScaleSelectionWidth(.8f)),
-                Button("恢复粗细", "\uE72C", () => Controller.RestoreSelectionWidth()),
+                Button("加粗", "\uF10A", () => Controller.ScaleSelectionWidth(1.25f)),
+                Button("变细", "\uEBCB", () => Controller.ScaleSelectionWidth(.8f)),
+                Button("恢复粗细", "\uF1A0", () => Controller.RestoreSelectionWidth()),
             } },
         } };
         if (SelectedImages().Length > 0) panel.Children.Add(BuildImageProperties());
@@ -201,8 +201,8 @@ public sealed class SelectionToolbar : UserControl
         var choices = new[]
         {
             ("置于顶层", "\uE74A", LayerAction.BringToFront),
-            ("上移一层", "\uE70E", LayerAction.MoveForward),
-            ("下移一层", "\uE70D", LayerAction.MoveBackward),
+            ("上移一层", "\uF2B7", LayerAction.MoveForward),
+            ("下移一层", "\uF2A4", LayerAction.MoveBackward),
             ("置于底层", "\uE74B", LayerAction.SendToBack),
         };
         var panel = new StackPanel();
@@ -227,11 +227,11 @@ public sealed class SelectionToolbar : UserControl
 
     private UIElement BuildGeometry()
     {
-        var edit = Button("控制点", "\uE70F", () => { Controller.ToggleShapeEditing(); ClosePanels(); });
-        var fill = Button("填充", "\uE790", () => ToggleSection("图形填充", BuildShapeFill));
-        var line = Button("线型", "\uE9D9", () => ToggleSection("图形线型", BuildShapeLines));
+        var edit = Button("控制点", "\uF3DD", () => { Controller.ToggleShapeEditing(); ClosePanels(); });
+        var fill = Button("填充", "\uF2F6", () => ToggleSection("图形填充", BuildShapeFill));
+        var line = Button("线型", "\uF8D9", () => ToggleSection("图形线型", BuildShapeLines));
         var connect = Button("连接线", "\uE71B", () => { Controller.ConnectSelectedShapes(); Refresh(); });
-        var detach = Button("解除连接", "\uE785", () => { Controller.DetachShapeConnections(); Refresh(); });
+        var detach = Button("解除连接", "\uE7A4", () => { Controller.DetachShapeConnections(); Refresh(); });
         _refreshProperties = () =>
         {
             edit.IsEnabled = Controller.CanEditShape; edit.IsSelected = Controller.ShapeEditEnabled;
@@ -256,7 +256,7 @@ public sealed class SelectionToolbar : UserControl
         {
             var row = new StackPanel { Orientation = Orientation.Horizontal };
             foreach (var (label, style) in choices.Skip(rowIndex * 2).Take(2))
-                row.Children.Add(Button(label, "\uE9D9", () => Controller.SetShapeLineStyle(style)));
+                row.Children.Add(Button(label, "\uF8D9", () => Controller.SetShapeLineStyle(style)));
             panel.Children.Add(row);
         }
         return panel;
@@ -265,7 +265,7 @@ public sealed class SelectionToolbar : UserControl
     private UIElement BuildShapeFill()
     {
         var panel = new StackPanel();
-        panel.Children.Add(Button("无填充", "\uE711", () => Controller.SetShapeFill(null)));
+        panel.Children.Add(Button("无填充", "\uF36A", () => Controller.SetShapeFill(null)));
         var row = new StackPanel { Orientation = Orientation.Horizontal };
         foreach (var (label, color) in new[] { ("红色", InkColor.Opaque(220, 38, 38)), ("黄色", InkColor.Opaque(250, 204, 21)),
             ("绿色", InkColor.Opaque(22, 163, 74)), ("蓝色", InkColor.Opaque(37, 99, 235)), ("白色", InkColor.Opaque(255, 255, 255)) })
@@ -293,16 +293,16 @@ public sealed class SelectionToolbar : UserControl
         var height = new TextBlock { FontSize = 12, Foreground = PopupBrushes.FloatBarForeground(_theme),
             Width = 112, VerticalAlignment = VerticalAlignment.Center };
         TouchIconButton aspect = null;
-        aspect = Button("锁定比例", "\uE72E", () => { keepAspect = !keepAspect; aspect.IsSelected = keepAspect; });
+        aspect = Button("锁定比例", "\uE79E", () => { keepAspect = !keepAspect; aspect.IsSelected = keepAspect; });
         aspect.IsSelected = true;
         var panel = new StackPanel { Spacing = 4, Margin = new Thickness(4) };
         panel.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Children =
         {
-            width, Button("减宽", "\uE738", () => Resize(true, .9f)), Button("加宽", "\uE710", () => Resize(true, 1.1f)),
+            width, Button("减宽", "\uE738", () => Resize(true, .9f)), Button("加宽", "\uF10A", () => Resize(true, 1.1f)),
         } });
         panel.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Children =
         {
-            height, Button("减高", "\uE738", () => Resize(false, .9f)), Button("增高", "\uE710", () => Resize(false, 1.1f)),
+            height, Button("减高", "\uE738", () => Resize(false, .9f)), Button("增高", "\uF10A", () => Resize(false, 1.1f)),
         } });
         panel.Children.Add(aspect);
         panel.Children.Add(new TextBlock { Text = "不透明度", FontSize = 12, Foreground = PopupBrushes.FloatBarForeground(_theme) });
@@ -343,7 +343,7 @@ public sealed class SelectionToolbar : UserControl
         var panel = new StackPanel();
         panel.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Children =
         {
-            Button("放大", "\uE8A3", () => Transform(Matrix3x2.CreateScale(1.25f), "enlarge selection")),
+            Button("放大", "\uF8DD", () => Transform(Matrix3x2.CreateScale(1.25f), "enlarge selection")),
             Button("缩小", "\uE71F", () => Transform(Matrix3x2.CreateScale(.8f), "shrink selection")),
         } });
         foreach (int sign in new[] { -1, 1 })
@@ -352,14 +352,14 @@ public sealed class SelectionToolbar : UserControl
             foreach (int degrees in new[] { 15, 45, 90 })
             {
                 int angle = sign * degrees;
-                row.Children.Add(Button($"{angle}°", "\uE7AD", () => Transform(Matrix3x2.CreateRotation(angle * MathF.PI / 180), "rotate selection")));
+                row.Children.Add(Button($"{angle}°", "\uF13E", () => Transform(Matrix3x2.CreateRotation(angle * MathF.PI / 180), "rotate selection")));
             }
             panel.Children.Add(row);
         }
         panel.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Children =
         {
-            Button("水平翻转", "\uE8AB", () => Transform(Matrix3x2.CreateScale(-1, 1), "flip horizontal")),
-            Button("垂直翻转", "\uE8AB", () => Transform(Matrix3x2.CreateScale(1, -1), "flip vertical")),
+            Button("水平翻转", "\uF18E", () => Transform(Matrix3x2.CreateScale(-1, 1), "flip horizontal")),
+            Button("垂直翻转", "\uF18E", () => Transform(Matrix3x2.CreateScale(1, -1), "flip vertical")),
         } });
         return panel;
     }

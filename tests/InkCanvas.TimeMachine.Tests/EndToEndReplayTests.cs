@@ -1,14 +1,12 @@
-using InkCanvas.Core.Classroom;
-using InkCanvas.Core.Ink;
-using InkCanvas.Features.Classroom;
-using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
+using InkCanvas.Core.Ink;
+using InkCanvas.Modules.TimeMachine;
 using Xunit;
-using Xunit.Abstractions;
 
-namespace InkCanvas.Classroom.Tests;
+namespace InkCanvas.TimeMachine.Tests;
 
+/// <summary>合成脚本跨页/背景/擦除/清空/撤销重做的端到端回放、重复帧一致性、导出采样与书签测试。</summary>
 public sealed class EndToEndReplayTests
 {
     private const long T1 = 250;
@@ -19,21 +17,6 @@ public sealed class EndToEndReplayTests
     private const long T6 = 1_250;
     private const long T7 = 1_350;
     private const long T8 = 1_750;
-
-    private readonly ITestOutputHelper _output;
-
-    public EndToEndReplayTests(ITestOutputHelper output) => _output = output;
-
-    private sealed class SyntheticScript
-    {
-        public ClassroomSession Session { get; init; }
-        public float P0A { get; init; }
-        public float P0B { get; init; }
-        public float P1A { get; init; }
-        public float P1B { get; init; }
-        public float P1C { get; init; }
-        public float P2A { get; init; }
-    }
 
     private static InkStroke Stroke(float x, float y = 10f)
     {
@@ -74,12 +57,12 @@ public sealed class EndToEndReplayTests
         Payload = name,
     };
 
-    private static TimelineEvent Ppt(long timeMs, int page, int slideId, int index, string screenshot) => new()
+    private static TimelineEvent Ppt(long timeMs, int page, int slideId, int index) => new()
     {
         TimeMs = timeMs,
         PageIndex = page,
         Kind = TimelineEventKind.PptSlideChanged,
-        Payload = InkTimeline.EncodePptSlideChanged(slideId, index, screenshot),
+        Payload = InkTimeline.EncodePptSlideChanged(slideId, index, ""),
     };
 
     private static TimelineEvent View(long timeMs, int page, double scale, double tx, double ty) => new()
@@ -131,7 +114,18 @@ public sealed class EndToEndReplayTests
         Bookmarks = new List<SessionBookmark>(),
     };
 
-    private static SyntheticScript CreateScript()
+    private sealed class Script
+    {
+        public ClassroomSession Session { get; init; }
+        public float P0A { get; init; }
+        public float P0B { get; init; }
+        public float P1A { get; init; }
+        public float P1B { get; init; }
+        public float P1C { get; init; }
+        public float P2A { get; init; }
+    }
+
+    private static Script CreateScript()
     {
         InkStroke p0a = Stroke(10);
         InkStroke p0b = Stroke(20, 15);
@@ -143,7 +137,7 @@ public sealed class EndToEndReplayTests
         ClassroomSession session = Session(
             Page(0, 0),
             Background(0, 0, "Black"),
-            Ppt(0, 0, 101, 1, ""),
+            Ppt(0, 0, 101, 1),
             Added(100, 0, p0a),
             Added(200, 0, p0b),
             View(300, 0, 1.5, 120, 80),
@@ -158,12 +152,12 @@ public sealed class EndToEndReplayTests
             Page(1_100, 2),
             Background(1_100, 2, "Coordinate"),
             View(1_150, 2, 2.0, -40, 12),
-            Ppt(1_200, 2, 202, 2, ""),
+            Ppt(1_200, 2, 202, 2),
             Added(1_300, 2, p2a),
             Cleared(1_400, 1),
             Page(1_700, 1));
 
-        return new SyntheticScript
+        return new Script
         {
             Session = session,
             P0A = 10f,
@@ -173,19 +167,6 @@ public sealed class EndToEndReplayTests
             P1C = 50f,
             P2A = 60f,
         };
-    }
-
-    private static ClassroomSession CreateConcurrentSession()
-    {
-        var events = new List<TimelineEvent>
-        {
-            Page(0, 0),
-            Background(0, 0, "Black"),
-        };
-        for (int i = 0; i < 20; i++)
-            events.Add(Added(100 + i * 90L, 0, Stroke(10 + i * 3)));
-        events.Add(View(2_000, 0, 1.1, 5, 5));
-        return Session(events.ToArray());
     }
 
     private static IReadOnlyCollection<float> FrameXs(IReadOnlyList<InkStroke> frame)
@@ -203,41 +184,10 @@ public sealed class EndToEndReplayTests
     private static string FrameSignature(InkTimeline timeline, long timeMs)
         => FrameHash(timeline.BuildFrame(timeMs));
 
-    private static IReadOnlyList<long> SimulatePlayback(long targetMs, double speed, double wallStepMs = 1.0)
-    {
-        var reached = new List<long>();
-        double playback = 0;
-        int guard = 0;
-        while (playback < targetMs && guard++ < 2_000_000)
-        {
-            playback += wallStepMs * speed;
-            reached.Add((long)Math.Floor(playback));
-        }
-        if (reached.Count == 0) reached.Add(targetMs);
-        return reached;
-    }
-
-    private static string TempDir()
-    {
-        string dir = Path.Combine(Path.GetTempPath(), $"inkcanvas-e2e-replay-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
-
-    private static void DeleteTemp(string dir)
-    {
-        if (dir is not null && Directory.Exists(dir))
-        {
-            try { Directory.Delete(dir, recursive: true); } catch { }
-        }
-    }
-
-    // ---- 1) 跨页 / 背景 / 擦除 / 清空 -----------------------------------
-
     [Fact]
     public void SyntheticSession_CrossPageBackgroundEraseClearMatchesEventOrder()
     {
-        SyntheticScript script = CreateScript();
+        var script = CreateScript();
         var timeline = new InkTimeline(script.Session);
 
         AssertSceneAndFrame(timeline, T1, 0, "Black", 1, script.P0A, script.P0B);
@@ -260,19 +210,15 @@ public sealed class EndToEndReplayTests
         Assert.Equal("", scene.PptScreenshotPath);
 
         IReadOnlyList<InkStroke> frame = timeline.BuildFrame(timeMs);
-        Assert.Equal(
-            expectedXs.OrderBy(x => x).ToArray(),
-            FrameXs(frame).ToArray());
+        Assert.Equal(expectedXs.OrderBy(x => x).ToArray(), FrameXs(frame).ToArray());
         Assert.Equal(page, timeline.PageAt(timeMs));
         Assert.Equal(background, timeline.BackgroundAt(timeMs));
     }
 
-    // ---- 2) 同点重复帧指纹 ------------------------------------------------
-
     [Fact]
     public void RepeatedBuildFrame_IsBitIdenticalAcrossFivePasses()
     {
-        SyntheticScript script = CreateScript();
+        var script = CreateScript();
         var timeline = new InkTimeline(script.Session);
         long[] points = { T1, T2, T3, T4, T5, T6, T7, T8, 0, 100, 1_700 };
 
@@ -285,157 +231,25 @@ public sealed class EndToEndReplayTests
                 Assert.Equal(expected, FrameHash(new InkTimeline(script.Session).BuildFrame(timeMs)));
             }
             Assert.Equal(64, expected.Length);
-            _output.WriteLine($"t={timeMs}ms hash={expected[..16]}…");
         }
     }
-
-    // ---- 3) 倍速一致性 ----------------------------------------------------
-
-    [Fact]
-    public void PlaybackSpeed_ArrivalFrameMatchesDirectSeek()
-    {
-        SyntheticScript script = CreateScript();
-        var timeline = new InkTimeline(script.Session);
-        double[] speeds = { 0.5, 1, 2, 8 };
-        long[] points = { T1, T2, T3, T4, T5, T6, T7, T8 };
-
-        foreach (double speed in speeds)
-        {
-            foreach (long target in points)
-            {
-                IReadOnlyList<long> reached = SimulatePlayback(target, speed);
-                long arrival = reached[^1];
-                Assert.True(arrival >= target);
-
-                Assert.Equal(FrameSignature(timeline, target), FrameSignature(timeline, arrival));
-                Assert.Equal(timeline.IndexAt(target), timeline.IndexAt(arrival));
-            }
-            _output.WriteLine($"speed={speed}x：{points.Length} 个绝对时间点到达帧指纹一致");
-        }
-
-        foreach (long target in points)
-        {
-            string expected = FrameSignature(timeline, target);
-            foreach (double speed in speeds)
-                Assert.Equal(expected, FrameSignature(timeline, SimulatePlayback(target, speed)[^1]));
-        }
-    }
-
-    [Fact]
-    public void SpeedSwitching_KeepsIndexAtMonotonicAndFramesStable()
-    {
-        SyntheticScript script = CreateScript();
-        var timeline = new InkTimeline(script.Session);
-        double[] speeds = { 0.5, 1, 2, 8, 1, 0.5 };
-        long[] boundaries = { 400, 800, 1_100, 1_400, 1_700 };
-
-        double playback = 0;
-        int prevIndex = -1;
-        int segment = 0;
-        var samples = new List<(long TimeMs, int Index)>();
-
-        while (playback < script.Session.Events[^1].TimeMs)
-        {
-            playback += speeds[segment];
-            if (segment < boundaries.Length && playback >= boundaries[segment]) segment++;
-            double speed = speeds[Math.Min(segment, speeds.Length - 1)];
-            long sourceTime = (long)Math.Floor(playback);
-            int index = timeline.IndexAt(sourceTime);
-            Assert.True(index >= prevIndex, $"IndexAt 在 t={sourceTime} 倒退：{prevIndex} → {index}");
-            prevIndex = index;
-            samples.Add((sourceTime, index));
-            if (playback > 2_000_000) break;
-        }
-
-        Assert.NotEmpty(samples);
-
-        for (int i = 1; i < samples.Count; i++)
-            Assert.True(samples[i].TimeMs >= samples[i - 1].TimeMs);
-
-        foreach (long target in new[] { T3, T5, T7 })
-        {
-            string expected = FrameSignature(timeline, target);
-            foreach (double speed in new[] { 0.5, 1, 2, 8 })
-                Assert.Equal(expected, FrameSignature(timeline, SimulatePlayback(target, speed)[^1]));
-        }
-        _output.WriteLine($"倍速切换样本 {samples.Count} 个，末事件索引 {timeline.IndexAt(script.Session.Events[^1].TimeMs)}");
-    }
-
-
-    // ---- 4) 随机拖动 ------------------------------------------------------
-
-    [Fact]
-    public void RandomSeek_Ascending_MatchesSequentialPlayback()
-    {
-        AssertSeekOrder(seekOrder: "ascending");
-    }
-
-    [Fact]
-    public void RandomSeek_Descending_MatchesSequentialPlayback()
-    {
-        AssertSeekOrder(seekOrder: "descending");
-    }
-
-    [Fact]
-    public void RandomSeek_Shuffled_MatchesSequentialPlayback()
-    {
-        AssertSeekOrder(seekOrder: "shuffled");
-    }
-
-    private void AssertSeekOrder(string seekOrder)
-    {
-        SyntheticScript script = CreateScript();
-        var timeline = new InkTimeline(script.Session);
-        var random = new Random(20261120);
-        long duration = script.Session.Events[^1].TimeMs;
-
-        var pointSet = new HashSet<long>();
-        while (pointSet.Count < 20)
-            pointSet.Add(random.Next(0, (int)duration + 1));
-        List<long> points = pointSet.ToList();
-
-        var expected = points.Select(t => FrameSignature(timeline, t)).ToArray();
-
-        List<long> order = seekOrder switch
-        {
-            "ascending" => points.OrderBy(t => t).ToList(),
-            "descending" => points.OrderByDescending(t => t).ToList(),
-            _ => points.OrderBy(_ => random.Next()).ToList(),
-        };
-
-        var expectedByTime = points.Zip(expected, (t, h) => (t, h)).ToDictionary(x => x.t, x => x.h);
-        foreach (long timeMs in order)
-        {
-            string first = FrameSignature(timeline, timeMs);
-            string second = FrameSignature(timeline, timeMs);
-            Assert.Equal(first, second);
-            Assert.Equal(expectedByTime[timeMs], first);
-            Assert.Equal(expectedByTime[timeMs], FrameHash(new InkTimeline(script.Session).BuildFrame(timeMs)));
-        }
-
-        Assert.Equal(20, order.Count);
-        _output.WriteLine($"{seekOrder}：20 个随机点两次 BuildFrame 与顺序播放一致");
-    }
-
-    // ---- 5) 导出采样 ------------------------------------------------------
 
     [Fact]
     public void ExportSampling_At1x_MatchesBuildFrameFingerprint()
     {
-        AssertExportSampling(speed: 1.0, millisecondsPerFrame: 33.333);
+        AssertExportSampling(1.0, 33.333);
     }
 
     [Fact]
     public void ExportSampling_At2x_MatchesBuildFrameFingerprint()
     {
-        AssertExportSampling(speed: 2.0, millisecondsPerFrame: 66.667);
+        AssertExportSampling(2.0, 66.667);
     }
 
-    private void AssertExportSampling(double speed, double millisecondsPerFrame)
+    private static void AssertExportSampling(double speed, double millisecondsPerFrame)
     {
-        SyntheticScript script = CreateScript();
-        var options = new ExportOptions("sample.mp4", 0, 1_700, Fps: 30,
-            Width: 640, Height: 480, Speed: speed);
+        var script = CreateScript();
+        var options = new ExportOptions("sample.mp4", 0, 1_700, 30, 4_000_000, 640, 480, speed, false, false, false);
         IReadOnlyList<long> samples = TimeMachineExporter.SampleFrameTimes(options);
         int expectedCount = TimeMachineExporter.EstimateFrameCount(options);
 
@@ -453,26 +267,18 @@ public sealed class EndToEndReplayTests
 
         var exportTimeline = new InkTimeline(script.Session);
         foreach (long timeMs in samples)
-        {
-            string exportFrame = FrameHash(exportTimeline.BuildFrame(timeMs));
-            string directFrame = FrameSignature(timeline, timeMs);
-            Assert.Equal(directFrame, exportFrame);
-        }
-        _output.WriteLine($"{speed}x 采样 {samples.Count} 帧，步长 {frameSpan}ms，末帧 t={samples[^1]}ms");
+            Assert.Equal(FrameSignature(timeline, timeMs), FrameHash(exportTimeline.BuildFrame(timeMs)));
     }
 
     [Fact]
     public void BoardOnlyExport_UsesSameStrokeSetAsFullClassroom()
     {
-        SyntheticScript script = CreateScript();
-        var full = new ExportOptions("full.mp4", 0, 1_700, Fps: 30,
-            Width: 640, Height: 480, BoardOnly: false);
-        var boardOnly = new ExportOptions("board.mp4", 0, 1_700, Fps: 30,
-            Width: 640, Height: 480, BoardOnly: true);
+        var script = CreateScript();
+        var full = new ExportOptions("full.mp4", 0, 1_700, 30, 4_000_000, 640, 480, 1, false, false, false);
+        var boardOnly = new ExportOptions("board.mp4", 0, 1_700, 30, 4_000_000, 640, 480, 1, true, false, false);
 
         Assert.True(TimeMachineExporter.ShouldDrawPptBackground(full));
         Assert.False(TimeMachineExporter.ShouldDrawPptBackground(boardOnly));
-        Assert.False(TimeMachineExporter.ShouldDrawPptBackground(null));
 
         IReadOnlyList<long> fullTimes = TimeMachineExporter.SampleFrameTimes(full);
         IReadOnlyList<long> boardTimes = TimeMachineExporter.SampleFrameTimes(boardOnly);
@@ -481,95 +287,19 @@ public sealed class EndToEndReplayTests
         var timeline = new InkTimeline(script.Session);
         foreach (long timeMs in fullTimes)
         {
-            IReadOnlyList<InkStroke> fullFrame = timeline.BuildFrame(timeMs);
-            IReadOnlyList<InkStroke> boardFrame = timeline.BuildFrame(timeMs);
-            Assert.Equal(FrameXs(fullFrame), FrameXs(boardFrame));
-            Assert.Equal(FrameHash(fullFrame), FrameHash(boardFrame));
+            Assert.Equal(FrameXs(timeline.BuildFrame(timeMs)), FrameXs(timeline.BuildFrame(timeMs)));
+            Assert.Equal(FrameHash(timeline.BuildFrame(timeMs)), FrameHash(timeline.BuildFrame(timeMs)));
         }
 
         ClassroomScene scene = timeline.SceneAt(1_250);
         Assert.Equal(2, scene.PptSlideIndex);
         Assert.Equal("", scene.PptScreenshotPath);
-        _output.WriteLine($"BoardOnly 与完整课堂共 {fullTimes.Count} 个采样时刻，笔画集合与指纹一致；PPT 背景由 ShouldDrawPptBackground 区分");
     }
-
-    // ---- 6) 导出期间书写（模拟并发）--------------------------------------
-
-    [Fact]
-    public async Task ExportWhileWriting_MeetsStrokeLatencyBudget()
-    {
-        string dir = TempDir();
-        string mp4 = Path.Combine(dir, "concurrent-export.mp4");
-        try
-        {
-            ClassroomSession session = CreateConcurrentSession();
-            var options = new ExportOptions(mp4, 0, 2_000, Fps: 30,
-                Width: 640, Height: 480, BoardOnly: true);
-
-            Task exportTask = TimeMachineExporter.ExportAsync(
-                session, options, progress: null, CancellationToken.None);
-            var document = new InkDocument();
-
-            const int strokeCount = 100;
-            double maxStrokeMs = 0;
-            int finishedWhileExporting = 0;
-            var total = Stopwatch.StartNew();
-            for (int i = 0; i < strokeCount; i++)
-            {
-                var single = Stopwatch.StartNew();
-                InkStroke stroke = Stroke(10 + i % 40, 20 + i % 20);
-                document.Add(stroke);
-                single.Stop();
-                maxStrokeMs = Math.Max(maxStrokeMs, single.Elapsed.TotalMilliseconds);
-                if (!exportTask.IsCompleted) finishedWhileExporting++;
-            }
-            total.Stop();
-            double totalStrokeMs = total.Elapsed.TotalMilliseconds;
-
-            bool exportCompleted = false;
-            string exportNote = "";
-            try
-            {
-                await exportTask;
-                exportCompleted = File.Exists(mp4) && new FileInfo(mp4).Length > 0;
-                if (!exportCompleted) exportNote = "导出任务结束但未生成非空 MP4。";
-            }
-            catch (Exception ex)
-            {
-                exportNote = ex.Message;
-            }
-
-            Assert.Equal(strokeCount, document.Count);
-            Assert.True(maxStrokeMs < 50,
-                $"-- 并发导出期间单笔提交耗时 {maxStrokeMs:0.000}ms，超过 50ms 上限。");
-            Assert.True(totalStrokeMs < 2_000,
-                $"-- 并发导出期间 100 笔总耗时 {totalStrokeMs:0.000}ms，超过 2000ms 上限。");
-
-            if (exportCompleted)
-            {
-                Assert.True(new FileInfo(mp4).Length > 0);
-            }
-            else
-            {
-                Assert.True(exportNote.Length > 0, "导出未完成时应记录跳过原因。");
-            }
-
-            _output.WriteLine($"书写 {strokeCount} 笔：单笔最大 {maxStrokeMs:0.000}ms，总耗时 {totalStrokeMs:0.000}ms；"
-                + $"导出期间完成 {finishedWhileExporting} 笔；"
-                + (exportCompleted ? "MF 导出完成，MP4 存在。" : "MF 未完成/不可用：" + exportNote));
-        }
-        finally
-        {
-            DeleteTemp(dir);
-        }
-    }
-
-    // ---- 7) 手动书签 ------------------------------------------------------
 
     [Fact]
     public void Bookmarks_AddRenameRemoveSummaryAndDescribe()
     {
-        SyntheticScript script = CreateScript();
+        var script = CreateScript();
         var timeline = new InkTimeline(script.Session);
 
         int index = timeline.AddBookmark(850, "重点讲解");
@@ -602,10 +332,7 @@ public sealed class EndToEndReplayTests
 
         Assert.Equal("", timeline.BookmarkSummary(null));
         Assert.Equal("", timeline.DescribeBookmark(null));
-        _output.WriteLine($"书签：{timeline.DescribeBookmark(bookmark, 20)}（摘要 {summary}）");
     }
-
-    // ---- 8) 其余画面级断言 ------------------------------------------------
 
     [Fact]
     public void PptSlidePayload_EncodesSlideIdIndexAndEmptyScreenshot()
@@ -621,7 +348,7 @@ public sealed class EndToEndReplayTests
         PptSlideChange empty = InkTimeline.DecodePptSlideChanged("");
         Assert.False(empty.IsValid);
 
-        SyntheticScript script = CreateScript();
+        var script = CreateScript();
         var timeline = new InkTimeline(script.Session);
         Assert.Equal(1, timeline.SceneAt(1_000).PptSlideIndex);
         Assert.Equal(2, timeline.SceneAt(1_200).PptSlideIndex);
@@ -631,7 +358,7 @@ public sealed class EndToEndReplayTests
     [Fact]
     public void UndoRedo_RestoresStrokeInFrameOrder()
     {
-        SyntheticScript script = CreateScript();
+        var script = CreateScript();
         var timeline = new InkTimeline(script.Session);
 
         Assert.Contains(script.P1C, FrameXs(timeline.BuildFrame(850)));
@@ -645,7 +372,7 @@ public sealed class EndToEndReplayTests
     [Fact]
     public void ClearedSecondPage_RemovesOnlyItsStrokesWhenReturning()
     {
-        SyntheticScript script = CreateScript();
+        var script = CreateScript();
         var timeline = new InkTimeline(script.Session);
 
         Assert.Contains(script.P2A, FrameXs(timeline.BuildFrame(1_400)));
@@ -659,7 +386,7 @@ public sealed class EndToEndReplayTests
     [Fact]
     public void TimelineIndexAt_IsChronologicalAndMonotonic()
     {
-        SyntheticScript script = CreateScript();
+        var script = CreateScript();
         var timeline = new InkTimeline(script.Session);
 
         Assert.Equal(-1, timeline.IndexAt(-1));

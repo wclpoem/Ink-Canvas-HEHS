@@ -1,7 +1,7 @@
 {
   "Id": "inkcanvas.analytic-geometry",
   "Name": "数学工作区 · 解析几何",
-  "Version": "2.0.2",
+  "Version": "2.0.6",
   "ApiVersion": 1,
   "EntryAssembly": "InkCanvas.Modules.AnalyticGeometry.dll",
   "EntryType": "InkCanvas.Modules.AnalyticGeometry.GeometryModule",

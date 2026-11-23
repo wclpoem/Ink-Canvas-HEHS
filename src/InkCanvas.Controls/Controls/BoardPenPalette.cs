@@ -23,6 +23,8 @@ public sealed class BoardPenPalette : UserControl
     private readonly PenStrokePreview _penPreview = new() { PreviewHeight = 60 };
     private readonly PenStrokePreview _highlighterPreview = new() { PreviewHeight = 96 };
     private readonly PenStylePicker _styles = new();
+    private readonly Slider _width = new() { Minimum = 1, StepFrequency = 1, Width = 106, MinHeight = 0, Height = 28 };
+    private bool _refreshingWidth;
     public event Action SettingsChanged;
     public event Action ColorPicked;
     public PopupHeader Header { get; }
@@ -46,9 +48,11 @@ public sealed class BoardPenPalette : UserControl
         _styles.SelectedIndex = Math.Clamp(settings.Canvas.InkStyle, 0, OriginalMenuCatalog.PenStyles.Count - 1);
         _styles.SelectionChanged += () =>
         {
+            if (_refreshingWidth) return;
             settings.Canvas.InkStyle = _styles.SelectedIndex;
             _controller.CurrentAttributes.TaperKind = OriginalMenuCatalog.ToTaperKind(_styles.SelectedIndex);
             NotifySettingsChanged();
+            RefreshWidth();
         };
         Add(options, Text("书写笔迹", 12), 0, 0);
         var nibMode = Toggle("笔尖模式", settings.Startup.IsEnableNibMode, value => settings.Startup.IsEnableNibMode = value);
@@ -56,16 +60,24 @@ public sealed class BoardPenPalette : UserControl
         _nibMode = ((StackPanel)nibMode).Children.OfType<ToggleSwitch>().Single();
         nibMode.Visibility = settings.Appearance.IsEnableDisPlayNibModeToggler ? Visibility.Visible : Visibility.Collapsed;
         Add(options, nibMode, 0, 1);
-        var width = new Slider { Minimum = 1, Maximum = 30, StepFrequency = 1,
-            Value = Math.Clamp(settings.Canvas.InkWidth * 2, 1, 30), Width = 106, MinHeight = 0, Height = 28 };
-        AutomationProperties.SetName(width, "画笔粗细");
-        width.ValueChanged += (_, e) =>
+        AutomationProperties.SetName(_width, "画笔粗细");
+        RefreshWidth();
+        _width.ValueChanged += (_, e) =>
         {
-            settings.Canvas.InkWidth = e.NewValue / 2;
-            _controller.CurrentAttributes.BaseWidth = (float)(e.NewValue / 2);
+            if (_refreshingWidth) return;
+            if (_controller.CurrentAttributes.TaperKind == TaperKind.InkWash)
+            {
+                settings.Canvas.InkWashWidth = e.NewValue;
+                _controller.InkWashWidth = (float)e.NewValue;
+            }
+            else
+            {
+                settings.Canvas.InkWidth = e.NewValue / 2;
+                _controller.CurrentAttributes.BaseWidth = (float)(e.NewValue / 2);
+            }
             NotifySettingsChanged();
         };
-        Add(options, Row("粗细", width), 1, 0);
+        Add(options, Row("粗细", _width), 1, 0);
         Add(options, Toggle("墨迹识别", settings.InkToShape.IsInkToShapeEnabled, value => settings.InkToShape.IsInkToShapeEnabled = value), 1, 1);
         pen.Children.Add(options);
         var nib = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, MinWidth = 0, FontSize = 12 };
@@ -155,6 +167,12 @@ public sealed class BoardPenPalette : UserControl
         }
         finally { _refreshingNibMode = false; }
     }
+    public void RefreshSettings()
+    {
+        RefreshNibMode();
+        RefreshWidth();
+        RefreshPreviews();
+    }
     private StackPanel Row(string label, UIElement control)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
@@ -163,8 +181,8 @@ public sealed class BoardPenPalette : UserControl
     private TextBlock Text(string text, double size) => new() { Text = text, FontSize = size, Foreground = _foreground, VerticalAlignment = VerticalAlignment.Center };
     private Button Swatch(OriginalMenuCatalog.Swatch swatch, bool highlighter)
     {
-        var check = new FontIcon { Glyph = "\uE73E", FontSize = 14, Visibility = Visibility.Collapsed,
-            FontFamily = new("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons") };
+        var check = new FontIcon { Glyph = "\uF295", FontSize = 14, Visibility = Visibility.Collapsed,
+            FontFamily = new(IconFontStyle.Family) };
         var button = new Button { Width = highlighter ? 36 : 40, Height = highlighter ? 25 : 40, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0),
             CornerRadius = new CornerRadius(highlighter ? 4 : 20), BorderBrush = _border, BorderThickness = new Thickness(1), Content = check };
         AutomationProperties.SetName(button, swatch.Name);
@@ -182,6 +200,19 @@ public sealed class BoardPenPalette : UserControl
     {
         SettingsChanged?.Invoke();
         RefreshPreviews();
+    }
+    private void RefreshWidth()
+    {
+        _refreshingWidth = true;
+        try
+        {
+            _styles.SelectedIndex = OriginalMenuCatalog.ToPenStyle(_controller.CurrentAttributes.TaperKind);
+            bool waterInk = _controller.CurrentAttributes.TaperKind == TaperKind.InkWash;
+            _width.Maximum = waterInk ? 120 : OriginalMenuCatalog.PenWidthMaximum;
+            _width.Value = Math.Clamp(waterInk ? _settings.Canvas.InkWashWidth : _settings.Canvas.InkWidth * 2, 1, _width.Maximum);
+            AutomationProperties.SetHelpText(_width, waterInk ? "水墨笔刷宽度，范围 1 到 120 像素" : "画笔粗细，范围 1 到 30，步长 1");
+        }
+        finally { _refreshingWidth = false; }
     }
     private void RefreshPreviews()
     {

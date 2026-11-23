@@ -31,6 +31,7 @@
           "enableViewboxBlackBoardScaleTransform": 100,
           "floatingBarBottomMargin": 100,
           "isTransparentButtonBackground": true,
+          "isIconRegularStyle": false,
           "isShowExitButton": true,
           "isShowEraserButton": true,
           "isShowHideControlButton": false,
@@ -70,6 +71,7 @@
           "isShowCanvasAtNewSlideShow": true,
           "isNoClearStrokeOnSelectWhenInPowerPoint": true,
           "isShowStrokeOnSelectInPowerPoint": false,
+          "hideStrokesAfterLeavingAnnotation": false,
           "isAutoSaveStrokesInPowerPoint": true,
           "isAutoSaveScreenShotInPowerPoint": false,
           "isNotifyPreviousPage": false,
@@ -80,6 +82,14 @@
           "isSupportWPS": false
         },
         "canvas": {
+          "InkWashWidth": 30,
+          "InkWash": {
+            "Dryness": 0.42,
+            "Angle": 44,
+            "Flatness": 0.44
+          },
+          "UseHardwarePressure": true,
+          "UsePenTilt": true,
           "inkWidth": 7.5,
           "inkAlpha": 140,
           "isCompressPicturesUploaded": false,
@@ -92,17 +102,26 @@
           "usingWhiteboard": false
         },
         "gesture": {
+          "PenHasPriority": true,
+          "PalmErases": true,
           "isEnableMultiTouchMode": true,
           "isEnableTwoFingerZoom": true,
           "isEnableTwoFingerTranslate": true,
           "AutoSwitchTwoFingerGesture": false,
           "isEnableTwoFingerRotation": false,
           "isEnableTwoFingerRotationOnSelection": false,
-          "matrixTransformCenterPoint": 2,
-          "isEnableStylusGesture": true
+          "isEnableStylusGesture": true,
+          "matrixTransformCenterPoint": 2
         },
         "inkToShape": {
-          "isInkToShapeEnabled": false
+          "isInkToShapeEnabled": false,
+          "HoldMilliseconds": 450,
+          "AutoAlign": true,
+          "AlignmentAngle": 5,
+          "RecognizePolygons": true,
+          "RecognizeRoundShapes": true,
+          "RecognizeCube": true,
+          "RecognizeAxes": true
         },
         "startup": {
           "isAutoUpdate": true,
@@ -114,7 +133,10 @@
         },
         "randSettings": {
           "peopleCount": 42,
-          "isNotRepeatName": false
+          "isNotRepeatName": false,
+          "samplingMode": 0,
+          "cooldownHalfLifeDays": 10,
+          "cooldownPenaltyStrength": 1
         },
         "experimental": {
           "ScreenContentTracking": false,
@@ -126,6 +148,43 @@
           "Word": true,
           "PowerPoint": true,
           "Edge": true
+        },
+        "display": {
+          "allDisplays": true,
+          "enabledDevices": []
+        },
+        "storage": {
+          "AutomaticallyCleanCache": true,
+          "UpdateCacheDays": 7
+        },
+        "ai": {
+          "enableLocalCorrection": true,
+          "enableEditablePaste": true,
+          "enableVerification": true,
+          "enableTwoStage": true,
+          "teachingMode": "step",
+          "hasSeenLassoHint": false
+        },
+        "classroom": {
+          "version": 1,
+          "presetId": "teach",
+          "countdownMinutes": 3,
+          "toolkitCollapsed": false,
+          "practicePageName": "随堂练习",
+          "customPresets": "",
+          "groupSplitMode": "groupCount",
+          "groupSplitValue": 4,
+          "spotlightRegions": "",
+          "toolkitX": -2147483648,
+          "toolkitY": -2147483648,
+          "magnifierX": -2147483648,
+          "magnifierY": -2147483648
+        },
+        "features": {
+          "enableAiTeaching": true,
+          "enableExerciseFlow": true,
+          "enableExampleLibrary": true,
+          "enableResourceBundle": true
         }
       },
       "tolerance": 0
@@ -159,6 +218,7 @@
           "enableViewboxBlackBoardScaleTransform": 100,
           "floatingBarBottomMargin": 100,
           "isTransparentButtonBackground": true,
+          "isIconRegularStyle": false,
           "isShowExitButton": true,
           "isShowEraserButton": true,
           "isShowHideControlButton": false,
@@ -198,6 +258,7 @@
           "isShowCanvasAtNewSlideShow": true,
           "isNoClearStrokeOnSelectWhenInPowerPoint": true,
           "isShowStrokeOnSelectInPowerPoint": false,
+          "hideStrokesAfterLeavingAnnotation": false,
           "isAutoSaveStrokesInPowerPoint": true,
           "isAutoSaveScreenShotInPowerPoint": false,
           "isNotifyPreviousPage": false,
@@ -208,6 +269,14 @@
           "isSupportWPS": true
         },
         "canvas": {
+          "InkWashWidth": 30,
+          "InkWash": {
+            "Dryness": 0.42,
+            "Angle": 44,
+            "Flatness": 0.44
+          },
+          "UseHardwarePressure": true,
+          "UsePenTilt": true,
           "inkWidth": 7.5,
           "inkAlpha": 140,
           "isCompressPicturesUploaded": false,
@@ -220,17 +289,26 @@
           "usingWhiteboard": false
         },
         "gesture": {
+          "PenHasPriority": true,
+          "PalmErases": true,
           "isEnableMultiTouchMode": true,
           "isEnableTwoFingerZoom": true,
           "isEnableTwoFingerTranslate": true,
           "AutoSwitchTwoFingerGesture": true,
           "isEnableTwoFingerRotation": false,
           "isEnableTwoFingerRotationOnSelection": false,
-          "matrixTransformCenterPoint": 0,
-          "isEnableStylusGesture": true
+          "isEnableStylusGesture": true,
+          "matrixTransformCenterPoint": 0
         },
         "inkToShape": {
-          "isInkToShapeEnabled": true
+          "isInkToShapeEnabled": true,
+          "HoldMilliseconds": 450,
+          "AutoAlign": true,
+          "AlignmentAngle": 5,
+          "RecognizePolygons": true,
+          "RecognizeRoundShapes": true,
+          "RecognizeCube": true,
+          "RecognizeAxes": true
         },
         "startup": {
           "isAutoUpdate": true,
@@ -242,7 +320,10 @@
         },
         "randSettings": {
           "peopleCount": 60,
-          "isNotRepeatName": false
+          "isNotRepeatName": false,
+          "samplingMode": 0,
+          "cooldownHalfLifeDays": 10,
+          "cooldownPenaltyStrength": 1
         },
         "experimental": {
           "ScreenContentTracking": false,
@@ -254,6 +335,43 @@
           "Word": true,
           "PowerPoint": true,
           "Edge": true
+        },
+        "display": {
+          "allDisplays": true,
+          "enabledDevices": []
+        },
+        "storage": {
+          "AutomaticallyCleanCache": true,
+          "UpdateCacheDays": 7
+        },
+        "ai": {
+          "enableLocalCorrection": true,
+          "enableEditablePaste": true,
+          "enableVerification": true,
+          "enableTwoStage": true,
+          "teachingMode": "step",
+          "hasSeenLassoHint": false
+        },
+        "classroom": {
+          "version": 1,
+          "presetId": "teach",
+          "countdownMinutes": 3,
+          "toolkitCollapsed": false,
+          "practicePageName": "随堂练习",
+          "customPresets": "",
+          "groupSplitMode": "groupCount",
+          "groupSplitValue": 4,
+          "spotlightRegions": "",
+          "toolkitX": -2147483648,
+          "toolkitY": -2147483648,
+          "magnifierX": -2147483648,
+          "magnifierY": -2147483648
+        },
+        "features": {
+          "enableAiTeaching": true,
+          "enableExerciseFlow": true,
+          "enableExampleLibrary": true,
+          "enableResourceBundle": true
         }
       },
       "tolerance": 0
@@ -287,6 +405,7 @@
           "enableViewboxBlackBoardScaleTransform": 100,
           "floatingBarBottomMargin": 100,
           "isTransparentButtonBackground": true,
+          "isIconRegularStyle": false,
           "isShowExitButton": true,
           "isShowEraserButton": true,
           "isShowHideControlButton": false,
@@ -326,6 +445,7 @@
           "isShowCanvasAtNewSlideShow": true,
           "isNoClearStrokeOnSelectWhenInPowerPoint": true,
           "isShowStrokeOnSelectInPowerPoint": false,
+          "hideStrokesAfterLeavingAnnotation": false,
           "isAutoSaveStrokesInPowerPoint": true,
           "isAutoSaveScreenShotInPowerPoint": false,
           "isNotifyPreviousPage": false,
@@ -336,6 +456,14 @@
           "isSupportWPS": true
         },
         "canvas": {
+          "InkWashWidth": 30,
+          "InkWash": {
+            "Dryness": 0.42,
+            "Angle": 44,
+            "Flatness": 0.44
+          },
+          "UseHardwarePressure": true,
+          "UsePenTilt": true,
           "inkWidth": 2.5,
           "inkAlpha": 140,
           "isCompressPicturesUploaded": false,
@@ -348,17 +476,26 @@
           "usingWhiteboard": false
         },
         "gesture": {
+          "PenHasPriority": true,
+          "PalmErases": true,
           "isEnableMultiTouchMode": true,
           "isEnableTwoFingerZoom": true,
           "isEnableTwoFingerTranslate": true,
           "AutoSwitchTwoFingerGesture": true,
           "isEnableTwoFingerRotation": false,
           "isEnableTwoFingerRotationOnSelection": false,
-          "matrixTransformCenterPoint": 0,
-          "isEnableStylusGesture": true
+          "isEnableStylusGesture": true,
+          "matrixTransformCenterPoint": 0
         },
         "inkToShape": {
-          "isInkToShapeEnabled": true
+          "isInkToShapeEnabled": true,
+          "HoldMilliseconds": 450,
+          "AutoAlign": true,
+          "AlignmentAngle": 5,
+          "RecognizePolygons": true,
+          "RecognizeRoundShapes": true,
+          "RecognizeCube": true,
+          "RecognizeAxes": true
         },
         "startup": {
           "isAutoUpdate": true,
@@ -370,7 +507,10 @@
         },
         "randSettings": {
           "peopleCount": 60,
-          "isNotRepeatName": false
+          "isNotRepeatName": false,
+          "samplingMode": 0,
+          "cooldownHalfLifeDays": 10,
+          "cooldownPenaltyStrength": 1
         },
         "experimental": {
           "ScreenContentTracking": false,
@@ -382,6 +522,43 @@
           "Word": true,
           "PowerPoint": true,
           "Edge": true
+        },
+        "display": {
+          "allDisplays": true,
+          "enabledDevices": []
+        },
+        "storage": {
+          "AutomaticallyCleanCache": true,
+          "UpdateCacheDays": 7
+        },
+        "ai": {
+          "enableLocalCorrection": true,
+          "enableEditablePaste": true,
+          "enableVerification": true,
+          "enableTwoStage": true,
+          "teachingMode": "step",
+          "hasSeenLassoHint": false
+        },
+        "classroom": {
+          "version": 1,
+          "presetId": "teach",
+          "countdownMinutes": 3,
+          "toolkitCollapsed": false,
+          "practicePageName": "随堂练习",
+          "customPresets": "",
+          "groupSplitMode": "groupCount",
+          "groupSplitValue": 4,
+          "spotlightRegions": "",
+          "toolkitX": -2147483648,
+          "toolkitY": -2147483648,
+          "magnifierX": -2147483648,
+          "magnifierY": -2147483648
+        },
+        "features": {
+          "enableAiTeaching": true,
+          "enableExerciseFlow": true,
+          "enableExampleLibrary": true,
+          "enableResourceBundle": true
         }
       },
       "tolerance": 0
@@ -415,6 +592,7 @@
           "enableViewboxBlackBoardScaleTransform": 100,
           "floatingBarBottomMargin": 100,
           "isTransparentButtonBackground": true,
+          "isIconRegularStyle": false,
           "isShowExitButton": true,
           "isShowEraserButton": true,
           "isShowHideControlButton": false,
@@ -454,6 +632,7 @@
           "isShowCanvasAtNewSlideShow": true,
           "isNoClearStrokeOnSelectWhenInPowerPoint": true,
           "isShowStrokeOnSelectInPowerPoint": false,
+          "hideStrokesAfterLeavingAnnotation": false,
           "isAutoSaveStrokesInPowerPoint": true,
           "isAutoSaveScreenShotInPowerPoint": false,
           "isNotifyPreviousPage": false,
@@ -464,6 +643,14 @@
           "isSupportWPS": true
         },
         "canvas": {
+          "InkWashWidth": 30,
+          "InkWash": {
+            "Dryness": 0.42,
+            "Angle": 44,
+            "Flatness": 0.44
+          },
+          "UseHardwarePressure": true,
+          "UsePenTilt": true,
           "inkWidth": 2.5,
           "inkAlpha": 140,
           "isCompressPicturesUploaded": false,
@@ -476,17 +663,26 @@
           "usingWhiteboard": false
         },
         "gesture": {
+          "PenHasPriority": true,
+          "PalmErases": true,
           "isEnableMultiTouchMode": true,
           "isEnableTwoFingerZoom": true,
           "isEnableTwoFingerTranslate": true,
           "AutoSwitchTwoFingerGesture": true,
           "isEnableTwoFingerRotation": false,
           "isEnableTwoFingerRotationOnSelection": false,
-          "matrixTransformCenterPoint": 0,
-          "isEnableStylusGesture": true
+          "isEnableStylusGesture": true,
+          "matrixTransformCenterPoint": 0
         },
         "inkToShape": {
-          "isInkToShapeEnabled": true
+          "isInkToShapeEnabled": true,
+          "HoldMilliseconds": 450,
+          "AutoAlign": true,
+          "AlignmentAngle": 5,
+          "RecognizePolygons": true,
+          "RecognizeRoundShapes": true,
+          "RecognizeCube": true,
+          "RecognizeAxes": true
         },
         "startup": {
           "isAutoUpdate": true,
@@ -498,7 +694,10 @@
         },
         "randSettings": {
           "peopleCount": 60,
-          "isNotRepeatName": false
+          "isNotRepeatName": false,
+          "samplingMode": 0,
+          "cooldownHalfLifeDays": 10,
+          "cooldownPenaltyStrength": 1
         },
         "experimental": {
           "ScreenContentTracking": false,
@@ -510,6 +709,43 @@
           "Word": true,
           "PowerPoint": true,
           "Edge": true
+        },
+        "display": {
+          "allDisplays": true,
+          "enabledDevices": []
+        },
+        "storage": {
+          "AutomaticallyCleanCache": true,
+          "UpdateCacheDays": 7
+        },
+        "ai": {
+          "enableLocalCorrection": true,
+          "enableEditablePaste": true,
+          "enableVerification": true,
+          "enableTwoStage": true,
+          "teachingMode": "step",
+          "hasSeenLassoHint": false
+        },
+        "classroom": {
+          "version": 1,
+          "presetId": "teach",
+          "countdownMinutes": 3,
+          "toolkitCollapsed": false,
+          "practicePageName": "随堂练习",
+          "customPresets": "",
+          "groupSplitMode": "groupCount",
+          "groupSplitValue": 4,
+          "spotlightRegions": "",
+          "toolkitX": -2147483648,
+          "toolkitY": -2147483648,
+          "magnifierX": -2147483648,
+          "magnifierY": -2147483648
+        },
+        "features": {
+          "enableAiTeaching": true,
+          "enableExerciseFlow": true,
+          "enableExampleLibrary": true,
+          "enableResourceBundle": true
         }
       },
       "tolerance": 0
@@ -543,6 +779,7 @@
           "enableViewboxBlackBoardScaleTransform": 100,
           "floatingBarBottomMargin": 100,
           "isTransparentButtonBackground": true,
+          "isIconRegularStyle": false,
           "isShowExitButton": true,
           "isShowEraserButton": true,
           "isShowHideControlButton": false,
@@ -582,6 +819,7 @@
           "isShowCanvasAtNewSlideShow": true,
           "isNoClearStrokeOnSelectWhenInPowerPoint": true,
           "isShowStrokeOnSelectInPowerPoint": false,
+          "hideStrokesAfterLeavingAnnotation": false,
           "isAutoSaveStrokesInPowerPoint": true,
           "isAutoSaveScreenShotInPowerPoint": false,
           "isNotifyPreviousPage": false,
@@ -592,6 +830,14 @@
           "isSupportWPS": true
         },
         "canvas": {
+          "InkWashWidth": 30,
+          "InkWash": {
+            "Dryness": 0.42,
+            "Angle": 44,
+            "Flatness": 0.44
+          },
+          "UseHardwarePressure": true,
+          "UsePenTilt": true,
           "inkWidth": 2.5,
           "highlighterWidth": 12.5,
           "inkAlpha": 140,
@@ -605,17 +851,26 @@
           "usingWhiteboard": false
         },
         "gesture": {
+          "PenHasPriority": true,
+          "PalmErases": true,
           "isEnableMultiTouchMode": true,
           "isEnableTwoFingerZoom": true,
           "isEnableTwoFingerTranslate": true,
           "AutoSwitchTwoFingerGesture": true,
           "isEnableTwoFingerRotation": false,
           "isEnableTwoFingerRotationOnSelection": false,
-          "matrixTransformCenterPoint": 0,
-          "isEnableStylusGesture": true
+          "isEnableStylusGesture": true,
+          "matrixTransformCenterPoint": 0
         },
         "inkToShape": {
-          "isInkToShapeEnabled": true
+          "isInkToShapeEnabled": true,
+          "HoldMilliseconds": 450,
+          "AutoAlign": true,
+          "AlignmentAngle": 5,
+          "RecognizePolygons": true,
+          "RecognizeRoundShapes": true,
+          "RecognizeCube": true,
+          "RecognizeAxes": true
         },
         "startup": {
           "isAutoUpdate": true,
@@ -627,7 +882,10 @@
         },
         "randSettings": {
           "peopleCount": 60,
-          "isNotRepeatName": false
+          "isNotRepeatName": false,
+          "samplingMode": 0,
+          "cooldownHalfLifeDays": 10,
+          "cooldownPenaltyStrength": 1
         },
         "experimental": {
           "ScreenContentTracking": false,
@@ -639,6 +897,43 @@
           "Word": true,
           "PowerPoint": true,
           "Edge": true
+        },
+        "display": {
+          "allDisplays": true,
+          "enabledDevices": []
+        },
+        "storage": {
+          "AutomaticallyCleanCache": true,
+          "UpdateCacheDays": 7
+        },
+        "ai": {
+          "enableLocalCorrection": true,
+          "enableEditablePaste": true,
+          "enableVerification": true,
+          "enableTwoStage": true,
+          "teachingMode": "step",
+          "hasSeenLassoHint": false
+        },
+        "classroom": {
+          "version": 1,
+          "presetId": "teach",
+          "countdownMinutes": 3,
+          "toolkitCollapsed": false,
+          "practicePageName": "随堂练习",
+          "customPresets": "",
+          "groupSplitMode": "groupCount",
+          "groupSplitValue": 4,
+          "spotlightRegions": "",
+          "toolkitX": -2147483648,
+          "toolkitY": -2147483648,
+          "magnifierX": -2147483648,
+          "magnifierY": -2147483648
+        },
+        "features": {
+          "enableAiTeaching": true,
+          "enableExerciseFlow": true,
+          "enableExampleLibrary": true,
+          "enableResourceBundle": true
         }
       },
       "tolerance": 0
@@ -672,6 +967,7 @@
           "enableViewboxBlackBoardScaleTransform": 100,
           "floatingBarBottomMargin": 100,
           "isTransparentButtonBackground": true,
+          "isIconRegularStyle": false,
           "isShowExitButton": true,
           "isShowEraserButton": true,
           "isShowHideControlButton": false,
@@ -711,6 +1007,7 @@
           "isShowCanvasAtNewSlideShow": true,
           "isNoClearStrokeOnSelectWhenInPowerPoint": true,
           "isShowStrokeOnSelectInPowerPoint": false,
+          "hideStrokesAfterLeavingAnnotation": false,
           "isAutoSaveStrokesInPowerPoint": true,
           "isAutoSaveScreenShotInPowerPoint": false,
           "isNotifyPreviousPage": false,
@@ -721,6 +1018,14 @@
           "isSupportWPS": true
         },
         "canvas": {
+          "InkWashWidth": 30,
+          "InkWash": {
+            "Dryness": 0.42,
+            "Angle": 44,
+            "Flatness": 0.44
+          },
+          "UseHardwarePressure": true,
+          "UsePenTilt": true,
           "inkWidth": 2.5,
           "inkAlpha": 140,
           "isCompressPicturesUploaded": false,
@@ -733,17 +1038,26 @@
           "usingWhiteboard": false
         },
         "gesture": {
+          "PenHasPriority": true,
+          "PalmErases": true,
           "isEnableMultiTouchMode": true,
           "isEnableTwoFingerZoom": true,
           "isEnableTwoFingerTranslate": true,
           "AutoSwitchTwoFingerGesture": true,
           "isEnableTwoFingerRotation": false,
           "isEnableTwoFingerRotationOnSelection": false,
-          "matrixTransformCenterPoint": 0,
-          "isEnableStylusGesture": true
+          "isEnableStylusGesture": true,
+          "matrixTransformCenterPoint": 0
         },
         "inkToShape": {
-          "isInkToShapeEnabled": true
+          "isInkToShapeEnabled": true,
+          "HoldMilliseconds": 450,
+          "AutoAlign": true,
+          "AlignmentAngle": 5,
+          "RecognizePolygons": true,
+          "RecognizeRoundShapes": true,
+          "RecognizeCube": true,
+          "RecognizeAxes": true
         },
         "startup": {
           "isAutoUpdate": true,
@@ -755,7 +1069,10 @@
         },
         "randSettings": {
           "peopleCount": 60,
-          "isNotRepeatName": false
+          "isNotRepeatName": false,
+          "samplingMode": 0,
+          "cooldownHalfLifeDays": 10,
+          "cooldownPenaltyStrength": 1
         },
         "experimental": {
           "ScreenContentTracking": false,
@@ -767,6 +1084,43 @@
           "Word": true,
           "PowerPoint": true,
           "Edge": true
+        },
+        "display": {
+          "allDisplays": true,
+          "enabledDevices": []
+        },
+        "storage": {
+          "AutomaticallyCleanCache": true,
+          "UpdateCacheDays": 7
+        },
+        "ai": {
+          "enableLocalCorrection": true,
+          "enableEditablePaste": true,
+          "enableVerification": true,
+          "enableTwoStage": true,
+          "teachingMode": "step",
+          "hasSeenLassoHint": false
+        },
+        "classroom": {
+          "version": 1,
+          "presetId": "teach",
+          "countdownMinutes": 3,
+          "toolkitCollapsed": false,
+          "practicePageName": "随堂练习",
+          "customPresets": "",
+          "groupSplitMode": "groupCount",
+          "groupSplitValue": 4,
+          "spotlightRegions": "",
+          "toolkitX": -2147483648,
+          "toolkitY": -2147483648,
+          "magnifierX": -2147483648,
+          "magnifierY": -2147483648
+        },
+        "features": {
+          "enableAiTeaching": true,
+          "enableExerciseFlow": true,
+          "enableExampleLibrary": true,
+          "enableResourceBundle": true
         }
       },
       "tolerance": 0

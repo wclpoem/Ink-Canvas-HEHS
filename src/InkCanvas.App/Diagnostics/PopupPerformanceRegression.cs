@@ -26,6 +26,26 @@ internal static class PopupPerformanceRegression
         try
         {
             await Task.Delay(250);
+            {
+                var probeTimer = Stopwatch.StartNew();
+                var probe = new Window { Content = new Microsoft.UI.Xaml.Controls.Border { Width = 248, Height = 400 } };
+                timings.Add(new { kind = "profile-window-create", synchronousMs = probeTimer.Elapsed.TotalMilliseconds });
+                probeTimer.Restart();
+                WindowChrome.MakeBorderless(probe, noActivate: true);
+                timings.Add(new { kind = "profile-borderless", synchronousMs = probeTimer.Elapsed.TotalMilliseconds });
+                probeTimer.Restart();
+                FloatingBarWindow.EnableTransparency(probe);
+                timings.Add(new { kind = "profile-backdrop", synchronousMs = probeTimer.Elapsed.TotalMilliseconds });
+                probeTimer.Restart();
+                WindowChrome.ClipToSurfaces(probe, () => new[] { (Microsoft.UI.Xaml.Controls.Border)probe.Content });
+                timings.Add(new { kind = "profile-clipping", synchronousMs = probeTimer.Elapsed.TotalMilliseconds });
+                probeTimer.Restart();
+                WindowChrome.PlaceDip(probe, 100, 100, 248, 400);
+                timings.Add(new { kind = "profile-place", synchronousMs = probeTimer.Elapsed.TotalMilliseconds });
+                probeTimer.Restart();
+                probe.Close();
+                timings.Add(new { kind = "profile-close", synchronousMs = probeTimer.Elapsed.TotalMilliseconds });
+            }
             var bar = shell.OpenWindows.OfType<FloatingBarWindow>().Single();
             for (int round = 0; round < 3; round++)
             {
@@ -54,9 +74,9 @@ internal static class PopupPerformanceRegression
             var attributes = new StrokeAttributes { BaseWidth = 8, TaperKind = TaperKind.Natural };
             preview.Update(attributes, false);
             var stroke = preview.Stroke;
-            var timer = Stopwatch.StartNew();
+            var previewTimer = Stopwatch.StartNew();
             for (int i = 0; i < 30; i++) preview.Update(attributes, false);
-            timings.Add(new { kind = "unchanged-preview-30-updates", synchronousMs = timer.Elapsed.TotalMilliseconds });
+            timings.Add(new { kind = "unchanged-preview-30-updates", synchronousMs = previewTimer.Elapsed.TotalMilliseconds });
             checks.Add(new { check = "unchanged preview reuses its stroke geometry", passed = ReferenceEquals(stroke, preview.Stroke) });
             attributes.Color = InkColor.Opaque(220, 38, 38);
             preview.Update(attributes, false);

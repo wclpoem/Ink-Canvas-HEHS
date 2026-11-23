@@ -11,6 +11,9 @@ public sealed partial class ShellController
 
     private void MaintainAutomation()
     {
+        _ = Services.Archives.SaveIfDueAsync();
+        if (_board is null && !DocumentActive && Services.ScreenArchives.TakeScheduledSave(_lastSlideShowState))
+            _ = SaveScreenArchiveAsync("定时屏幕存档");
         var automation = Services.Settings.Automation;
         long now = Environment.TickCount64;
         if (!_maintenanceRunning && now - _lastProcessMaintenance >= 10_000

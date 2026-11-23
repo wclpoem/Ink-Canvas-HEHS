@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices.WindowsRuntime;
+using System.Numerics;
 using InkCanvas.Pdf;
-using Windows.Data.Pdf;
+using Microsoft.Graphics.Canvas;
 using Windows.Storage.Streams;
 using Rect = Windows.Foundation.Rect;
 
@@ -14,9 +15,11 @@ internal sealed class PdfRasterizer : IAsyncDisposable
     private readonly FileStream _file;
     private readonly IRandomAccessStream _stream;
     private Windows.Data.Pdf.PdfDocument _document;
+    private PdfNativeRenderer _renderer;
     private long _clock;
     private bool _disposed;
     public long CachedBytes => _previews.Values.Sum(item => (long)item.Data.Length);
+    internal CanvasDevice Device => _renderer.Device;
 
     private PdfRasterizer(string path)
     {
@@ -30,7 +33,10 @@ internal sealed class PdfRasterizer : IAsyncDisposable
         var renderer = new PdfRasterizer(path);
         try
         {
-            renderer._document = await Windows.Data.Pdf.PdfDocument.LoadFromStreamAsync(renderer._stream, password ?? "").AsTask(token);
+            token.ThrowIfCancellationRequested();
+            renderer._document = await Windows.Data.Pdf.PdfDocument.LoadFromStreamAsync(renderer._stream, password ?? "").AsTask().ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            renderer._renderer = new PdfNativeRenderer();
             return renderer;
         }
         catch { await renderer.DisposeAsync(); throw; }
@@ -61,27 +67,34 @@ internal sealed class PdfRasterizer : IAsyncDisposable
         finally { _gate.Release(); }
     }
     private async Task<byte[]> RenderCore(int index, PdfPageGeometry geometry, Rect source, double scale, CancellationToken token)
+        => await RenderCore(index, geometry, source, scale, _renderer.RenderAsync, token).ConfigureAwait(false);
+
+    internal async Task<CanvasBitmap> RenderBitmapAsync(int index, PdfPageGeometry geometry, Rect source, double scale, CancellationToken token)
+    {
+        await _gate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return await RenderCore(index, geometry, source, scale, _renderer.RenderBitmapAsync, token).ConfigureAwait(false);
+        }
+        finally { _gate.Release(); }
+    }
+
+    private async Task<T> RenderCore<T>(int index, PdfPageGeometry geometry, Rect source, double scale,
+        Func<Windows.Data.Pdf.PdfPage, Vector4, uint, uint, CancellationToken, Task<T>> render, CancellationToken token)
     {
         using var page = _document.GetPage((uint)index);
         // Keep both the GPU upload and the native output allocation below 32 MB.
         scale = Math.Min(scale, Math.Sqrt(8_000_000 / Math.Max(1, source.Width * source.Height)));
         scale = Math.Min(scale, 8192 / Math.Max(source.Width, source.Height));
-        var options = new PdfPageRenderOptions
-        {
-            SourceRect = new Rect(source.X * page.Size.Width / geometry.DipWidth, source.Y * page.Size.Height / geometry.DipHeight,
-                source.Width * page.Size.Width / geometry.DipWidth, source.Height * page.Size.Height / geometry.DipHeight),
-            DestinationWidth = (uint)Math.Max(1, Math.Ceiling(source.Width * scale)),
-            DestinationHeight = (uint)Math.Max(1, Math.Ceiling(source.Height * scale)),
-            BackgroundColor = Microsoft.UI.Colors.White,
-            IsIgnoringHighContrast = true,
-        };
-        using var output = new InMemoryRandomAccessStream();
-        await page.RenderToStreamAsync(output, options).AsTask(token);
+        var rectangle = new Vector4((float)(source.X * page.Size.Width / geometry.DipWidth),
+            (float)(source.Y * page.Size.Height / geometry.DipHeight),
+            (float)((source.X + source.Width) * page.Size.Width / geometry.DipWidth),
+            (float)((source.Y + source.Height) * page.Size.Height / geometry.DipHeight));
+        await page.PreparePageAsync().AsTask().ConfigureAwait(false);
         token.ThrowIfCancellationRequested();
-        output.Seek(0);
-        var bytes = new byte[checked((int)output.Size)];
-        using var reader = new DataReader(output); await reader.LoadAsync((uint)bytes.Length).AsTask(token); reader.ReadBytes(bytes);
-        return bytes;
+        uint width = (uint)Math.Max(1, Math.Ceiling(source.Width * scale)), height = (uint)Math.Max(1, Math.Ceiling(source.Height * scale));
+        return await render(page, rectangle, width, height, token).ConfigureAwait(false);
     }
     public async ValueTask DisposeAsync()
     {
@@ -90,6 +103,7 @@ internal sealed class PdfRasterizer : IAsyncDisposable
         {
             if (_disposed) return;
             _disposed = true; _previews.Clear(); _document = null;
+            _renderer?.Dispose(); _renderer = null;
             _stream.Dispose(); _file.Dispose();
         }
         finally { _gate.Release(); }

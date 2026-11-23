@@ -32,7 +32,12 @@ public sealed class PluginManager : IDisposable
     {
         get { lock (_plugins) return _plugins.Values.Where(p => p.State == ExtensionState.Running).SelectMany(p => p.Commands.Select(c => new ExtensionCommand(p.Manifest.Id, c.Id, c.Title, c.Description))).ToArray(); }
     }
-    public void Discover(params string[] roots)
+    public void Discover(params string[] roots) => DiscoverCore(roots, null);
+
+    public void DiscoverManaged(string appRoot, string userRoot)
+        => DiscoverCore(new[] { userRoot, appRoot }, Path.GetFullPath(userRoot));
+
+    private void DiscoverCore(string[] roots, string userRoot)
     {
         if (_plugins.Count > 0) throw new InvalidOperationException("Discover plugin packages once before startup.");
         foreach (string root in roots.Distinct(StringComparer.OrdinalIgnoreCase))
@@ -57,7 +62,16 @@ public sealed class PluginManager : IDisposable
                     ExtensionPackages.EntryPath(directory, manifest.EntryAssembly);
                     if (manifest.Dependencies.Length != 0) throw new InvalidDataException("External plugins must be independent packages. Share functionality through the versioned SDK.");
                     if (_plugins.TryGetValue(manifest.Id, out var duplicate))
-                    { duplicate.Eligible = false; duplicate.State = ExtensionState.Failed; duplicate.Error = "Duplicate plugin package ID."; continue; }
+                    {
+                        if (userRoot is not null && string.Equals(Path.GetDirectoryName(duplicate.Directory), userRoot, StringComparison.OrdinalIgnoreCase)
+                            && File.Exists(Path.Combine(duplicate.Directory, ".repository-package.json")))
+                        {
+                            if (Version.Parse(manifest.Version) > Version.Parse(duplicate.Manifest.Version))
+                                _plugins[manifest.Id] = new Plugin { Manifest = manifest, Directory = directory, Eligible = true };
+                            continue;
+                        }
+                        duplicate.Eligible = false; duplicate.State = ExtensionState.Failed; duplicate.Error = "Duplicate plugin package ID."; continue;
+                    }
                     _plugins.Add(manifest.Id, new Plugin { Manifest = manifest, Directory = directory, Eligible = true });
                 }
                 catch (Exception ex)

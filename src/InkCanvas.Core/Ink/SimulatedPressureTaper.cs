@@ -42,7 +42,7 @@ internal sealed class SimulatedPressureTaper : TaperProfile
             TaperKind.SmoothPen => .82f + .18f * pressure,
             TaperKind.SoftPen => .42f + .66f * MathF.Pow(pressure, .85f),
             TaperKind.Calligraphy => .24f + 1.05f * MathF.Pow(pressure, 1.25f),
-            TaperKind.InkWash => .18f + 1.22f * pressure * pressure,
+            TaperKind.InkWash => .45f + .75f * MathF.Pow(pressure, .85f),
             _ => .38f + .72f * pressure,
         };
         if (_kind is TaperKind.Calligraphy or TaperKind.InkWash && tipIndex > 1)
@@ -53,12 +53,7 @@ internal sealed class SimulatedPressureTaper : TaperProfile
             {
                 float turn = (1 - Vector2.Dot(Vector2.Normalize(a), Vector2.Normalize(b))) * .5f;
                 ratio *= 1 + .18f * turn;
-                if (_kind == TaperKind.InkWash)
-                {
-                    // A fixed brush angle gives horizontal and descending strokes different fullness.
-                    float direction = MathF.Abs((b.X + b.Y) / MathF.Sqrt(2 * b.LengthSquared()));
-                    ratio *= .72f + .28f * direction;
-                }
+                // Water-ink direction and side-tip width are applied once by its nib geometry.
             }
         }
         float response = elapsed > 0 && elapsed <= 200 ? 1 - MathF.Exp(-elapsed / 22) : 1;
@@ -71,7 +66,7 @@ internal sealed class SimulatedPressureTaper : TaperProfile
         }
 
         float tipRatio = _kind is TaperKind.Calligraphy or TaperKind.InkWash ? .09f : .18f;
-        float headLength = MathF.Max(5, baseWidth * 1.6f);
+        float headLength = _kind == TaperKind.InkWash ? 6 : MathF.Max(5, baseWidth * 1.6f);
         // Pausing or jittering inside the starting contact must not inflate the head.
         // Grow it from the actual distance away from the first point.
         if (_headDistance < headLength)
@@ -80,7 +75,9 @@ internal sealed class SimulatedPressureTaper : TaperProfile
         int slot = tipIndex % _widths.Length;
         _widths[slot] = PressureWidth(current, baseWidth) * _ratio * head;
         _distances[slot] = _distance;
-        float tailLength = MathF.Max(10, baseWidth * (_kind is TaperKind.Calligraphy or TaperKind.InkWash ? 4 : 2.5f));
+        // Keep water-ink transitions in writing distance. Scaling them with a wide brush
+        // leaves an entire short character stroke inside the thin entry and exit regions.
+        float tailLength = _kind == TaperKind.InkWash ? 12 : MathF.Max(10, baseWidth * (_kind == TaperKind.Calligraphy ? 4 : 2.5f));
         int first = Math.Max(_stable, tipIndex - _widths.Length + 1);
         for (int index = first; index <= tipIndex; index++)
         {

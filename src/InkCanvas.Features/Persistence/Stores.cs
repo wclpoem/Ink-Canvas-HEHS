@@ -121,6 +121,7 @@ public static class InkFileStore
         public PenNib Nib { get; set; }
         public float NibRotation { get; set; }
         public bool Shape { get; set; }
+
         public ShapeSource ShapeSource { get; set; }
         public float[] ObjectFrame { get; set; }
         /// <summary>Rows of [x, y, pressure, width, timeMs, tiltX, tiltY, hasPressure]. Older short rows remain valid.</summary>
@@ -158,7 +159,17 @@ public static class InkFileStore
 
         var dir = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(dir)) System.IO.Directory.CreateDirectory(dir);
-        File.WriteAllText(path, JsonSerializer.Serialize(model));
+        string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                JsonSerializer.Serialize(output, model);
+                output.Flush(flushToDisk: true);
+            }
+            File.Move(temporary, path, overwrite: true);
+        }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 
     public static List<InkStroke> Load(string path)
@@ -182,7 +193,7 @@ public static class InkFileStore
                 InkWash = sm.InkWash.Normalize(),
                 InkWashSeed = sm.InkWashSeed,
             };
-            var stroke = new InkStroke(attrs) { Id = sm.Id ?? Guid.NewGuid(), IsRecognizedShape = sm.Shape, LayerOrder = sm.LayerOrder, ShapeSource = sm.ShapeSource };
+var stroke = new InkStroke(attrs) { Id = sm.Id ?? Guid.NewGuid(), IsRecognizedShape = sm.Shape, LayerOrder = sm.LayerOrder, ShapeSource = sm.ShapeSource };
             // Restore stored widths verbatim: re-running the taper here would change history.
             stroke.RestorePoints(sm.Points
                 .Where(r => r.Length >= 4)
@@ -200,31 +211,57 @@ public static class InkFileStore
 /// <summary>Writes stroke snapshots on clear/screenshot/exit, and prunes old ones.</summary>
 public sealed class AutoSaveService
 {
+    private Task<string> _pending = Task.FromResult<string>(null);
+    public string LastPath { get; private set; }
+    public string LastError { get; private set; }
+    public DateTimeOffset? LastSavedUtc { get; private set; }
     public AutoSaveService(Core.Settings.AutomationSettings settings)
     {
         Settings = settings;
     }
 
-    public Core.Settings.AutomationSettings Settings { get; }
+    public Core.Settings.AutomationSettings Settings { get; set; }
 
     public string SaveSnapshot(IEnumerable<InkStroke> strokes, string reason)
+        => SaveSnapshotCore(strokes, reason, Settings);
+
+    public Task<string> SaveSnapshotAsync(IEnumerable<InkStroke> strokes, string reason)
+    {
+        var snapshot = strokes.Select(stroke => stroke.Clone()).ToArray();
+        var settings = JsonSerializer.Deserialize<Core.Settings.AutomationSettings>(JsonSerializer.Serialize(Settings));
+        var previous = _pending;
+        return _pending = Task.Run(async () =>
+        {
+            await previous.ConfigureAwait(false);
+            return SaveSnapshotCore(snapshot, reason, settings);
+        });
+    }
+
+    public Task WaitForPendingAsync() => _pending;
+
+    private string SaveSnapshotCore(IEnumerable<InkStroke> strokes, string reason, Core.Settings.AutomationSettings settings)
     {
         var list = strokes.ToList();
-        if (list.Count < Math.Max(0, Settings.MinimumAutomationStrokeNumber)) return null;
+        if (list.Count < Math.Max(0, settings.MinimumAutomationStrokeNumber)) return null;
         try
         {
-            string root = Settings.AutoSavedStrokesLocation;
+            string root = settings.AutoSavedStrokesLocation;
             if (string.IsNullOrWhiteSpace(root)) return null;
-            string dir = Settings.IsSaveScreenshotsInDateFolders
+            root = ArchivePolicy.ResolveDirectory(root);
+            string dir = settings.IsSaveScreenshotsInDateFolders
                 ? Path.Combine(root, DateTime.Now.ToString("yyyy-MM-dd"))
                 : root;
             System.IO.Directory.CreateDirectory(dir);
-            string path = Path.Combine(dir, $"{DateTime.Now:HHmmss}-{reason}{InkFileStore.Extension}");
+            string safeReason = new string((reason ?? "snapshot").Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c).ToArray());
+            string path = Path.Combine(dir, $"{DateTime.Now:yyyyMMdd-HHmmss-fff}-{safeReason}-{Guid.NewGuid().ToString("N")[..8]}{InkFileStore.Extension}");
             InkFileStore.Save(path, list);
+            LastPath = path; LastSavedUtc = DateTimeOffset.UtcNow; LastError = null;
             return path;
         }
-        catch
+        catch (Exception ex)
         {
+            LastError = ex.GetBaseException().Message;
+            Core.Diagnostics.FileLog.WriteLogToFile("墨迹快照保存失败 " + LastError, Core.Diagnostics.LogType.Error);
             return null;
         }
     }

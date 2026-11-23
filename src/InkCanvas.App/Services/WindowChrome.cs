@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 using Windows.Graphics;
 using WinRT.Interop;
 using InkCanvas.Platform.System;
+using InkCanvas.Controls.Controls;
 
 namespace InkCanvas.App.Services;
 
@@ -96,13 +97,16 @@ public static class WindowChrome
     public static void MakeBorderless(Window window, bool topmost = true, bool resizable = false, bool noActivate = false)
     {
         var appWindow = window.AppWindow;
-        if (appWindow.Presenter is OverlappedPresenter presenter)
+        if (appWindow.Presenter is OverlappedPresenter)
         {
+            // Configure before attachment so WinUI applies one native frame change.
+            var presenter = OverlappedPresenter.Create();
             presenter.SetBorderAndTitleBar(false, false);
             presenter.IsResizable = resizable;
             presenter.IsMaximizable = resizable;
             presenter.IsMinimizable = resizable;
             presenter.IsAlwaysOnTop = topmost;
+            appWindow.SetPresenter(presenter);
         }
         // No system backdrop: these windows paint their own tokenised surface.
         window.SystemBackdrop = null;
@@ -753,7 +757,7 @@ public static class WindowChrome
                 Content = new Microsoft.UI.Xaml.Controls.FontIcon
                 {
                     Glyph = glyph,
-                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
+                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily(IconFontStyle.Family),
                     FontSize = 10,
                 },
                 MinWidth = 46,
@@ -778,21 +782,21 @@ public static class WindowChrome
 
         if (minMax)
         {
-            var min = CaptionButton("", "最小化");
+            var min = CaptionButton("", "最小化");
             min.Click += (_, _) =>
             {
                 if (window.AppWindow.Presenter is OverlappedPresenter p) p.Minimize();
             };
             buttons.Children.Add(min);
 
-            var max = CaptionButton("", "最大化");
+            var max = CaptionButton("", "最大化");
             max.Click += (_, _) => ToggleMaximize();
             window.AppWindow.Changed += (_, args) =>
             {
                 if (!args.DidSizeChange) return;
                 bool maximized = window.AppWindow.Presenter is OverlappedPresenter p
                     && p.State == OverlappedPresenterState.Maximized;
-                ((Microsoft.UI.Xaml.Controls.FontIcon)max.Content).Glyph = maximized ? "" : "";
+                ((Microsoft.UI.Xaml.Controls.FontIcon)max.Content).Glyph = maximized ? "" : "";
                 ToolTipService.SetToolTip(max, maximized ? "还原" : "最大化");
             };
             buttons.Children.Add(max);
@@ -812,8 +816,8 @@ public static class WindowChrome
             {
                 Content = new Microsoft.UI.Xaml.Controls.FontIcon
                 {
-                    Glyph = "",
-                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
+                    Glyph = "",
+                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily(IconFontStyle.Family),
                     FontSize = 12,
                 },
                 MinWidth = 46,

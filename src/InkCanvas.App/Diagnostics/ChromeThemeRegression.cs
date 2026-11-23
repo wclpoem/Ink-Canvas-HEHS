@@ -152,7 +152,8 @@ internal static class ChromeThemeRegression
                 windows.Add(window);
                 WindowChrome.ShowWithoutActivation(window);
                 await Task.Delay(120);
-                Check("standard window keeps a light opaque foundation", window.Content is Panel { Background: SolidColorBrush brush }
+                Check("standard window keeps a light foundation or native Mica", window.SystemBackdrop is MicaBackdrop
+                    || window.Content is Panel { Background: SolidColorBrush brush }
                     && brush.Color.A == 255 && brush.Color.R >= 235 && brush.Color.G >= 235 && brush.Color.B >= 235,
                     new { window.Title, actualTheme = ((FrameworkElement)window.Content).ActualTheme.ToString() });
                 window.Close(); windows.Remove(window);

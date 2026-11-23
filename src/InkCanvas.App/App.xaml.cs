@@ -38,6 +38,61 @@ public partial class App : Application
             return match is null ? "" : match[prefix.Length..];
         }
 
+        if (Environment.GetCommandLineArgs().Contains("--register-file-associations", StringComparer.OrdinalIgnoreCase))
+        {
+            try { Platform.System.FileAssociationService.Register(Environment.ProcessPath); }
+            catch (Exception error) { Core.Diagnostics.FileLog.WriteLogToFile("文件关联注册失败 " + error.Message, Core.Diagnostics.LogType.Error); }
+            Exit(); return;
+        }
+        var msiCheck = Environment.GetCommandLineArgs().FirstOrDefault(argument => argument.StartsWith("--msicheck=", StringComparison.Ordinal));
+        if (msiCheck is not null)
+        {
+            string package = Environment.GetCommandLineArgs().Single(argument => argument.StartsWith("--msipackage=", StringComparison.Ordinal))["--msipackage=".Length..];
+            _ = Diagnostics.MsiRegression.Run(msiCheck["--msicheck=".Length..], package); return;
+        }
+        var previewWorker = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--pptpreviewworker=", StringComparison.Ordinal));
+        if (previewWorker is not null)
+        {
+            int parent = int.Parse(Environment.GetCommandLineArgs().Single(arg => arg.StartsWith("--pptpreviewparent=", StringComparison.Ordinal))["--pptpreviewparent=".Length..]);
+            string directory = Environment.GetCommandLineArgs().Single(arg => arg.StartsWith("--pptpreviewdirectory=", StringComparison.Ordinal))["--pptpreviewdirectory=".Length..];
+            _ = PptPreviewWorker.Run(previewWorker["--pptpreviewworker=".Length..], parent, directory);
+            return;
+        }
+        var moreMenuCheck = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--moremenucheck=", StringComparison.OrdinalIgnoreCase));
+        if (moreMenuCheck is not null) { _ = Diagnostics.MoreMenuRegression.Run(moreMenuCheck["--moremenucheck=".Length..]); return; }
+        var cloudSyncCheck = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--cloudsynccheck=", StringComparison.OrdinalIgnoreCase));
+        if (cloudSyncCheck is not null) { _ = Diagnostics.CloudSyncRegression.Run(cloudSyncCheck["--cloudsynccheck=".Length..]); return; }
+        var assistantCompatibility = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--assistantcompatcheck=", StringComparison.OrdinalIgnoreCase));
+        if (assistantCompatibility is not null) { _ = Diagnostics.AssistantCompatibilityRegression.Run(assistantCompatibility["--assistantcompatcheck=".Length..]); return; }
+        var aiConnectionsCheck = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--aiconnectionscheck=", StringComparison.OrdinalIgnoreCase));
+        if (aiConnectionsCheck is not null) { _ = Diagnostics.AiConnectionsRegression.Run(aiConnectionsCheck["--aiconnectionscheck=".Length..]); return; }
+        var boardChromeCheck = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--boardchromecheck=", StringComparison.OrdinalIgnoreCase));
+        if (boardChromeCheck is not null) { _ = Diagnostics.BoardChromeRegression.Run(boardChromeCheck["--boardchromecheck=".Length..]); return; }
+        var moduleResourcesCheck = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--moduleresourcescheck=", StringComparison.OrdinalIgnoreCase));
+        if (moduleResourcesCheck is not null) { _ = Diagnostics.ModuleResourcesRegression.Run(moduleResourcesCheck["--moduleresourcescheck=".Length..]); return; }
+        var resizeCheck = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--windowresizecheck="));
+        if (resizeCheck is not null) { _ = Diagnostics.WindowResizeRegression.Run(resizeCheck["--windowresizecheck=".Length..]); return; }
+        var extensionUpdatesCheck = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--extensionupdatescheck=", StringComparison.OrdinalIgnoreCase));
+        if (extensionUpdatesCheck is not null) { _ = Diagnostics.ExtensionUpdateRegression.Run(extensionUpdatesCheck["--extensionupdatescheck=".Length..]); return; }
+        var countdownCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--countdowncheck=", StringComparison.OrdinalIgnoreCase));
+        if (countdownCheck is not null) { _ = Diagnostics.CountdownWindowRegression.Run(countdownCheck["--countdowncheck=".Length..]); return; }
+        var iconCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--iconfontcheck=", StringComparison.OrdinalIgnoreCase));
+        if (iconCheck is not null) { _ = Diagnostics.IconFontRegression.Run(iconCheck["--iconfontcheck=".Length..]); return; }
+        var documentAiCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--documentaicheck=", StringComparison.OrdinalIgnoreCase));
+        if (documentAiCheck is not null) { _ = Diagnostics.DocumentAiRegression.Run(documentAiCheck["--documentaicheck=".Length..]); return; }
+        var libraryCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--librarycheck=", StringComparison.OrdinalIgnoreCase));
+        if (libraryCheck is not null) { _ = Diagnostics.LibraryRegression.Run(libraryCheck["--librarycheck=".Length..]); return; }
+        var screenArchiveFixture = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--screenarchivefixture=", StringComparison.OrdinalIgnoreCase));
+        if (screenArchiveFixture is not null) { Diagnostics.ScreenArchiveRegression.Fixture(screenArchiveFixture["--screenarchivefixture=".Length..]); return; }
+        var screenArchiveCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--screenarchivecheck=", StringComparison.OrdinalIgnoreCase));
+        if (screenArchiveCheck is not null) { _ = Diagnostics.ScreenArchiveRegression.Run(screenArchiveCheck["--screenarchivecheck=".Length..]); return; }
+        var archiveCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--archivecheck=", StringComparison.OrdinalIgnoreCase));
+        if (archiveCheck is not null) { _ = Diagnostics.ArchiveRegression.Run(archiveCheck["--archivecheck=".Length..]); return; }
+        var aiPluginCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--aiplugincheck=", StringComparison.OrdinalIgnoreCase));
+        if (aiPluginCheck is not null) { _ = Diagnostics.AiPluginRegression.Run(aiPluginCheck["--aiplugincheck=".Length..]); return; }
+        var micaCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--micacheck=", StringComparison.OrdinalIgnoreCase));
+        if (micaCheck is not null) { _ = Diagnostics.MicaWindowRegression.Run(micaCheck["--micacheck=".Length..]); return; }
+
         var sideBoardLongCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--sideboardcheck-long=", StringComparison.OrdinalIgnoreCase));
         if (sideBoardLongCheck is not null) { _ = Diagnostics.SideBoardRegression.Run(sideBoardLongCheck["--sideboardcheck-long=".Length..], cycles: 500); return; }
         var sideBoardCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--sideboardcheck=", StringComparison.OrdinalIgnoreCase));
@@ -47,6 +102,7 @@ public partial class App : Application
         if (aiCheck is not null) { _ = Diagnostics.AssistantRegression.Run(aiCheck["--aicheck=".Length..]); return; }
         var aiBoardCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--aiboardcheck=", StringComparison.OrdinalIgnoreCase));
         if (aiBoardCheck is not null) { _ = Diagnostics.AiBoardRegression.Run(aiBoardCheck["--aiboardcheck=".Length..]); return; }
+
         var inkWashCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--inkwashcheck=", StringComparison.OrdinalIgnoreCase));
         if (inkWashCheck is not null) { _ = Diagnostics.InkWashRegression.Run(inkWashCheck["--inkwashcheck=".Length..]); return; }
         var penContrastCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--pencontrastcheck=", StringComparison.OrdinalIgnoreCase));
@@ -61,6 +117,10 @@ public partial class App : Application
         if (storageCheck is not null) { _ = Diagnostics.StorageUpdateRegression.Run(storageCheck["--storagecheck=".Length..]); return; }
         var pptCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--pptcheck=", StringComparison.OrdinalIgnoreCase));
         if (pptCheck is not null) { _ = Diagnostics.PptRegression.Run(pptCheck["--pptcheck=".Length..]); return; }
+        var pptNavigationCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--pptnavlayoutcheck=", StringComparison.OrdinalIgnoreCase));
+        var pptPreviewCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--pptpreviewcheck=", StringComparison.OrdinalIgnoreCase));
+        if (pptPreviewCheck is not null) { _ = Diagnostics.PptPreviewRegression.Run(pptPreviewCheck["--pptpreviewcheck=".Length..]); return; }
+        if (pptNavigationCheck is not null) { _ = Diagnostics.PptNavigationLayoutRegression.Run(pptNavigationCheck["--pptnavlayoutcheck=".Length..]); return; }
         var updateSourceCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--updatesourcecheck=", StringComparison.OrdinalIgnoreCase));
         if (updateSourceCheck is not null) { _ = Diagnostics.UpdateSourceRegression.Run(updateSourceCheck["--updatesourcecheck=".Length..]); return; }
         var toolbarAnimationCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--toolbaranimationcheck=", StringComparison.OrdinalIgnoreCase));
@@ -96,6 +156,8 @@ public partial class App : Application
         var boardStorageCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--boardstoragecheck=", StringComparison.OrdinalIgnoreCase));
         if (boardStorageCheck is not null) { _ = Diagnostics.BoardStorageRegression.Run(boardStorageCheck.Substring("--boardstoragecheck=".Length)); return; }
         var boardPageCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--boardpagecheck=", StringComparison.OrdinalIgnoreCase));
+        var boardPerformanceCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--boardperformancecheck=", StringComparison.OrdinalIgnoreCase));
+        if (boardPerformanceCheck is not null) { _ = Diagnostics.BoardPerformanceRegression.Run(boardPerformanceCheck["--boardperformancecheck=".Length..]); return; }
         if (boardPageCheck is not null) { _ = Diagnostics.BoardPageRegression.Run(boardPageCheck["--boardpagecheck=".Length..]); return; }
         var pageManagementCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--pagemanagementcheck=", StringComparison.OrdinalIgnoreCase));
         if (pageManagementCheck is not null) { _ = Diagnostics.BoardManagementRegression.Run(pageManagementCheck["--pagemanagementcheck=".Length..]); return; }
@@ -105,6 +167,8 @@ public partial class App : Application
         if (shortcutCheck is not null) { _ = Diagnostics.ShortcutRegression.Run(shortcutCheck["--shortcutcheck=".Length..]); return; }
         var geometryCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--geometrycheck=", StringComparison.OrdinalIgnoreCase));
         if (geometryCheck is not null) { _ = Diagnostics.GeometryRegression.Run(geometryCheck[16..]); return; }
+        var pdfLifetimeCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--pdflifetimecheck=", StringComparison.OrdinalIgnoreCase));
+        if (pdfLifetimeCheck is not null) { _ = Diagnostics.PdfRegression.Run(pdfLifetimeCheck["--pdflifetimecheck=".Length..], lifetimeOnly: true); return; }
         var pdfCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--pdfcheck=", StringComparison.OrdinalIgnoreCase));
         if (pdfCheck is not null) { _ = Diagnostics.PdfRegression.Run(pdfCheck[11..]); return; }
         var extensionsCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--extensionscheck=", StringComparison.OrdinalIgnoreCase));
@@ -188,12 +252,16 @@ public partial class App : Application
         var services = new AppServices();
         _shell = new ShellController(services);
         _shell.Start();
+        var boardArgument = Environment.GetCommandLineArgs().Skip(1).FirstOrDefault(a => !a.StartsWith("--") && Path.GetExtension(a).Equals(".icink", StringComparison.OrdinalIgnoreCase));
+        if (boardArgument is not null) _ = _shell.OpenLibraryDocumentAsync(boardArgument);
         var pdfArgument = Environment.GetCommandLineArgs().Skip(1).FirstOrDefault(a => a.StartsWith("--pdf=", StringComparison.OrdinalIgnoreCase)
             || !a.StartsWith("--") && Path.GetExtension(a).Equals(".pdf", StringComparison.OrdinalIgnoreCase));
         if (pdfArgument is not null)
         {
             string pdfPath = pdfArgument.StartsWith("--pdf=", StringComparison.OrdinalIgnoreCase) ? pdfArgument[6..] : pdfArgument;
             _ = _shell.OpenPdfAsync(pdfPath);
+            var activationReport = Environment.GetCommandLineArgs().FirstOrDefault(argument => argument.StartsWith("--pdfactivationreport=", StringComparison.Ordinal));
+            if (activationReport is not null) _ = Diagnostics.PdfActivationRegression.ObserveAsync(_shell, pdfPath, activationReport["--pdfactivationreport=".Length..]);
         }
 
         // "--board" opens straight into the blackboard, mirroring the original launcher switches.

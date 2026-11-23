@@ -81,7 +81,7 @@ headless 自检钩子：`--shot=<dir>`（各窗激活后自渲染 RenderTargetBi
 |---|---|---|
 | `MW_SimulatePressure&InkToShape.cs` 笔锋 | `Core/Ink/TaperProfile.cs` | **重写并验证**：改为增量因果计算，单测 + 运行时自检钉住「提交几何 == 最后一帧」 |
 | `MW_SelectionGestures.cs` 选区手势 | `Core/Selection/SelectionGeometry.cs` | 已验证（13 项单测 + 实机缩放/撤销） |
-| `MW_TimeMachine.cs` / `Helpers/TimeMachine.cs` | `Core/Replay/*` + `Views/ReplayWindow.cs` | 已验证（13 项单测 + 实机回放） |
+| `MW_TimeMachine.cs` / `Helpers/TimeMachine.cs` | `Core/Replay/*` + `Views/ReplayWindow.cs` | 已验证（13 项单测 + 实机回放）。此行映射的是保留的本体「墨迹回放」；课堂录制 / 会话回放部分已拆为独立插件「时光机」，不在此迁移表内 |
 | `Helpers/AutoUpdateHelper.cs` | `Core/Update/*` + `Features/Update/UpdateService.cs` | 已验证（26 项单测；下载长度校验；安装前确认） |
 | `Helpers/EdgeGestureUtil.cs` | `Platform/System/EdgeGestureService.cs` | 已验证属性写入成功；补上原实现缺失的 `Commit()` |
 | `Helpers/WinTabWindowsChecker.cs` | `Platform/System/WindowEnumerator.cs` | 以 `EnumWindows` 替代 WPF-only 的 UI Automation |

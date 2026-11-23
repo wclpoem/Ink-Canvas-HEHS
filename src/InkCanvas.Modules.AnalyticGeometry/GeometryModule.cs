@@ -10,11 +10,12 @@ public sealed class GeometryModule : IApplicationModule
     {
         _service = new GeometryService(context.GetService<ICanvasToolsHost>());
         context.RegisterCleanup(_service.Dispose); context.Export<IAnalyticGeometryService>(_service);
+        _service.RegisterAssistant(context);
     }
     public void Stop() { _service?.Dispose(); _service = null; }
 }
 
-internal sealed class GeometryService(ICanvasToolsHost host) : IAnalyticGeometryService, IDisposable
+internal sealed partial class GeometryService(ICanvasToolsHost host) : IAnalyticGeometryService, IDisposable
 {
     private GeometryWorkbenchWindow _window;
     private bool _disposed;

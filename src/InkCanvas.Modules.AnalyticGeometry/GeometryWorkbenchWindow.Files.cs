@@ -128,7 +128,23 @@ public sealed partial class GeometryWorkbenchWindow
         var file = await picker.PickSaveFileAsync();
         if (file is null || _closed) return;
         await ConstructionDocument.SaveAsync(file.Path, state, _lifetime.Token);
+        if (_host.DocumentAi?.Available == true)
+            _host.DocumentAi.Saved(new InkCanvas.Host.Contracts.AiDocumentRequest(file.Path, "inkcanvas.analytic-geometry")
+            { ExportImages = (directory, token) => ExportAiGeometryAsync(state, directory, token) });
         SetStatus("已保存构造、依赖关系与视图。");
+    }
+
+    private static async IAsyncEnumerable<InkCanvas.Host.Contracts.AiDocumentImage> ExportAiGeometryAsync(ConstructionSnapshot state, string directory,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token)
+    {
+        var evaluation = await Task.Run(() => new ConstructionKernel().Evaluate(state), token);
+        using var svg = CanvasSvgDocument.LoadFromXml(CanvasDevice.GetSharedDevice(), ConstructionExport.Svg(state, evaluation));
+        using var target = new CanvasRenderTarget(CanvasDevice.GetSharedDevice(), 1600, 1200, 96);
+        using (var drawing = target.CreateDrawingSession())
+        { drawing.Clear(Microsoft.UI.Colors.White); drawing.Transform = Matrix3x2.CreateScale(1.6f); drawing.DrawSvg(svg, new Windows.Foundation.Size(1000, 750)); }
+        string output = Path.Combine(directory, "geometry.png");
+        await target.SaveAsync(output, CanvasBitmapFileFormat.Png).AsTask(token);
+        yield return new(output, 1, "geometry", 1600, 1200);
     }
 
     private async Task ExportAsync(string format)

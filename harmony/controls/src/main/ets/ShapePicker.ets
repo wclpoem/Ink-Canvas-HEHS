@@ -1,4 +1,4 @@
-// @parity src/InkCanvas.App/Views/PickerWindows.cs
+// @parity src/InkCanvas.Controls/Controls/ShapePreview.cs
 // 24 图形菜单：预览由 core ShapeGenerator 生成轮廓（图形语义与绘制一致）。
 import { generate, buildUnionContours, InkPoint } from '@inkcanvas/core';
 import type { StrokeSummary, StrokeAttributesInput } from '@inkcanvas/core';

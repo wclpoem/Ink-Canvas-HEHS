@@ -17,7 +17,7 @@ namespace InkCanvas.App.Diagnostics;
 
 internal static class PdfRegression
 {
-    public static async Task Run(string directory)
+    public static async Task Run(string directory, bool lifetimeOnly = false)
     {
         directory = Path.GetFullPath(directory); Directory.CreateDirectory(directory);
         using var services = new AppServices(Path.Combine(directory, "settings"));
@@ -29,8 +29,10 @@ internal static class PdfRegression
         {
             await Task.Delay(300);
             var module = services.Modules.GetExport<IPdfWorkspaceService>() ?? throw new InvalidOperationException("PDF module did not start. " + string.Join(" / ", services.Modules.Status.Select(status => status.Id + " " + status.State + " " + status.Error)));
-            var method = module.GetType().Assembly.GetType("InkCanvas.Modules.Pdf.PdfDiagnostics", true)!.GetMethod("RunAsync", BindingFlags.Public | BindingFlags.Static)!;
+            string diagnostic = lifetimeOnly ? "PdfRasterizerDiagnostics" : "PdfDiagnostics";
+            var method = module.GetType().Assembly.GetType("InkCanvas.Modules.Pdf." + diagnostic, true)!.GetMethod("RunAsync", BindingFlags.Public | BindingFlags.Static)!;
             await (Task)method.Invoke(null, new object[] { shell.WorkspaceHost, directory });
+            if (lifetimeOnly) return;
             string source = Path.Combine(directory, "classroom.pdf");
             await module.OpenAsync(source); await Task.Delay(250);
             var workspace = shell.OpenWindows.OfType<IDocumentWorkspace>().Single();

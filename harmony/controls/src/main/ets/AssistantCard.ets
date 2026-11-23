@@ -26,6 +26,7 @@ export struct AssistantCard {
   @Prop cardMaxHeight: number = 480;
   @Prop canPaste: boolean = false;
   @Prop modeEnabled: boolean = true;
+  @Prop demoMode: boolean = false;
   @State private question: string = '';
   onClose: () => void = () => {
   };
@@ -133,6 +134,13 @@ export struct AssistantCard {
           .backgroundColor(this.dark ? '#33000000' : '#0A000000')
       }
 
+      if (this.demoMode) {
+        Text('演示模式：当前显示固定示例，尚未连接 AI 服务。')
+          .fontSize(12)
+          .fontColor(this.tokens().textSecondary)
+          .width('100%')
+          .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+      }
       if (this.state === AssistantState.Recognizing) {
         Row({ space: 10 }) {
           LoadingProgress().width(18).height(18).color(this.tokens().accent)

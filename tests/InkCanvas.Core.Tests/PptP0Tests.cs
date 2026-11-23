@@ -269,12 +269,13 @@ public sealed class PptP0Tests : IDisposable
     public void Layout_BottomLeft_PlacesInsideTopLeft()
     {
         var result = NavigationLayout.Place(
-            NavigationCorner.BottomLeft, new ScreenBox(0, 0, 1920, 1080), 1.0, true);
+            NavigationCorner.BottomLeft, new ScreenBox(0, 0, 1920, 1080), 310, 50, 8,
+            new ScreenBox(650, 1022, 620, 50));
 
-        Assert.Equal(20, result.X);
-        Assert.Equal(1080 - 52 - 20, result.Y);
-        Assert.Equal(160, result.Width);
-        Assert.Equal(52, result.Height);
+        Assert.Equal(8, result.X);
+        Assert.Equal(1022, result.Y);
+        Assert.Equal(310, result.Width);
+        Assert.Equal(50, result.Height);
         Assert.Equal(NavigationCorner.BottomLeft, result.Corner);
     }
 
@@ -282,12 +283,12 @@ public sealed class PptP0Tests : IDisposable
     public void Layout_SideRight_PlacesRightCentered()
     {
         var result = NavigationLayout.Place(
-            NavigationCorner.SideRight, new ScreenBox(0, 0, 1920, 1080), 1.0, false);
+            NavigationCorner.SideRight, new ScreenBox(0, 0, 1920, 1080), 50, 310, 8);
 
-        Assert.Equal(1920 - 52 - 20, result.X);
-        Assert.Equal((1080 - 160) / 2, result.Y);
-        Assert.Equal(52, result.Width);
-        Assert.Equal(160, result.Height);
+        Assert.Equal(1920 - 50 - 8, result.X);
+        Assert.Equal((1080 - 310) / 2, result.Y);
+        Assert.Equal(50, result.Width);
+        Assert.Equal(310, result.Height);
     }
 
     [Fact]
@@ -307,11 +308,34 @@ public sealed class PptP0Tests : IDisposable
     public void Layout_ClampsToSmallShowBounds()
     {
         var bounds = new ScreenBox(100, 200, 100, 100);
-        var result = NavigationLayout.Place(NavigationCorner.BottomRight, bounds, 2.0, true);
+        var result = NavigationLayout.Place(NavigationCorner.BottomRight, bounds, 620, 100, 16);
 
         Assert.True(result.Width <= bounds.Width);
         Assert.True(result.Height <= bounds.Height);
         Assert.InRange(result.X, bounds.X, bounds.X + bounds.Width - result.Width);
         Assert.InRange(result.Y, bounds.Y, bounds.Y + bounds.Height - result.Height);
+    }
+
+    [Theory]
+    [InlineData(NavigationCorner.BottomLeft)]
+    [InlineData(NavigationCorner.BottomRight)]
+    public void Layout_NarrowReadingView_MovesAboveToolbar(NavigationCorner corner)
+    {
+        var result = NavigationLayout.Place(corner, new ScreenBox(-900, 120, 900, 600),
+            310, 50, 8, new ScreenBox(-750, 662, 600, 50));
+
+        Assert.Equal(604, result.Y);
+        Assert.InRange(result.X, -900, -310);
+    }
+
+    [Fact]
+    public void Layout_AlignsToMovedToolbarOnSecondaryDisplay()
+    {
+        var result = NavigationLayout.Place(NavigationCorner.BottomRight,
+            new ScreenBox(-2560, -180, 2560, 1440), 620, 100, 16,
+            new ScreenBox(-1800, 900, 1000, 100));
+
+        Assert.Equal(-636, result.X);
+        Assert.Equal(900, result.Y);
     }
 }

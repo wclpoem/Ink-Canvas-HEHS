@@ -1,0 +1,9 @@
+{
+  "Id": "inkcanvas.time-machine",
+  "Name": "时光机",
+  "Version": "1.0.1",
+  "ApiVersion": 1,
+  "EntryAssembly": "InkCanvas.Modules.TimeMachine.dll",
+  "EntryType": "InkCanvas.Modules.TimeMachine.TimeMachineModule",
+  "PackageFiles": []
+}

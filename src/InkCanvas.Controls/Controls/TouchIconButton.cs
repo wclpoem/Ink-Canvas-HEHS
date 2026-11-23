@@ -1,4 +1,4 @@
-using InkCanvas.Controls.Animation;
+﻿using InkCanvas.Controls.Animation;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -26,9 +26,13 @@ public sealed class TouchIconButton : Button
         nameof(Glyph), typeof(string), typeof(TouchIconButton),
         new PropertyMetadata("", OnGlyphChanged));
 
+    public static readonly DependencyProperty IconSizeProperty = DependencyProperty.Register(
+        nameof(IconSize), typeof(double), typeof(TouchIconButton),
+        new PropertyMetadata(20d, OnIconSizeChanged));
+
     private readonly FontIcon _icon;
-    private readonly TextBlock _aiText;
     private readonly Viewbox _glyphHost;
+    private readonly FontIcon _aiText;
     private readonly Border _contentBorder;
     private readonly List<FontIcon> _icons = new();
     private TextBlock _label;
@@ -40,28 +44,19 @@ public sealed class TouchIconButton : Button
     private string _labelText;
     private bool _showLabel = true;
     private double _labelFontSize = 11;
+    private double _labelMaxWidth = double.PositiveInfinity;
     private double _iconAreaHeight = double.NaN;
     private Thickness _labelMargin = new(0, -1, 0, 0);
 
     public TouchIconButton()
     {
-        MinWidth = 40;
-        MinHeight = 40;
-        Padding = new Thickness(8);
-        CornerRadius = new CornerRadius(8);
-        BorderThickness = new Thickness(0);
-        Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-        HorizontalAlignment = HorizontalAlignment.Center;
-        VerticalAlignment = VerticalAlignment.Center;
-        // Center the content cell explicitly rather than relying on the Button template's
-        // default content alignment, so the icon stays centered at every configured size.
-        HorizontalContentAlignment = HorizontalAlignment.Center;
-        VerticalContentAlignment = VerticalAlignment.Center;
+        // Theme-style defaults allow an explicit module style to override touch sizing.
+        DefaultStyleKey = typeof(TouchIconButton);
 
         _icon = new FontIcon
         {
-            FontFamily = new FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
-            FontSize = 20,
+            FontFamily = IconFontStyle.Font,
+            FontSize = IconSize,
             IsTextScaleFactorEnabled = false,
             // Apply the current value explicitly: assigning a value equal to the DP default
             // does not raise the change callback, which would leave the icon blank.
@@ -69,17 +64,17 @@ public sealed class TouchIconButton : Button
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
-_aiText = AiGlyph.CreateLabel(AiGlyph.ButtonLabelSize);
         _glyphHost = new Viewbox
         {
             Child = _icon,
-            Width = 24,
-            Height = 24,
+            Width = Math.Ceiling(IconSize + 4),
+            Height = Math.Ceiling(IconSize + 4),
             Stretch = Stretch.Uniform,
             StretchDirection = StretchDirection.DownOnly,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
+        _aiText = AiGlyph.CreateLabel(AiGlyph.ButtonLabelSize);
         _icons.Add(_icon);
         _contentBorder = new Border
         {
@@ -88,17 +83,16 @@ _aiText = AiGlyph.CreateLabel(AiGlyph.ButtonLabelSize);
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Stretch,
         };
+        ActualThemeChanged += (_, _) => ApplyVisualState();
         Content = _contentBorder;
         RebuildContent();
-
 
         PointerPressed += (_, _) => { if (Motion.AnimationsEnabled) Motion.Pulse(this, 0.92f); };
         Loaded += (_, _) =>
         {
-            UpdateContent();
+            UpdateGlyph();
             ApplyVisualState();
         };
-        ActualThemeChanged += (_, _) => ApplyVisualState();
     }
 
     public bool IsSelected
@@ -115,14 +109,8 @@ _aiText = AiGlyph.CreateLabel(AiGlyph.ButtonLabelSize);
 
     public double IconSize
     {
-        get => _icon.FontSize;
-        set
-        {
-            _icon.FontSize = value;
-            // Keep the complete glyph line box inside the icon cell, including its descender.
-            _glyphHost.Width = Math.Ceiling(value + 4);
-            _glyphHost.Height = Math.Ceiling(value + 4);
-        }
+        get => (double)GetValue(IconSizeProperty);
+        set => SetValue(IconSizeProperty, value);
     }
 
     /// <summary>Override for glyphs that live outside Segoe Fluent Icons (e.g. geometric shapes).</summary>
@@ -151,6 +139,12 @@ _aiText = AiGlyph.CreateLabel(AiGlyph.ButtonLabelSize);
         get => _labelFontSize;
         // Stored so a later RebuildContent (IconAreaHeight/LabelMargin change) keeps the size.
         set { _labelFontSize = value; if (_label is not null) _label.FontSize = value; }
+    }
+
+    public double LabelMaxWidth
+    {
+        get => _labelMaxWidth;
+        set { _labelMaxWidth = value; RebuildContent(); ApplyVisualState(); }
     }
 
     /// <summary>
@@ -246,18 +240,18 @@ _aiText = AiGlyph.CreateLabel(AiGlyph.ButtonLabelSize);
 
     private void RebuildContent()
     {
-        UIElement body = _customContent ?? IconBody();
+        UIElement body = _customContent ?? (UIElement)_glyphHost;
         // WinUI does not set FrameworkElement.Parent inside unrooted trees, so Parent-based
         // detaching misses the real owner. Clear the containers we own explicitly instead:
         // the body may sit in _contentBorder, the previous icon area, or the caption stack.
         if (_lastIconArea is not null)
         {
-            _lastIconArea.Children.Clear();
+            _lastIconArea.Children.Remove(body);
             _lastIconArea = null;
         }
         if (_lastStack is not null)
         {
-            _lastStack.Children.Clear();
+            _lastStack.Children.Remove(body);
             _lastStack = null;
         }
         _contentBorder.Child = null;
@@ -271,6 +265,8 @@ _aiText = AiGlyph.CreateLabel(AiGlyph.ButtonLabelSize);
         {
             Text = _labelText,
             FontSize = _labelFontSize,
+            MaxWidth = _labelMaxWidth,
+            TextTrimming = TextTrimming.CharacterEllipsis,
             TextAlignment = TextAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
             Visibility = _showLabel ? Visibility.Visible : Visibility.Collapsed,
@@ -305,35 +301,26 @@ _aiText = AiGlyph.CreateLabel(AiGlyph.ButtonLabelSize);
         => ((TouchIconButton)d).ApplyVisualState();
 
     private static void OnGlyphChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
-        => ((TouchIconButton)d).UpdateContent();
+        => ((TouchIconButton)d).UpdateGlyph();
 
-    /// <summary>
-    /// Swaps the button content for the current glyph. <see cref="Glyphs.Ai"/> is a sentinel:
-    /// it renders as a literal "AI" label instead of a Segoe Fluent Icons codepoint.
-    /// </summary>
-    private void UpdateContent()
+    private static void OnIconSizeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
-        // A vector pictogram (pass-through toggle) owns the content; leave it untouched.
-        if (_customContent is not null) return;
-
-        if (Glyph == Glyphs.Ai)
-        {
-            RebuildContent();
-            ApplyVisualState();
-            return;
-        }
-
-        _icon.Glyph = Glyph ?? string.Empty;
-        RebuildContent();
-        ApplyVisualState();
+        var button = (TouchIconButton)d;
+        if (button._glyphHost is null) return;
+        double size = (double)e.NewValue;
+        button._icon.FontSize = size;
+        if (button._aiText is not null) button._aiText.FontSize = size;
+        // Keep the complete glyph line box inside the icon cell, including its descender.
+        button._glyphHost.Width = Math.Ceiling(size + 4);
+        button._glyphHost.Height = Math.Ceiling(size + 4);
     }
 
-    /// <summary>
-    /// AI 标记走统一资源层（<see cref="AiGlyph"/>），普通图标仍用 FontIcon；
-    /// 两者的度量盒一致，切换不会改变按钮尺寸或点击区。
-    /// </summary>
-    private UIElement IconBody() => Glyph == Glyphs.Ai ? _aiText : _glyphHost;
-
+    private void UpdateGlyph()
+    {
+        if (_glyphHost is null) return;
+        _icon.Glyph = Glyph == Glyphs.Ai ? string.Empty : Glyph ?? string.Empty;
+        _glyphHost.Child = Glyph == Glyphs.Ai ? _aiText : _icon;
+    }
 
     /// <summary>Re-apply foreground/selection after theme brush properties change.</summary>
     public void RefreshVisual() => ApplyVisualState();
@@ -353,9 +340,9 @@ _aiText = AiGlyph.CreateLabel(AiGlyph.ButtonLabelSize);
     {
         Brush fg = ContentForeground
             ?? ThemeBrushes.Resolve(this, IsSelected ? "IcAccentBrush" : "IcTextPrimaryBrush");
+        _aiText.Foreground = fg;
         foreach (var icon in _icons) icon.Foreground = fg;
         if (_label is not null) _label.Foreground = fg;
-        _aiText.Foreground = fg;
 
         if (SelectionBackground is not null)
         {

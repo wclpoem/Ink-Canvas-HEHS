@@ -118,6 +118,9 @@ internal static class ActivationRegression
             {
                 var navigation = new PptNavigationWindow(placement, shell, 1); created.Add(navigation);
                 await Check("show PPT navigation " + placement, () => navigation.Update(new PptSnapshot(), true, true));
+                checks.Add(new { check = "PPT navigation begins at full window opacity " + placement, passed = navigation.WindowOpacity == 1 });
+                navigation.RecordInteraction();
+                checks.Add(new { check = "PPT navigation returns to full opacity on interaction " + placement, passed = navigation.TargetOpacity == 1 });
                 CheckMessages(WindowChrome.GetHwnd(navigation), "PPT navigation " + placement, checks);
             }
             if (shell.Overlay.ClickThrough) shell.ToggleClickThrough();

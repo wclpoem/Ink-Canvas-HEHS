@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\InkCanvas.Host.Contracts\InkCanvas.Host.Contracts.csproj" />
+    <ProjectReference Include="..\InkCanvas.Controls\InkCanvas.Controls.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="module.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Assets\Providers\*.svg" LogicalName="InkCanvas.AiIcons.%(Filename)%(Extension)" />
+    <Content Include="Assets\Providers\LICENSE.txt" Link="Licenses\ProviderIcons.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\Providers\OpenCode-LICENSE.txt" Link="Licenses\OpenCode.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- These files duplicate types already compiled into InkCanvas.Core / InkCanvas.Platform
+         (same namespaces). Local implementations win so App and tests see a single definition. -->
+    <Compile Remove="Engine\AiResponseGate.cs" />
+    <Compile Remove="Engine\AnnotationLayer.cs" />
+    <Compile Remove="Engine\AssistantLayout.cs" />
+    <Compile Remove="Engine\AssistantMachine.cs" />
+    <Compile Remove="Engine\AssistantReplace.cs" />
+    <Compile Remove="Engine\AssistantTeachingPolicy.cs" />
+    <Compile Remove="Engine\EquationVerifier.cs" />
+    <Compile Remove="Engine\LocalCorrectionFlow.cs" />
+    <Compile Remove="Engine\LocalFormulaTranscriber.cs" />
+    <Compile Remove="Engine\RegionTextMapper.cs" />
+    <Compile Remove="Engine\SseStreamParser.cs" />
+    <Compile Remove="Networking\AiClient.cs" />
+    <Compile Remove="Networking\AiConfig.cs" />
+    <Compile Remove="Networking\AiMockScript.cs" />
+  </ItemGroup>
+</Project>

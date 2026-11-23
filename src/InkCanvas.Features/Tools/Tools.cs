@@ -139,6 +139,18 @@ public static class ScreenshotService
         await bitmap.SaveAsync(path, CanvasBitmapFileFormat.Png);
     }
 
+    public static async Task<byte[]> EncodePngAsync(byte[] bgra, int width, int height)
+    {
+        using var bitmap = CanvasBitmap.CreateFromBytes(CanvasDevice.GetSharedDevice(), bgra, width, height,
+            DirectXPixelFormat.B8G8R8A8UIntNormalized);
+        using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+        await bitmap.SaveAsync(stream, CanvasBitmapFileFormat.Png);
+        var bytes = new byte[checked((int)stream.Size)];
+        using var reader = new Windows.Storage.Streams.DataReader(stream.GetInputStreamAt(0));
+        await reader.LoadAsync((uint)bytes.Length); reader.ReadBytes(bytes);
+        return bytes;
+    }
+
     public static async Task<string> CaptureToFileAsync(string directory, int x, int y, int width, int height,
         bool dateFolders = false)
     {

@@ -26,11 +26,22 @@ public sealed class InkSurface : UserControl, IDisposable
     private readonly Dictionary<uint, OverlayPointer> _activePointers = new();
     private bool _disposed;
     public bool IsRenderingSuspended { get; private set; }
+    private bool _presentationPaused;
+    /// <summary>Lets a document move a cached composition surface while retaining input and ink caches.</summary>
+    public void PausePresentation(bool paused)
+    {
+        if (_presentationPaused == paused) return;
+        _presentationPaused = paused;
+        _canvas.Opacity = paused ? 0 : 1;
+        if (!paused && !IsRenderingSuspended) _canvas.Invalidate();
+    }
     public event Action InputBegan;
     /// <summary>Lets a continuous document bind the touched page before its first sample.</summary>
     public event Action<OverlayPointer> InputStarting;
     public event Action InputEnded;
     public event Action InputCanceled;
+    /// <summary>Signals that the current controller view has been drawn for a host presentation handover.</summary>
+    public event Action FrameDrawn;
     public bool DrawCommitted { get; set; } = true;
     /// <summary>Optional page extent in document coordinates. Null keeps an infinite canvas.</summary>
     public InkCanvas.Core.Ink.Rect? ContentBounds { get; set; }
@@ -112,7 +123,7 @@ public sealed class InkSurface : UserControl, IDisposable
     // surface can present — and Win2D coalesces repeated invalidations into one draw. There is
     // no dispatcher hop, no timer, and no redraw of an unchanged scene: CanvasControl only draws
     // when invalidated, never on a free-running loop.
-    private void OnInvalidated() { if (!IsRenderingSuspended) _canvas.Invalidate(); }
+    private void OnInvalidated() { if (!IsRenderingSuspended && !_presentationPaused) _canvas.Invalidate(); }
 
     public void SuspendRendering()
     {
@@ -130,7 +141,7 @@ public sealed class InkSurface : UserControl, IDisposable
 
     private void OnDraw(CanvasControl sender, CanvasDrawEventArgs args)
     {
-        if (_controller is null || _scene is null || IsRenderingSuspended) return;
+        if (_controller is null || _scene is null || IsRenderingSuspended || _presentationPaused) return;
         _controller.ViewCenter = new System.Numerics.Vector2(
             (float)ActualWidth / 2, (float)ActualHeight / 2);
         Microsoft.Graphics.Canvas.CanvasActiveLayer clip = null;
@@ -147,6 +158,7 @@ public sealed class InkSurface : UserControl, IDisposable
         _scene.DrawLive(args.DrawingSession, _controller);
         }
         if (ContentBounds is not null) _scene.DrawSelectionOverlay(args.DrawingSession, _controller);
+        FrameDrawn?.Invoke();
     }
 
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
@@ -180,6 +192,8 @@ public sealed class InkSurface : UserControl, IDisposable
         // WinUI may coalesce several digitizer packets into one routed event.
         // Intermediate points are newest first. Preserve their original timestamps.
         var points = e.GetIntermediatePoints(this);
+        // Erase every sample, then update board layers once for the coalesced input packet.
+        using var eraseUpdate = _controller.Tool == InkTool.Eraser ? _controller.Document.DeferNotifications() : null;
         for (int i = points.Count - 1; i >= 0; i--)
         {
             var intermediate = Translate(e, points[i]);

@@ -7,11 +7,11 @@ public sealed partial class PdfWindow
     private void ReleaseInactiveRendering()
     {
         StopScrollMotion();
+        ReleaseNavigationPicture();
         _renderCancellation?.Cancel();
         _detailCancellation?.Cancel();
         _detailTimer.Stop();
         _generation++;
-        _requestedPages = Array.Empty<int>();
         ReleasePagePreviews();
         _detail?.Dispose();
         _detail = null;

@@ -12,7 +12,7 @@ public sealed class AiGlyphResourceTests
     {
         "src/InkCanvas.Controls/Controls/TouchIconButton.cs",
         "src/InkCanvas.App/Views/ToolkitWindow.cs",
-        "src/InkCanvas.App/Views/AssistantWindow.cs",
+        "src/InkCanvas.Modules.AiAssistant/AssistantWindow.cs",
         "src/InkCanvas.App/Views/SlideNavigatorWindow.cs",
     };
 
@@ -47,21 +47,24 @@ public sealed class AiGlyphResourceTests
             string path = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
             Assert.True(File.Exists(path), relative);
 
-            string source = File.ReadAllText(path);
+            string source = relative.EndsWith("AssistantWindow.cs", StringComparison.Ordinal)
+                ? string.Join("\n", Directory.GetFiles(Path.GetDirectoryName(path)!, "AssistantWindow*.cs").Select(File.ReadAllText))
+                : File.ReadAllText(path);
             Assert.Contains("AiGlyph.Create", source);
             Assert.DoesNotContain("Text = \"AI\"", source);
         }
     }
 
     [Fact]
-    public void HelpEntry_StaysSeparateFromAiEntry()
+    public void HelpEntry_UsesSettingsNavigation()
     {
         string root = RepoRoot();
         string bar = File.ReadAllText(Path.Combine(
             root, "src/InkCanvas.Controls/Controls/FloatingBar.cs"));
 
         Assert.Contains("Glyphs.Ai", bar);
-        Assert.Contains("Glyphs.Help", bar);
-        Assert.Contains("操作指南", bar);
+        string guide = File.ReadAllText(Path.Combine(root, "src/InkCanvas.App/Views/SettingsWindow.Guide.cs"));
+        Assert.Contains("Glyphs.Help", guide);
+        Assert.Contains("AddSubPage(\"关于与更新\", \"操作指南\"", guide);
     }
 }

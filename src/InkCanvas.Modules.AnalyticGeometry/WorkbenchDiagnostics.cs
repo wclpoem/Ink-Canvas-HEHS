@@ -76,6 +76,7 @@ public static class WorkbenchDiagnostics
             window.FormulaInput.Text = "f(x)=";
             await Task.Delay(150);
             Check("incomplete input hides the previous mathematical preview", Descendants(window.Content).OfType<MathFormulaView>()
+                .Where(view => AutomationProperties.GetName(view) == "输入公式排版")
                 .All(view => view.Visibility == Visibility.Collapsed));
             window.FormulaInput.Text = "";
             keyboardPanel.IsExpanded = false;
@@ -120,7 +121,8 @@ public static class WorkbenchDiagnostics
             window.Keyboard.SendKey("x²");
             Check("native math keyboard preserves caret insertion", input.Text == "x^2");
             input.Text = "Integral(f,x,0,3)";
-            var tabs = Descendants(window.Content).OfType<Controls.Controls.SegmentedSelector>().First();
+            var tabs = Descendants(window.Content).OfType<Controls.Controls.SegmentedSelector>()
+                .First(selector => AutomationProperties.GetName(selector) == "工作区视图切换");
             tabs.SelectedIndex = 2;
             await window.CalculateCasAsync();
             await Task.Delay(80);

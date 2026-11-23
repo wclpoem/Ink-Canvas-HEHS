@@ -18,6 +18,7 @@ public sealed class ScreenAnnotationMemory
         public UndoHistoryState History;
         public Matrix3x2 View = Matrix3x2.Identity, BaseView = Matrix3x2.Identity;
         public ScreenViewSnapshot Anchor;
+        public Matrix3x2 WorldToContent = Matrix3x2.Identity;
     }
     private readonly InkController _controller;
     private readonly BoardService _images;
@@ -32,6 +33,21 @@ public sealed class ScreenAnnotationMemory
     private bool _preserveRegions;
     public string CurrentKey => _key;
     public int RememberedPages => _pages.Count;
+
+    public (IReadOnlyList<InkStroke> Strokes, Matrix3x2 WorldToContent)? CapturePreview(string contextSuffix)
+    {
+        var page = _lastSnapshot?.ContextKey.StartsWith("PowerPoint:", StringComparison.Ordinal) == true
+            && _lastSnapshot.ContextKey.EndsWith(contextSuffix, StringComparison.Ordinal) ? _current
+            : _pages.FirstOrDefault(pair => pair.Key.StartsWith("PowerPoint:", StringComparison.Ordinal)
+                && pair.Key.EndsWith(contextSuffix, StringComparison.Ordinal)).Value;
+        if (page is null) return null;
+        var strokes = ReferenceEquals(page, _current) ? _controller.Document.Strokes : page.Strokes;
+        var transform = page.WorldToContent;
+        if (ReferenceEquals(page, _current) && _lastSnapshot is not null
+            && Matrix3x2.Invert(_lastSnapshot.ContentToScreen(), out var inverse))
+            transform = _controller.ViewTransform * _overlayToScreen * inverse;
+        return (strokes.Select(stroke => stroke.Clone()).ToArray(), transform);
+    }
 
     public ScreenAnnotationMemory(InkController controller, BoardService images)
     {
@@ -122,5 +138,7 @@ public sealed class ScreenAnnotationMemory
         _current.Images = _images.CurrentImages.ToArray();
         _current.History = _controller.History.Capture();
         _current.View = _controller.ViewTransform;
+        if (_lastSnapshot is not null && Matrix3x2.Invert(_lastSnapshot.ContentToScreen(), out var contentInverse))
+            _current.WorldToContent = _controller.ViewTransform * _overlayToScreen * contentInverse;
     }
 }

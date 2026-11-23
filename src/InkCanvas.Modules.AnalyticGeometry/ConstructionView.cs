@@ -11,14 +11,15 @@ using Windows.UI;
 
 namespace InkCanvas.Modules.AnalyticGeometry;
 
-/// <summary>Native Win2D geometry view. Cached geometry is reused until the construction or camera changes.</summary>
+/// <summary>Native Win2D GeoGebra-style geometry view with crisp major/minor grid, axes arrowheads, and cached geometry.</summary>
 public sealed class ConstructionView : UserControl, IDisposable
 {
     private sealed record Drawing(ConstructionObject Object, GeometryValue Value, CanvasGeometry Lines, CanvasGeometry Fill, Vector2[] Points);
     private readonly CanvasControl _canvas = new() { ClearColor = Microsoft.UI.Colors.White };
     private readonly Canvas _widgets = new();
     private readonly Dictionary<string, FrameworkElement> _controls = new();
-    private readonly CanvasTextFormat _font = new() { FontFamily = "Segoe UI", FontSize = 13 };
+    private readonly CanvasTextFormat _font = new() { FontFamily = "Segoe UI", FontSize = 12 };
+    private readonly CanvasTextFormat _labelFont = new() { FontFamily = "Cambria Math", FontSize = 14 };
     private readonly List<Drawing> _drawings = new();
     private readonly Dictionary<string, Queue<GeoVector>> _traces = new();
     private ConstructionSnapshot _state = new();
@@ -80,6 +81,30 @@ public sealed class ConstructionView : UserControl, IDisposable
             GestureEnded?.Invoke();
             args.Handled = true;
         };
+    }
+
+    public void ZoomIn()
+    {
+        if (_disposed || ActualWidth < 1 || ActualHeight < 1) return;
+        GestureStarted?.Invoke();
+        SetView(Zoom(_state, 1.25, new((float)(ActualWidth * 0.5), (float)(ActualHeight * 0.5))));
+        GestureEnded?.Invoke();
+    }
+
+    public void ZoomOut()
+    {
+        if (_disposed || ActualWidth < 1 || ActualHeight < 1) return;
+        GestureStarted?.Invoke();
+        SetView(Zoom(_state, 0.8, new((float)(ActualWidth * 0.5), (float)(ActualHeight * 0.5))));
+        GestureEnded?.Invoke();
+    }
+
+    public void ResetView()
+    {
+        if (_disposed) return;
+        GestureStarted?.Invoke();
+        SetView(_state with { XMin = -10, XMax = 10, YMin = -7.5, YMax = 7.5, Yaw = -.6, Pitch = .65 });
+        GestureEnded?.Invoke();
     }
 
     public void SetConstruction(ConstructionSnapshot state, ConstructionEvaluation evaluation)
@@ -320,7 +345,6 @@ public sealed class ConstructionView : UserControl, IDisposable
                 var b = _projection.Project(face.B);
                 var c = _projection.Project(face.C);
                 if (!Valid(a) || !Valid(b) || !Valid(c)) continue;
-                // Keep every triangle clockwise so a joined translucent fill has no overlap seams.
                 if ((b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X) < 0) (b, c) = (c, b);
                 fillBuilder.BeginFigure(a); fillBuilder.AddLine(b); fillBuilder.AddLine(c);
                 fillBuilder.EndFigure(CanvasFigureLoop.Closed);
@@ -340,6 +364,7 @@ public sealed class ConstructionView : UserControl, IDisposable
         foreach (var drawing in previous.Values) { drawing.Lines?.Dispose(); drawing.Fill?.Dispose(); }
         _dirty = false;
     }
+
     private static bool Valid(Vector2 point) => float.IsFinite(point.X) && float.IsFinite(point.Y)
         && Math.Abs(point.X) < 1e7 && Math.Abs(point.Y) < 1e7;
 
@@ -356,75 +381,135 @@ public sealed class ConstructionView : UserControl, IDisposable
             if (drawing.Fill is not null)
                 ds.FillGeometry(drawing.Fill, Color.FromArgb((byte)(255 * Math.Clamp(drawing.Object.Opacity, 0, 1)), color.R, color.G, color.B));
             if (_traces.TryGetValue(drawing.Object.Label, out var trace))
-                foreach (var point in trace) ds.FillCircle(_projection.Project(point), 1.3f, color);
+                foreach (var point in trace) ds.FillCircle(_projection.Project(point), 1.5f, color);
             if (drawing.Lines is not null)
             {
-                if (drawing.Object.Label == SelectedLabel) ds.DrawGeometry(drawing.Lines, Color.FromArgb(60, color.R, color.G, color.B), (float)drawing.Object.LineWidth + 6);
+                if (drawing.Object.Label == SelectedLabel)
+                    ds.DrawGeometry(drawing.Lines, Color.FromArgb(64, color.R, color.G, color.B), (float)drawing.Object.LineWidth + 7);
                 ds.DrawGeometry(drawing.Lines, color, (float)drawing.Object.LineWidth);
             }
             foreach (var point in drawing.Points)
             {
-                if (drawing.Object.Label == SelectedLabel) ds.FillCircle(point, 9, Color.FromArgb(60, color.R, color.G, color.B));
-                ds.FillCircle(point, 4, color);
-                ds.DrawCircle(point, 4, Microsoft.UI.Colors.White, 1);
+                if (drawing.Object.Label == SelectedLabel)
+                    ds.FillCircle(point, 11, Color.FromArgb(56, color.R, color.G, color.B));
+                ds.FillCircle(point, 4.8f, color);
+                ds.DrawCircle(point, 4.8f, Microsoft.UI.Colors.White, 1.4f);
             }
             if (drawing.Object.ShowLabel && drawing.Points.Length > 0)
-                ds.DrawText(drawing.Object.Label, drawing.Points[0] + new Vector2(8, -22), color, _font);
+                ds.DrawText(drawing.Object.Label, drawing.Points[0] + new Vector2(9, -22), color, _labelFont);
         }
     }
 
     private void DrawGrid(CanvasDrawingSession ds)
     {
         if (_projection is null) return;
-        var gray = Color.FromArgb(255, 231, 235, 241);
+        var majorGrid = Color.FromArgb(255, 224, 229, 237);
+        var minorGrid = Color.FromArgb(255, 241, 244, 249);
+        var axisColor = Color.FromArgb(255, 71, 85, 105);
+        var labelColor = Color.FromArgb(255, 100, 116, 139);
+        float w = (float)ActualWidth;
+        float h = (float)ActualHeight;
+
         if (_state.ThreeDimensional)
         {
             if (_state.Grid)
             for (int i = -10; i <= 10; i++)
             {
-                ds.DrawLine(_projection.Project(new(i, -10)), _projection.Project(new(i, 10)), gray);
-                ds.DrawLine(_projection.Project(new(-10, i)), _projection.Project(new(10, i)), gray);
+                var c = i % 5 == 0 ? majorGrid : minorGrid;
+                ds.DrawLine(_projection.Project(new(i, -10)), _projection.Project(new(i, 10)), c);
+                ds.DrawLine(_projection.Project(new(-10, i)), _projection.Project(new(10, i)), c);
             }
             if (_state.Axes)
             {
                 var origin = _projection.Project(default);
-                ds.DrawLine(origin, _projection.Project(new(8, 0, 0)), Microsoft.UI.Colors.IndianRed, 1.5f);
-                ds.DrawLine(origin, _projection.Project(new(0, 8, 0)), Microsoft.UI.Colors.SeaGreen, 1.5f);
-                ds.DrawLine(origin, _projection.Project(new(0, 0, 8)), Microsoft.UI.Colors.RoyalBlue, 1.5f);
+                ds.DrawLine(origin, _projection.Project(new(8, 0, 0)), Microsoft.UI.Colors.IndianRed, 1.8f);
+                ds.DrawLine(origin, _projection.Project(new(0, 8, 0)), Microsoft.UI.Colors.SeaGreen, 1.8f);
+                ds.DrawLine(origin, _projection.Project(new(0, 0, 8)), Microsoft.UI.Colors.RoyalBlue, 1.8f);
             }
             return;
         }
+
         double step = Math.Pow(10, Math.Floor(Math.Log10((_state.XMax - _state.XMin) / 8)));
         while ((_state.XMax - _state.XMin) / step > 18) step *= 2;
+        var origin2D = _projection.Project(default);
+
         if (_state.PolarGrid && _state.Grid)
         {
-            var center = _projection.Project(default);
-            float scale = Vector2.Distance(center, _projection.Project(new(1, 0)));
+            float scale = Vector2.Distance(origin2D, _projection.Project(new(1, 0)));
             double limit = Math.Max(Math.Abs(_state.XMin), Math.Abs(_state.XMax)) + Math.Max(Math.Abs(_state.YMin), Math.Abs(_state.YMax));
-            for (double radius = step; radius < limit; radius += step) ds.DrawCircle(center, (float)radius * scale, gray);
+            for (double radius = step; radius < limit; radius += step) ds.DrawCircle(origin2D, (float)radius * scale, majorGrid);
             for (int i = 0; i < 24; i++)
-            { double angle = i * Math.Tau / 24; ds.DrawLine(center, _projection.Project(new(limit * Math.Cos(angle), limit * Math.Sin(angle))), gray); }
+            { double angle = i * Math.Tau / 24; ds.DrawLine(origin2D, _projection.Project(new(limit * Math.Cos(angle), limit * Math.Sin(angle))), i % 2 == 0 ? majorGrid : minorGrid); }
         }
-        if (_state.Grid && !_state.PolarGrid)
+        else if (_state.Grid)
         {
+            // Minor gridlines (5 subdivisions, GeoGebra-style)
+            double minorStep = step / 5.0;
+            for (double x = Math.Ceiling(_state.XMin / minorStep) * minorStep; x < _state.XMax; x += minorStep)
+            {
+                float px = _projection.Project(new(x, 0)).X;
+                ds.DrawLine(px, 0, px, h, minorGrid, 0.8f);
+            }
+            for (double y = Math.Ceiling(_state.YMin / minorStep) * minorStep; y < _state.YMax; y += minorStep)
+            {
+                float py = _projection.Project(new(0, y)).Y;
+                ds.DrawLine(0, py, w, py, minorGrid, 0.8f);
+            }
+            // Major gridlines
             for (double x = Math.Ceiling(_state.XMin / step) * step; x < _state.XMax; x += step)
             {
                 float px = _projection.Project(new(x, 0)).X;
-                ds.DrawLine(px, 0, px, (float)ActualHeight, gray);
-                ds.DrawText(x.ToString("G4"), px + 3, (float)ActualHeight - 20, Microsoft.UI.Colors.Gray, _font);
+                ds.DrawLine(px, 0, px, h, majorGrid, 1.0f);
             }
             for (double y = Math.Ceiling(_state.YMin / step) * step; y < _state.YMax; y += step)
             {
                 float py = _projection.Project(new(0, y)).Y;
-                ds.DrawLine(0, py, (float)ActualWidth, py, gray);
-                ds.DrawText(y.ToString("G4"), 4, py + 2, Microsoft.UI.Colors.Gray, _font);
+                ds.DrawLine(0, py, w, py, majorGrid, 1.0f);
             }
         }
+
         if (_state.Axes)
         {
-            var origin = _projection.Project(default);
-            ds.DrawLine(origin.X, 0, origin.X, (float)ActualHeight, Microsoft.UI.Colors.SlateGray, 1.4f);
-            ds.DrawLine(0, origin.Y, (float)ActualWidth, origin.Y, Microsoft.UI.Colors.SlateGray, 1.4f);
+            float axisY = Math.Clamp(origin2D.Y, 16, h - 24);
+            float axisX = Math.Clamp(origin2D.X, 24, w - 16);
+
+            // Axes lines
+            if (origin2D.X >= 0 && origin2D.X <= w)
+            {
+                ds.DrawLine(origin2D.X, 6, origin2D.X, h, axisColor, 1.5f);
+                // Y-axis arrowhead
+                ds.DrawLine(origin2D.X, 4, origin2D.X - 5, 13, axisColor, 1.5f);
+                ds.DrawLine(origin2D.X, 4, origin2D.X + 5, 13, axisColor, 1.5f);
+            }
+            if (origin2D.Y >= 0 && origin2D.Y <= h)
+            {
+                ds.DrawLine(0, origin2D.Y, w - 6, origin2D.Y, axisColor, 1.5f);
+                // X-axis arrowhead
+                ds.DrawLine(w - 4, origin2D.Y, w - 13, origin2D.Y - 5, axisColor, 1.5f);
+                ds.DrawLine(w - 4, origin2D.Y, w - 13, origin2D.Y + 5, axisColor, 1.5f);
+            }
+
+            // Tick marks and GeoGebra-style numbers right along the axes
+            for (double x = Math.Ceiling(_state.XMin / step) * step; x < _state.XMax; x += step)
+            {
+                if (Math.Abs(x) < step * 0.05) continue;
+                float px = _projection.Project(new(x, 0)).X;
+                if (px < 12 || px > w - 24) continue;
+                if (origin2D.Y >= 0 && origin2D.Y <= h)
+                    ds.DrawLine(px, origin2D.Y - 3, px, origin2D.Y + 3, axisColor, 1.2f);
+                ds.DrawText(x.ToString("G4"), px - 6, axisY + 5, labelColor, _font);
+            }
+            for (double y = Math.Ceiling(_state.YMin / step) * step; y < _state.YMax; y += step)
+            {
+                if (Math.Abs(y) < step * 0.05) continue;
+                float py = _projection.Project(new(0, y)).Y;
+                if (py < 18 || py > h - 18) continue;
+                if (origin2D.X >= 0 && origin2D.X <= w)
+                    ds.DrawLine(origin2D.X - 3, py, origin2D.X + 3, py, axisColor, 1.2f);
+                ds.DrawText(y.ToString("G4"), axisX + 6, py - 8, labelColor, _font);
+            }
+            if (origin2D.X >= 10 && origin2D.X <= w - 20 && origin2D.Y >= 10 && origin2D.Y <= h - 22)
+                ds.DrawText("0", origin2D.X - 13, origin2D.Y + 4, labelColor, _font);
         }
     }
 
@@ -433,7 +518,7 @@ public sealed class ConstructionView : UserControl, IDisposable
         if (_disposed) return;
         _disposed = true;
         foreach (var drawing in _drawings) { drawing.Lines?.Dispose(); drawing.Fill?.Dispose(); }
-        _drawings.Clear(); _traces.Clear(); _font.Dispose();
+        _drawings.Clear(); _traces.Clear(); _font.Dispose(); _labelFont.Dispose();
         _canvas.Draw -= Draw; _canvas.RemoveFromVisualTree(); Content = null;
     }
 }

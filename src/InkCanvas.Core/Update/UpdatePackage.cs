@@ -8,7 +8,11 @@ namespace InkCanvas.Core.Update;
 
 public sealed record UpdateFile(string Path, string Sha256);
 public sealed record UpdatePlan(string TargetDirectory, string PayloadDirectory, string Version, UpdateFile[] Files,
-    int ParentProcessId, long ParentStartedUtcTicks, string ParentExecutable, bool Restart);
+    int ParentProcessId, long ParentStartedUtcTicks, string ParentExecutable, bool Restart)
+{
+    public string MsiPackage { get; init; }
+    public string MsiSha256 { get; init; }
+}
 public sealed record UpdateResult(bool Success, string Version, string Message);
 
 /// <summary>Portable package staging and a rollback journal for replacement after the host exits.</summary>

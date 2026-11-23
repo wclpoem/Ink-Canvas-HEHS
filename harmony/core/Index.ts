@@ -210,7 +210,7 @@ export {
   usableSelection,
   lassoProbe
 } from './src/main/ets/assistant/LassoGeometry';
-export type { LassoPoint, LassoSummary } from './src/main/ets/assistant/LassoGeometry';
+export type { LassoPoint as AssistantLassoPoint, LassoSummary } from './src/main/ets/assistant/LassoGeometry';
 export {
   SAFE_MARGIN,
   CARD_GAP,
@@ -246,3 +246,29 @@ export {
 export type { PasteInput, PasteObject, PasteResult } from './src/main/ets/assistant/PasteBackModel';
 export { SseParser, sseEventFrom, extractOpenAiDelta, parseSseChunk } from './src/main/ets/assistant/SseParser';
 export type { SseParseResult } from './src/main/ets/assistant/SseParser';
+export {
+  AiCaptureKind,
+  AI_ENGINE_LABEL,
+  AI_NOTE_ACCENTS,
+  normalizeRegion,
+  classifyCaptureKind,
+  summarizeInk,
+  recognizeCapture,
+  buildLectureNotes,
+  toMarkdown,
+  shapeSnapOptions,
+  recommendedSnapIndex,
+  confidencePercent,
+  aiAssistantProbe,
+  recognizeFromText
+} from './src/main/ets/ai/AiAssistant';
+export type {
+  AiRegion,
+  AiInkSummary,
+  AiCaptureInput,
+  AiTextInput,
+  AiRecognizeResult,
+  LectureNoteCard,
+  LectureNotes,
+  ShapeSnapOption
+} from './src/main/ets/ai/AiAssistant';

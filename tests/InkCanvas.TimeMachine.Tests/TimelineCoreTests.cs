@@ -1,16 +1,12 @@
-using InkCanvas.Core.Classroom;
 using InkCanvas.Core.Ink;
-using InkCanvas.Core.Replay;
-using InkCanvas.Features.Classroom;
+using InkCanvas.Modules.TimeMachine;
 using Xunit;
 
-namespace InkCanvas.Classroom.Tests;
+namespace InkCanvas.TimeMachine.Tests;
 
-/// <summary>板书时光机：时间轴重建、多页/背景、检查点、倍速换算与会话持久化的纯逻辑测试。</summary>
-public sealed class TimeMachineTests
+/// <summary>时间轴重建、多页/背景、检查点、视图/PPT 载荷与章节书签的纯逻辑测试（适配插件命名空间）。</summary>
+public sealed class TimelineCoreTests
 {
-    // ---- helpers ---------------------------------------------------------
-
     private static InkStroke Stroke(float x)
     {
         var stroke = new InkStroke(new StrokeAttributes
@@ -60,15 +56,6 @@ public sealed class TimeMachineTests
 
     private static List<float> FrameXs(IReadOnlyList<InkStroke> frame)
         => frame.Select(s => s.Points[0].X).OrderBy(x => x).ToList();
-
-    private static string TempDir()
-    {
-        string dir = Path.Combine(Path.GetTempPath(), $"inkcanvas-sessions-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
-
-    // ---- 时间轴 ----------------------------------------------------------
 
     [Fact]
     public void BuildFrame_AddsStrokesUpToTime()
@@ -146,7 +133,6 @@ public sealed class TimeMachineTests
     [Fact]
     public void BuildFrame_UndoRedo_ReAddsStrokeWithEmbeddedJson()
     {
-        // 该笔画从未作为 StrokeAdded 出现（模拟形状识别替换），仅通过 Redo 载荷重新出现。
         var shape = Stroke(7);
         var timeline = new InkTimeline(Session(
             Page(0, 0),
@@ -161,8 +147,6 @@ public sealed class TimeMachineTests
         Assert.Equal(new List<float> { 7 }, FrameXs(timeline.BuildFrame(150)));
     }
 
-    // ---- 多页 / 背景 -----------------------------------------------------
-
     [Fact]
     public void BuildFrame_MultiPageFiltersByCurrentPage()
     {
@@ -173,7 +157,7 @@ public sealed class TimeMachineTests
             Add(300, 1, Stroke(20))));
 
         Assert.Equal(new List<float> { 10 }, FrameXs(timeline.BuildFrame(150)));
-        Assert.Empty(timeline.BuildFrame(250));          // 已切到第 2 页，尚无笔画
+        Assert.Empty(timeline.BuildFrame(250));
         Assert.Equal(new List<float> { 20 }, FrameXs(timeline.BuildFrame(350)));
     }
 
@@ -195,8 +179,6 @@ public sealed class TimeMachineTests
         Assert.Equal(0, timeline.PageAt(50));
         Assert.Equal(2, timeline.PageAt(150));
     }
-
-    // ---- 索引 / 检查点 ---------------------------------------------------
 
     [Fact]
     public void IndexAt_And_TimeAtEvent()
@@ -221,8 +203,7 @@ public sealed class TimeMachineTests
         for (int i = 1; i <= 260; i++) events.Add(Add(i, 0, Stroke(i)));
         var timeline = new InkTimeline(Session(events.ToArray()));
 
-        int before = timeline.BuildFrame(260).Count;
-        Assert.Equal(260, before);
+        Assert.Equal(260, timeline.BuildFrame(260).Count);
         Assert.NotEmpty(timeline.Session.Checkpoints);
 
         var nearest = timeline.NearestCheckpoint(240);
@@ -231,103 +212,116 @@ public sealed class TimeMachineTests
     }
 
     [Fact]
-    public void BuildFrame_CheckpointIncrementalMatchesExpected()
+    public void CursorPointAt_ReturnsLastStrokePointOnCurrentPage()
     {
-        var events = new List<TimelineEvent> { Page(0, 0) };
-        for (int i = 1; i <= 210; i++) events.Add(Add(i * 10, 0, Stroke(i)));
-        var timeline = new InkTimeline(Session(events.ToArray()));
+        var s1 = Stroke(30);
+        var s2 = Stroke(40);
+        var timeline = new InkTimeline(Session(
+            Page(0, 0),
+            Add(100, 0, s1),
+            Add(200, 0, s2)));
 
-        var frame = timeline.BuildFrame(1500);
-        int expected = Enumerable.Range(1, 210).Count(i => i * 10 <= 1500);
-        Assert.Equal(expected, frame.Count);
-        Assert.NotEmpty(timeline.Session.Checkpoints);
-    }
+        var cursor = timeline.CursorPointAt(150);
+        Assert.NotNull(cursor);
+        Assert.Equal(s1.Points[^1].X, cursor.Value.X, 3);
 
-    // ---- 倍速换算 --------------------------------------------------------
-
-    [Fact]
-    public void ReplayClock_SpeedScaling_AdvancesElapsed()
-    {
-        var half = new ReplayClock(TimeSpan.FromMilliseconds(10_000)) { Speed = 0.5f };
-        half.Play();
-        half.Advance(100);
-        Assert.Equal(50f, half.ElapsedMs, 2);
-
-        var doubleSpeed = new ReplayClock(TimeSpan.FromMilliseconds(10_000)) { Speed = 2f };
-        doubleSpeed.Play();
-        doubleSpeed.Advance(100);
-        Assert.Equal(200f, doubleSpeed.ElapsedMs, 2);
-
-        var fast = new ReplayClock(TimeSpan.FromMilliseconds(10_000)) { Speed = 8f };
-        fast.Play();
-        fast.Advance(100);
-        Assert.Equal(800f, fast.ElapsedMs, 2);
-    }
-
-    // ---- 会话持久化 ------------------------------------------------------
-
-    [Fact]
-    public void Session_SaveLoad_RoundTrips()
-    {
-        string dir = TempDir();
-        try
-        {
-            var s1 = Stroke(42);
-            var session = Session(
-                Page(0, 0), Background(0, 0, "Grid"),
-                Add(100, 0, s1),
-                new TimelineEvent
-                {
-                    TimeMs = 200,
-                    PageIndex = 0,
-                    Kind = TimelineEventKind.StrokesRemoved,
-                    StrokeIds = new[] { s1.Id.ToString() },
-                });
-            session.Name = "课堂板书";
-
-            string path = ClassroomSessionStore.Save(session, dir);
-            Assert.True(File.Exists(path));
-
-            var loaded = ClassroomSessionStore.Load(path);
-            Assert.NotNull(loaded);
-            Assert.Equal(session.Id, loaded!.Id);
-            Assert.Equal("课堂板书", loaded.Name);
-            Assert.Equal(4, loaded.Events.Count);
-            Assert.Equal(TimelineEventKind.StrokeAdded, loaded.Events[2].Kind);
-            Assert.Single(loaded.Events[3].StrokeIds!);
-
-            var restored = StrokeJsonCodec.Deserialize(loaded.Events[2].StrokeJson!);
-            Assert.NotNull(restored);
-            Assert.Equal(2, restored!.Count);
-            Assert.Equal(42f, restored.Points[0].X, 3);
-        }
-        finally
-        {
-            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
-        }
+        var latest = timeline.CursorPointAt(250);
+        Assert.Equal(s2.Points[^1].X, latest.Value.X, 3);
     }
 
     [Fact]
-    public void BuildFrame_AfterSaveLoad_MatchesOriginal()
+    public void ViewChangedPayload_RoundTrips()
     {
-        string dir = TempDir();
-        try
-        {
-            var session = Session(
-                Page(0, 0),
-                Add(100, 0, Stroke(1)),
-                Add(200, 0, Stroke(2)));
-            var original = new InkTimeline(session).BuildFrame(250);
+        string payload = InkTimeline.EncodeViewChanged(1.5, 120, 80);
+        var view = InkTimeline.DecodeViewChanged(payload);
 
-            string path = ClassroomSessionStore.Save(session, dir);
-            var loaded = ClassroomSessionStore.Load(path);
-            var replayed = new InkTimeline(loaded!).BuildFrame(250);
+        Assert.True(view.IsValid);
+        Assert.Equal(1.5, view.Scale, 6);
+        Assert.Equal(120, view.Tx, 6);
+        Assert.Equal(80, view.Ty, 6);
+    }
 
-            Assert.Equal(original.Count, replayed.Count);
-        }
-        finally
-        {
-            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
-        }
+    [Fact]
+    public void ViewChangedPayload_InvalidWhenUnparseable()
+    {
+        var view = InkTimeline.DecodeViewChanged("not-json");
+        Assert.False(view.IsValid);
+    }
+
+    [Fact]
+    public void PptSlideChangedPayload_RoundTrips_WithScreenshot()
+    {
+        string payload = InkTimeline.EncodePptSlideChanged(12, 3, "screenshots/a.png");
+        var change = InkTimeline.DecodePptSlideChanged(payload);
+
+        Assert.True(change.IsValid);
+        Assert.Equal(12, change.SlideId);
+        Assert.Equal(3, change.Index);
+        Assert.Equal("screenshots/a.png", change.Screenshot);
+    }
+
+    [Fact]
+    public void PptSlideChangedPayload_LegacyPlainNumberStillParses()
+    {
+        var change = InkTimeline.DecodePptSlideChanged("5");
+        Assert.True(change.IsValid);
+        Assert.Equal(5, change.Index);
+    }
+
+    [Fact]
+    public void ApplyAutoBookmarks_GeneratesPageClearPptRosterTimer()
+    {
+        var session = Session(
+            Page(0, 0),
+            Add(100, 0, Stroke(1)),
+            new TimelineEvent { TimeMs = 200, PageIndex = 0, Kind = TimelineEventKind.Cleared },
+            new TimelineEvent { TimeMs = 3_000, PageIndex = 0, Kind = TimelineEventKind.PptSlideChanged,
+                Payload = InkTimeline.EncodePptSlideChanged(7, 2, "") },
+            new TimelineEvent { TimeMs = 5_000, PageIndex = 0, Kind = TimelineEventKind.RosterDrawn, Payload = "李四" },
+            new TimelineEvent { TimeMs = 7_000, PageIndex = 0, Kind = TimelineEventKind.TimerEnded });
+
+        var timeline = new InkTimeline(session);
+        timeline.ApplyAutoBookmarks();
+
+        Assert.Contains(session.Bookmarks, b => b.Kind == "cleared");
+        Assert.Contains(session.Bookmarks, b => b.Kind == "ppt");
+        Assert.Contains(session.Bookmarks, b => b.Kind == "roster" && b.Name.Contains("李四"));
+        Assert.Contains(session.Bookmarks, b => b.Kind == "timer");
+        Assert.All(session.Bookmarks, b => Assert.True(b.Auto));
+    }
+
+    [Fact]
+    public void RenameBookmark_TurnsIntoManual()
+    {
+        var session = Session(
+            Page(0, 0),
+            new TimelineEvent { TimeMs = 100, PageIndex = 0, Kind = TimelineEventKind.Cleared });
+        var timeline = new InkTimeline(session);
+        timeline.ApplyAutoBookmarks();
+
+        Assert.True(timeline.RenameBookmark(0, "第一节开始"));
+        Assert.False(session.Bookmarks[0].Auto);
+        Assert.Equal("manual", session.Bookmarks[0].Kind);
+        Assert.Equal("第一节开始", session.Bookmarks[0].Name);
+    }
+
+    [Fact]
+    public void RemoveBookmark_SuppressesItFromFutureAutoRegeneration()
+    {
+        var session = Session(
+            Page(0, 0),
+            new TimelineEvent { TimeMs = 3_000, PageIndex = 0, Kind = TimelineEventKind.Cleared });
+        var timeline = new InkTimeline(session);
+        timeline.ApplyAutoBookmarks();
+        Assert.Equal(2, session.Bookmarks.Count);
+
+        // 第二条为「清空」自动书签；删除后该时刻不再被自动规则重新生成。
+        Assert.True(timeline.RemoveBookmark(1));
+        Assert.Single(session.Bookmarks);
+        Assert.Equal("page", session.Bookmarks[0].Kind);
+
+        timeline.ApplyAutoBookmarks();
+        Assert.Single(session.Bookmarks);
+        Assert.DoesNotContain(session.Bookmarks, b => b.Kind == "cleared");
     }
 }

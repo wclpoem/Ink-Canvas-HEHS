@@ -1,0 +1,60 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx">
+  <Package Name="Ink Canvas" Manufacturer="Ink Canvas Contributors" Version="$(var.Version)"
+           UpgradeCode="71992952-A867-4E26-B2D8-91CB742DB17B" Language="2052" Scope="perUser">
+    <MajorUpgrade DowngradeErrorMessage="已安装较新版本的 Ink Canvas。请使用较新版本的安装包。" Schedule="afterInstallInitialize" />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+    <SummaryInformation Description="Ink Canvas WinUI 3 安装程序" />
+    <Property Id="WINDOWSBUILDNUMBER"><RegistrySearch Id="WindowsBuild" Root="HKLM" Key="SOFTWARE\Microsoft\Windows NT\CurrentVersion" Name="CurrentBuildNumber" Type="raw" Bitness="always64" /></Property>
+    <Launch Condition="Installed OR (VersionNT64 AND WINDOWSBUILDNUMBER &gt;= 17763)" Message="Ink Canvas 需要 64 位 Windows 10 1809 或更新版本。" />
+    <netfx:DotNetCompatibilityCheck Property="INKCANVAS_DOTNET" RuntimeType="core" Platform="x64" Version="10.0.0" RollForward="latestMinor" />
+    <Launch Condition="Installed OR INKCANVAS_DOTNET = 0" Message="请先安装 Microsoft .NET 10 x64 运行时，然后重新运行 Ink Canvas 安装程序。https://dotnet.microsoft.com/download/dotnet/10.0" />
+    <Icon Id="InkCanvasIcon" SourceFile="$(var.PayloadDir)\Assets\InkCanvas.ico" />
+    <Property Id="ARPPRODUCTICON" Value="InkCanvasIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/QiXinia/Ink-Canvas-HEHS" />
+    <SetProperty Id="ARPINSTALLLOCATION" Value="[INSTALLFOLDER]" After="CostFinalize" />
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="UserPrograms" Name="Programs"><Directory Id="INSTALLFOLDER" Name="Ink Canvas" /></Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+    <ComponentGroup Id="Integration">
+      <Component Id="FileAssociations" Directory="INSTALLFOLDER" Guid="4DD5AD87-5412-487D-A6D0-673B233D12A3">
+        <RegistryValue Root="HKCU" Key="Software\InkCanvas\Installation" Name="Directory" Value="[INSTALLFOLDER]" Type="string" KeyPath="yes" />
+        <RegistryValue Root="HKCU" Key="Software\InkCanvas\Installation" Name="Version" Value="[ProductVersion]" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\InkCanvas\Capabilities" Name="ApplicationName" Value="Ink Canvas" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\InkCanvas\Capabilities" Name="ApplicationDescription" Value="白板、屏幕批注与 PDF 阅读批注" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\InkCanvas\Capabilities" Name="ApplicationIcon" Value="&quot;[#MainExecutable]&quot;,0" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\InkCanvas\Capabilities\FileAssociations" Name=".pdf" Value="InkCanvas.Pdf" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\InkCanvas\Capabilities\FileAssociations" Name=".icink" Value="InkCanvas.Board" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\RegisteredApplications" Name="Ink Canvas" Value="Software\InkCanvas\Capabilities" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\InkCanvas.Pdf" Value="Ink Canvas PDF 文档" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\InkCanvas.Pdf\DefaultIcon" Value="&quot;[#MainExecutable]&quot;,0" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\InkCanvas.Pdf\shell\open\command" Value="&quot;[#MainExecutable]&quot; &quot;%1&quot;" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.pdf\OpenWithProgids" Name="InkCanvas.Pdf" Value="" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\InkCanvas.Board" Value="Ink Canvas 白板文稿" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\InkCanvas.Board\DefaultIcon" Value="&quot;[#MainExecutable]&quot;,0" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\InkCanvas.Board\shell\open\command" Value="&quot;[#MainExecutable]&quot; &quot;%1&quot;" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.icink\OpenWithProgids" Name="InkCanvas.Board" Value="" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\Applications\InkCanvas.exe" Name="FriendlyAppName" Value="Ink Canvas" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\Applications\InkCanvas.exe\SupportedTypes" Name=".pdf" Value="" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\Applications\InkCanvas.exe\SupportedTypes" Name=".icink" Value="" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\Applications\InkCanvas.exe\shell\open\command" Value="&quot;[#MainExecutable]&quot; &quot;%1&quot;" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\InkCanvas.exe" Value="[#MainExecutable]" Type="string" />
+      </Component>
+      <Component Id="MsiMarker" Directory="INSTALLFOLDER" Guid="327B3FAC-6E4B-4CBD-BE99-90409B2FBDCC">
+        <File Source="$(var.InstallerDir)\msi-marker.txt" Name=".inkcanvas-msi" />
+        <RegistryValue Root="HKCU" Key="Software\InkCanvas\Installation" Name="MsiManaged" Value="1" Type="integer" KeyPath="yes" />
+      </Component>
+      <Component Id="StartMenu" Directory="ProgramMenuFolder" Guid="23B1EA75-E235-429A-B626-47055E17E648">
+        <Shortcut Id="StartInkCanvas" Name="Ink Canvas" Target="[#MainExecutable]" WorkingDirectory="INSTALLFOLDER" Icon="InkCanvasIcon" />
+        <RegistryValue Root="HKCU" Key="Software\InkCanvas\Installation" Name="StartMenu" Value="1" Type="integer" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+    <Feature Id="Main" Title="Ink Canvas" Level="1">
+      <ComponentGroupRef Id="Payload" /><ComponentGroupRef Id="Integration" />
+    </Feature>
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
+  </Package>
+</Wix>

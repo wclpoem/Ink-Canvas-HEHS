@@ -45,9 +45,15 @@ internal static class ShapeToolsRegression
                 var controller = boardMode ? services.Board.Current : services.OverlayInk;
                 var catalog = ShapeMenuCatalog.Rows.SelectMany(row => row).ToArray();
                 Check("shape categories cover every choice " + boardMode, catalog.All(item => item.LongPress)
-                    && preview.ShapeCount == Enum.GetValues<ShapeKind>().Length && ShapeMenuCatalog.Categories.Length == 5
+                    && preview.ShapeCount == Enum.GetValues<ShapeKind>().Length && ShapeMenuCatalog.Categories.Length == 4
                     && catalog.Select(item => item.Kind).Distinct().Count() == catalog.Length
                     && ShapeMenuCatalog.Categories.All(category => category.Rows.SelectMany(row => row).Any()));
+                Check("line and coordinate tools share one category " + boardMode,
+                    ShapeMenuCatalog.Categories[0].Name == "线条与坐标" && ShapeMenuCatalog.Categories[0].Rows.Length == 3
+                    && ShapeMenuCatalog.Categories[0].Rows.SelectMany(row => row).Count() == 11);
+                preview.SelectCategoryFor(ShapeKind.CoordinateTwoPoint);
+                Check("coordinate selection opens the merged category " + boardMode,
+                    preview.VisibleCells.Count == 11 && preview.VisibleCells.Any(cell => ((ShapeMenuItem)cell.Tag).Kind == ShapeKind.Line));
                 Check("only initial category is visible " + boardMode,
                     VisibleShapeCells(preview).SequenceEqual(preview.VisibleCells));
                 Check("shape picker stays nonactivating " + boardMode, NativeMethods.HasExStyle(WindowChrome.GetHwnd(window), NativeMethods.WS_EX_NOACTIVATE));

@@ -82,6 +82,22 @@ public sealed class PdfNavigationTests
         Assert.Equal(Vector2.Zero, motion.Advance(1d / 120));
     }
 
+    [Fact]
+    public void CompositionProjectionMatchesFrameBasedScrollAndCannotExtendMomentum()
+    {
+        var motion = MovingTouch();
+        Assert.True(motion.Start(.08));
+        double remaining = motion.RemainingSeconds;
+        var expected = motion.Project(.25);
+        var distance = Vector2.Zero;
+        for (int frame = 0; frame < 30; frame++) distance += motion.Advance(1d / 120);
+        Assert.True(Vector2.Distance(expected, distance) < .002f);
+        Assert.True(Math.Abs(motion.RemainingSeconds - (remaining - .25)) < .002);
+        motion.Stop();
+        Assert.Equal(0, motion.RemainingSeconds);
+        Assert.Equal(Vector2.Zero, motion.Project(1));
+    }
+
     private static PdfScrollInertia MovingTouch()
     {
         var motion = new PdfScrollInertia();

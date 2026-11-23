@@ -177,6 +177,74 @@ public sealed class InkWashBrushTests
         Assert.All(AllContours(contours).SelectMany(c => c), p => Assert.InRange(p.Y, 49.8f, 50.2f));
     }
 
+    [Theory]
+    [InlineData(8)]
+    [InlineData(20)]
+    [InlineData(40)]
+    public void OrdinaryWritingKeepsAFullBodyAndAThinnerFastStroke(float milliseconds)
+    {
+        var normal = Straight(30, 600, milliseconds);
+        var fast = Straight(30, 600, .5f);
+        float normalBody = normal.Points.Skip(160).Take(300).Average(point => point.Width);
+        float fastBody = fast.Points.Skip(160).Take(300).Average(point => point.Width);
+        Assert.InRange(normalBody, 20, 40);
+        Assert.True(normalBody > fastBody * 1.25f);
+        Assert.True(normal.Points[^1].Width < normalBody * .2f);
+    }
+
+    [Theory]
+    [InlineData(24)]
+    [InlineData(40)]
+    [InlineData(80)]
+    public void ShortCharacterStrokesGrowWithTheConfiguredBrushWidth(int length)
+    {
+        var narrow = Straight(15, length, 8);
+        var medium = Straight(30, length, 8);
+        var wide = Straight(90, length, 8);
+        float Body(InkStroke stroke) => stroke.Points.Max(point => point.Width);
+        Assert.InRange(Body(medium), 22, 40);
+        Assert.True(Body(medium) > Body(narrow) * 1.7f);
+        Assert.True(Body(wide) > Body(medium) * 2.7f);
+        float VisibleBody(InkStroke stroke) => Build(stroke).WetBody.SelectMany(contour => contour).Max(point => point.Y)
+            - Build(stroke).WetBody.SelectMany(contour => contour).Min(point => point.Y);
+        Assert.True(VisibleBody(wide) > VisibleBody(medium) * 2.1f);
+    }
+
+    [Fact]
+    public void WidthEditAppliesToTheNextStrokeAcrossToolChanges()
+    {
+        using var controller = new InkController { RecognizeShapes = false, PalmErases = false, InkWashWidth = 30 };
+        controller.ConfigurePenWidths(3, 18);
+        controller.CurrentAttributes.TaperKind = TaperKind.InkWash;
+        var down = new OverlayPointer(1, 100, 100, .5f, 0, 0, OverlayPointerKind.Mouse, 0);
+        controller.OnPointerDown(down);
+        controller.InkWashWidth = 72;
+        controller.OnPointerMove(down with { X = 145, TimeMs = 20 });
+        controller.OnPointerUp(down with { X = 145, TimeMs = 30 });
+        Assert.Equal(30, controller.Document.Strokes.Single().Attributes.BaseWidth);
+        controller.Tool = InkTool.Highlighter;
+        Assert.Equal(18, controller.GetDrawingAttributes(true).BaseWidth);
+        controller.Tool = InkTool.Pen;
+        controller.OnPointerDown(down with { Id = 2, TimeMs = 100 });
+        Assert.Equal(72, controller.LiveStrokes.Single().Attributes.BaseWidth);
+        Assert.Equal(3, controller.CurrentAttributes.BaseWidth);
+        controller.OnPointerUp(down with { Id = 2, TimeMs = 115 });
+        controller.CurrentAttributes.TaperKind = TaperKind.None;
+        Assert.Equal(3, controller.GetDrawingAttributes(false).BaseWidth);
+    }
+
+    [Fact]
+    public void PausingAtTheHeadDoesNotInflateWaterInkOrAlterCompletedGeometry()
+    {
+        var stroke = new InkStroke(new() { BaseWidth = 30, TaperKind = TaperKind.InkWash });
+        for (int sample = 0; sample < 60; sample++)
+            stroke.AddPoint(100 + (sample % 3) * .1f, 100, .5f, sample * 20);
+        Assert.All(stroke.Points, point => Assert.InRange(point.Width, 0, 1.5f));
+        var before = Flatten(Build(stroke));
+        stroke.Complete();
+        Assert.Equal(before, Flatten(Build(stroke)));
+    }
+
     [Fact]
     public void LongStrokeRetainsContinuousCoreAndStaysWithinDamageBounds()
     {
@@ -195,6 +263,12 @@ public sealed class InkWashBrushTests
     {
         var stroke = new InkStroke(new() { BaseWidth = 30, TaperKind = TaperKind.InkWash, InkWashSeed = 137 });
         for (int i = 0; i < count; i++) stroke.AddPoint(i * 4, 100 + MathF.Sin(i * .04f) * 30, .5f, i * 3);
+        return stroke;
+    }
+    private static InkStroke Straight(float width, int length, float milliseconds)
+    {
+        var stroke = new InkStroke(new() { BaseWidth = width, TaperKind = TaperKind.InkWash, InkWashSeed = 137 });
+        for (int point = 0; point <= length; point++) stroke.AddPoint(100 + point, 100, .5f, point * milliseconds);
         return stroke;
     }
     private static CalligraphyChunkContours Build(InkStroke stroke) => CalligraphyBrushGeometry.BuildChunk(stroke, 0, stroke.Count - 1, true, true, stroke.IsCompleted);

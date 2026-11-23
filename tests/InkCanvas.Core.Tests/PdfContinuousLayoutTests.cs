@@ -53,4 +53,16 @@ public sealed class PdfContinuousLayoutTests
         Assert.Equal(0, layout.NearestPage(-500));
         Assert.Equal(new[] { 8000, 8001 }, layout.VisiblePages(layout[8000].Top, layout[8001].Bottom));
     }
+
+    [Fact]
+    public void PrefetchPrioritizesVisiblePagesAndTravelDirectionWithFixedLookAhead()
+    {
+        var layout = new PdfContinuousLayout(Enumerable.Repeat(Page(), 10000).ToArray());
+        float top = layout[8000].Top, bottom = layout[8001].Bottom;
+        Assert.Equal(new[] { 8000, 8001, 8002, 7999, 8003, 8004 }, layout.PreviewPages(top, bottom, 1));
+        Assert.Equal(new[] { 8000, 8001, 7999, 8002, 7998, 7997 }, layout.PreviewPages(top, bottom, -1));
+        Assert.Equal(new[] { 8000, 8001, 8002, 7999 }, layout.PreviewPages(top, bottom, 0));
+        var edge = layout.PreviewPages(layout[9999].Top, float.MaxValue, 1).ToArray();
+        Assert.Equal(new[] { 9999, 9998 }, edge);
+    }
 }

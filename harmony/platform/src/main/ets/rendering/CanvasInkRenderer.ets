@@ -408,6 +408,17 @@ export class CanvasInkRenderer implements InkRenderer {
         if (contour.length < 6) {
           continue;
         }
+        // 防御：NaN/Infinity 轮廓在 Canvas 里会被近似成原点，表现为一条连到画布角落的长线。
+        let valid = true;
+        for (let k = 0; k + 1 < contour.length; k += 2) {
+          if (!Number.isFinite(contour[k]) || !Number.isFinite(contour[k + 1])) {
+            valid = false;
+            break;
+          }
+        }
+        if (!valid) {
+          continue;
+        }
         context.beginPath();
         context.moveTo(contour[0], contour[1]);
         for (let p = 2; p + 1 < contour.length; p += 2) {

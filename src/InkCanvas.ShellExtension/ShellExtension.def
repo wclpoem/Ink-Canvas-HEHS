@@ -1,0 +1,4 @@
+LIBRARY "InkCanvas.ShellExtension.dll"
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE

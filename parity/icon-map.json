@@ -1,0 +1,1352 @@
+{
+  "note": "Segoe(MDL2/Fluent PUA 码点=跨端稳定 ID) → HarmonyOS sys.symbol + Fluent System Icons(MIT) 三方映射（fluentCodepoint=Filled 默认；fluentRegularCodepoint=Regular 风格切换，设置 appearance.isIconRegularStyle）。字体: microsoft/fluentui-system-icons Filled 24, TTF 内部族名 FluentSystemIcons-Filled。approx=true 为语义近似（需人工核对视觉）。",
+  "font": {
+    "family": "FluentSystemIcons-Filled",
+    "source": "https://github.com/microsoft/fluentui-system-icons",
+    "license": "MIT",
+    "size": "24 filled"
+  },
+  "segoe": [
+    {
+      "segoeCodepoint": "U+25B3",
+      "name": "Shapes",
+      "symbol": "custom:shape"
+    },
+    {
+      "segoeCodepoint": "U+E706",
+      "name": "Brightness",
+      "symbol": "theme_light",
+      "fluentName": "weather_sunny",
+      "fluentCodepoint": "U+F8BA",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F8A2"
+    },
+    {
+      "segoeCodepoint": "U+E708",
+      "name": "QuietHours",
+      "symbol": "theme_dark",
+      "fluentName": "dark_theme",
+      "fluentCodepoint": "U+F33C",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F33C"
+    },
+    {
+      "segoeCodepoint": "U+E70D",
+      "name": "ChevronDown",
+      "symbol": "chevron_down",
+      "fluentName": "chevron_down",
+      "fluentCodepoint": "U+F2A4",
+      "fluentRegularCodepoint": "U+F2A4"
+    },
+    {
+      "segoeCodepoint": "U+E70E",
+      "name": "ChevronUp",
+      "symbol": "chevron_up",
+      "fluentName": "chevron_up",
+      "fluentCodepoint": "U+F2B7",
+      "fluentRegularCodepoint": "U+F2B7"
+    },
+    {
+      "segoeCodepoint": "U+E70F",
+      "name": "Edit",
+      "symbol": "pencil_tip",
+      "fluentName": "edit",
+      "fluentCodepoint": "U+F3DD",
+      "fluentRegularCodepoint": "U+F3DE"
+    },
+    {
+      "segoeCodepoint": "U+E710",
+      "name": "Add",
+      "symbol": "plus",
+      "fluentName": "add",
+      "fluentCodepoint": "U+F10A",
+      "fluentRegularCodepoint": "U+F10A"
+    },
+    {
+      "segoeCodepoint": "U+E711",
+      "name": "Cancel",
+      "symbol": "xmark",
+      "fluentName": "dismiss",
+      "fluentCodepoint": "U+F36A",
+      "fluentRegularCodepoint": "U+F36A"
+    },
+    {
+      "segoeCodepoint": "U+E712",
+      "name": "More",
+      "symbol": "more",
+      "fluentName": "more_horizontal",
+      "fluentCodepoint": "U+E833",
+      "approx": true,
+      "fluentRegularCodepoint": "U+E825"
+    },
+    {
+      "segoeCodepoint": "U+E713",
+      "name": "Settings",
+      "symbol": "gearshape",
+      "fluentName": "settings",
+      "fluentCodepoint": "U+F6B3",
+      "fluentRegularCodepoint": "U+F6AA"
+    },
+    {
+      "segoeCodepoint": "U+E714",
+      "name": "Video",
+      "symbol": "video",
+      "fluentName": "video",
+      "fluentCodepoint": "U+F865",
+      "fluentRegularCodepoint": "U+F84D"
+    },
+    {
+      "segoeCodepoint": "U+E716",
+      "name": "People",
+      "symbol": "person_2",
+      "fluentName": "people",
+      "fluentCodepoint": "U+F5B3",
+      "fluentRegularCodepoint": "U+F5A9"
+    },
+    {
+      "segoeCodepoint": "U+E718",
+      "name": "Pin",
+      "symbol": "pin",
+      "fluentName": "pin",
+      "fluentCodepoint": "U+F60C",
+      "fluentRegularCodepoint": "U+F602"
+    },
+    {
+      "segoeCodepoint": "U+E722",
+      "name": "Camera",
+      "symbol": "camera",
+      "fluentName": "camera",
+      "fluentCodepoint": "U+F255",
+      "fluentRegularCodepoint": "U+F255"
+    },
+    {
+      "segoeCodepoint": "U+E72C",
+      "name": "Refresh",
+      "symbol": "arrow_counterclockwise",
+      "fluentName": "arrow_reset",
+      "fluentCodepoint": "U+F1A0",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F1A0"
+    },
+    {
+      "segoeCodepoint": "U+E72E",
+      "name": "Lock",
+      "symbol": "lock",
+      "fluentName": "lock_closed",
+      "fluentCodepoint": "U+E79E",
+      "approx": true,
+      "fluentRegularCodepoint": "U+E790"
+    },
+    {
+      "segoeCodepoint": "U+E73E",
+      "name": "CheckMark",
+      "symbol": "checkmark",
+      "fluentName": "checkmark",
+      "fluentCodepoint": "U+F295",
+      "fluentRegularCodepoint": "U+F295"
+    },
+    {
+      "segoeCodepoint": "U+E740",
+      "name": "FullScreen",
+      "symbol": "magnifyingglass",
+      "fluentName": "zoom_in",
+      "fluentCodepoint": "U+F8DD",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F8C5"
+    },
+    {
+      "segoeCodepoint": "U+E74D",
+      "name": "Delete",
+      "symbol": "trash",
+      "fluentName": "delete",
+      "fluentCodepoint": "U+F34D",
+      "fluentRegularCodepoint": "U+F34D"
+    },
+    {
+      "segoeCodepoint": "U+E74E",
+      "name": "Save",
+      "symbol": "save",
+      "fluentName": "save",
+      "fluentCodepoint": "U+F68A",
+      "fluentRegularCodepoint": "U+F680"
+    },
+    {
+      "segoeCodepoint": "U+E75C",
+      "name": "EraseTool",
+      "symbol": "eraser_line",
+      "fluentName": "eraser",
+      "fluentCodepoint": "U+E5F2",
+      "fluentRegularCodepoint": "U+E5E5"
+    },
+    {
+      "segoeCodepoint": "U+E760",
+      "name": "PageLeft",
+      "symbol": "arrow_previous",
+      "fluentName": "arrow_previous",
+      "fluentCodepoint": "U+F16D",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F16D"
+    },
+    {
+      "segoeCodepoint": "U+E761",
+      "name": "PageRight",
+      "symbol": "arrow_next",
+      "fluentName": "arrow_next",
+      "fluentCodepoint": "U+F16B",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F16B"
+    },
+    {
+      "segoeCodepoint": "U+E765",
+      "name": "KeyboardClassic",
+      "symbol": "keyboard",
+      "fluentName": "keyboard",
+      "fluentCodepoint": "U+F4C3",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F4B9"
+    },
+    {
+      "segoeCodepoint": "U+E768",
+      "name": "Play",
+      "symbol": "play",
+      "fluentName": "play",
+      "fluentCodepoint": "U+F610",
+      "fluentRegularCodepoint": "U+F606"
+    },
+    {
+      "segoeCodepoint": "U+E769",
+      "name": "Pause",
+      "symbol": "pause",
+      "fluentName": "pause",
+      "fluentCodepoint": "U+F5AC",
+      "fluentRegularCodepoint": "U+F5A2"
+    },
+    {
+      "segoeCodepoint": "U+E76B",
+      "name": "ChevronLeft",
+      "symbol": "chevron_left",
+      "fluentName": "chevron_left",
+      "fluentCodepoint": "U+F2AB",
+      "fluentRegularCodepoint": "U+F2AB"
+    },
+    {
+      "segoeCodepoint": "U+E76C",
+      "name": "ChevronRight",
+      "symbol": "chevron_right",
+      "fluentName": "chevron_right",
+      "fluentCodepoint": "U+F2B1",
+      "fluentRegularCodepoint": "U+F2B1"
+    },
+    {
+      "segoeCodepoint": "U+E76E",
+      "name": "Emoji2",
+      "symbol": "custom:text",
+      "fluentName": "emoji",
+      "fluentCodepoint": "U+F3E0",
+      "fluentRegularCodepoint": "U+F3E1"
+    },
+    {
+      "segoeCodepoint": "U+E77A",
+      "name": "Unpin",
+      "symbol": "pin_off",
+      "fluentName": "pin_off",
+      "fluentCodepoint": "U+F60E",
+      "fluentRegularCodepoint": "U+F604"
+    },
+    {
+      "segoeCodepoint": "U+E77B",
+      "name": "Contact",
+      "symbol": "person",
+      "fluentName": "person",
+      "fluentCodepoint": "U+F5C8",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F5BE"
+    },
+    {
+      "segoeCodepoint": "U+E77C",
+      "name": "Memo",
+      "symbol": "note",
+      "fluentName": "note",
+      "fluentCodepoint": "U+F576",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F56C"
+    },
+    {
+      "segoeCodepoint": "U+E77F",
+      "name": "Paste",
+      "symbol": "paste",
+      "fluentName": "clipboard_paste",
+      "fluentCodepoint": "U+F2D6",
+      "fluentRegularCodepoint": "U+F2D6"
+    },
+    {
+      "segoeCodepoint": "U+E785",
+      "name": "Unlock",
+      "symbol": "lock_open",
+      "fluentName": "lock_open",
+      "fluentCodepoint": "U+E7A4",
+      "approx": true,
+      "fluentRegularCodepoint": "U+E796"
+    },
+    {
+      "segoeCodepoint": "U+E786",
+      "name": "Slideshow",
+      "symbol": "play_circle",
+      "fluentName": "play_circle",
+      "fluentCodepoint": "U+F612",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F608"
+    },
+    {
+      "segoeCodepoint": "U+E790",
+      "name": "Color",
+      "symbol": "color",
+      "fluentName": "color",
+      "fluentCodepoint": "U+F2F6",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F2F6"
+    },
+    {
+      "segoeCodepoint": "U+E7A6",
+      "name": "Redo",
+      "symbol": "redo",
+      "fluentName": "arrow_redo",
+      "fluentCodepoint": "U+F16F",
+      "fluentRegularCodepoint": "U+F16F"
+    },
+    {
+      "segoeCodepoint": "U+E7A7",
+      "name": "Undo",
+      "symbol": "undo",
+      "fluentName": "arrow_undo",
+      "fluentCodepoint": "U+F19A",
+      "fluentRegularCodepoint": "U+F19A"
+    },
+    {
+      "segoeCodepoint": "U+E7AD",
+      "name": "Rotate",
+      "symbol": "arrow_clockwise",
+      "fluentName": "arrow_clockwise",
+      "fluentCodepoint": "U+F13E",
+      "fluentRegularCodepoint": "U+F13E"
+    },
+    {
+      "segoeCodepoint": "U+E7B3",
+      "name": "RedEye",
+      "symbol": "eye_slash",
+      "fluentName": "eye_off",
+      "fluentCodepoint": "U+E603",
+      "approx": true,
+      "fluentRegularCodepoint": "U+E5F6"
+    },
+    {
+      "segoeCodepoint": "U+E7C2",
+      "name": "Move",
+      "symbol": "move",
+      "fluentName": "arrow_move",
+      "fluentCodepoint": "U+F169",
+      "fluentRegularCodepoint": "U+F169"
+    },
+    {
+      "segoeCodepoint": "U+E7E6",
+      "name": "Highlight",
+      "symbol": "highlighter_tip",
+      "fluentName": "highlight",
+      "fluentCodepoint": "U+F481",
+      "fluentRegularCodepoint": "U+F47D"
+    },
+    {
+      "segoeCodepoint": "U+E7E8",
+      "name": "PowerButton",
+      "symbol": "arrow_right_to_line",
+      "fluentName": "power",
+      "fluentCodepoint": "U+F619",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F60F"
+    },
+    {
+      "segoeCodepoint": "U+E7F4",
+      "name": "TVMonitor",
+      "symbol": "square_and_pencil",
+      "fluentName": "board",
+      "fluentCodepoint": "U+F1E3",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F1E3"
+    },
+    {
+      "segoeCodepoint": "U+E80A",
+      "name": "TiltDown",
+      "symbol": "arrow_down",
+      "fluentName": "arrow_down",
+      "fluentCodepoint": "U+F149",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F149"
+    },
+    {
+      "segoeCodepoint": "U+E815",
+      "name": "Touch",
+      "symbol": "hand_tap",
+      "fluentName": "hand_draw",
+      "fluentCodepoint": "U+E6E5",
+      "approx": true,
+      "fluentRegularCodepoint": "U+E6D8"
+    },
+    {
+      "segoeCodepoint": "U+E81C",
+      "name": "History",
+      "symbol": "clock",
+      "fluentName": "history",
+      "fluentCodepoint": "U+F486",
+      "fluentRegularCodepoint": "U+F47F"
+    },
+    {
+      "segoeCodepoint": "U+E81E",
+      "name": "MapLayers",
+      "symbol": "stack",
+      "fluentName": "stack",
+      "fluentCodepoint": "U+F7BE",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F7A6"
+    },
+    {
+      "segoeCodepoint": "U+E823",
+      "name": "Recent",
+      "symbol": "arrow_counterclockwise",
+      "fluentName": "arrow_counterclockwise",
+      "fluentCodepoint": "U+F140",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F140"
+    },
+    {
+      "segoeCodepoint": "U+E82D",
+      "name": "Dictionary",
+      "symbol": "doc_plaintext",
+      "fluentName": "book",
+      "fluentCodepoint": "U+E173",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F8FE"
+    },
+    {
+      "segoeCodepoint": "U+E896",
+      "name": "Download",
+      "symbol": "arrow_down_circle",
+      "fluentName": "arrow_download",
+      "fluentCodepoint": "U+F151",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F151"
+    },
+    {
+      "segoeCodepoint": "U+E897",
+      "name": "Help",
+      "symbol": "questionmark_circle",
+      "fluentName": "question_circle",
+      "fluentCodepoint": "U+F648",
+      "fluentRegularCodepoint": "U+F63E"
+    },
+    {
+      "segoeCodepoint": "U+E899",
+      "name": "Emoji",
+      "symbol": "move",
+      "fluentName": "drag",
+      "fluentCodepoint": "U+F3C1",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F3C1"
+    },
+    {
+      "segoeCodepoint": "U+E8A1",
+      "name": "PreviewLink",
+      "symbol": "eye",
+      "fluentName": "eye",
+      "fluentCodepoint": "U+E600",
+      "approx": true,
+      "fluentRegularCodepoint": "U+E5F3"
+    },
+    {
+      "segoeCodepoint": "U+E8A3",
+      "name": "ZoomIn",
+      "symbol": "magnifyingglass",
+      "fluentName": "zoom_in",
+      "fluentCodepoint": "U+F8DD",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F8C5"
+    },
+    {
+      "segoeCodepoint": "U+E8A5",
+      "name": "Document",
+      "symbol": "doc",
+      "fluentName": "document",
+      "fluentCodepoint": "U+F379",
+      "fluentRegularCodepoint": "U+F379"
+    },
+    {
+      "segoeCodepoint": "U+E8A9",
+      "name": "ViewAll",
+      "symbol": "wrench_and_screwdriver",
+      "fluentName": "grid",
+      "fluentCodepoint": "U+F467",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F463"
+    },
+    {
+      "segoeCodepoint": "U+E8AB",
+      "name": "Switch",
+      "symbol": "arrow_left_arrow_right",
+      "fluentName": "arrow_swap",
+      "fluentCodepoint": "U+F18E",
+      "fluentRegularCodepoint": "U+F18E"
+    },
+    {
+      "segoeCodepoint": "U+E8B0",
+      "name": "Click",
+      "symbol": "mouse",
+      "fluentName": "cursor",
+      "fluentCodepoint": "U+E450",
+      "approx": true,
+      "fluentRegularCodepoint": "U+E444"
+    },
+    {
+      "segoeCodepoint": "U+E8B1",
+      "name": "Shuffle",
+      "symbol": "shuffle",
+      "fluentName": "arrow_shuffle",
+      "fluentCodepoint": "U+EF37",
+      "fluentRegularCodepoint": "U+EF37"
+    },
+    {
+      "segoeCodepoint": "U+E8B2",
+      "name": "Movies",
+      "symbol": "video",
+      "fluentName": "video_clip",
+      "fluentCodepoint": "U+F868",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F850"
+    },
+    {
+      "segoeCodepoint": "U+E8B3",
+      "name": "SelectAll",
+      "symbol": "square_dashed",
+      "fluentName": "square_multiple",
+      "fluentCodepoint": "U+F7A4",
+      "fluentRegularCodepoint": "U+F78C"
+    },
+    {
+      "segoeCodepoint": "U+E8B5",
+      "name": "Import",
+      "symbol": "import",
+      "fluentName": "arrow_import",
+      "fluentCodepoint": "U+F15A",
+      "fluentRegularCodepoint": "U+F15A"
+    },
+    {
+      "segoeCodepoint": "U+E8B7",
+      "name": "Folder",
+      "symbol": "folder",
+      "fluentName": "folder",
+      "fluentCodepoint": "U+F41D",
+      "fluentRegularCodepoint": "U+F419"
+    },
+    {
+      "segoeCodepoint": "U+E8BB",
+      "name": "ChromeClose",
+      "symbol": "xmark",
+      "fluentName": "dismiss",
+      "fluentCodepoint": "U+F36A",
+      "fluentRegularCodepoint": "U+F36A"
+    },
+    {
+      "segoeCodepoint": "U+E8C8",
+      "name": "Copy",
+      "symbol": "copy",
+      "fluentName": "copy",
+      "fluentCodepoint": "U+F32C",
+      "fluentRegularCodepoint": "U+F32C"
+    },
+    {
+      "segoeCodepoint": "U+E8D4",
+      "name": "Contact2",
+      "symbol": "people",
+      "fluentName": "people",
+      "fluentCodepoint": "U+F5B3",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F5A9"
+    },
+    {
+      "segoeCodepoint": "U+E8E5",
+      "name": "OpenFile",
+      "symbol": "folder_open",
+      "fluentName": "folder_open",
+      "fluentCodepoint": "U+F433",
+      "fluentRegularCodepoint": "U+F42F"
+    },
+    {
+      "segoeCodepoint": "U+E8EF",
+      "name": "Calculator",
+      "symbol": "calculator",
+      "fluentName": "calculator",
+      "fluentCodepoint": "U+E247",
+      "fluentRegularCodepoint": "U+E233"
+    },
+    {
+      "segoeCodepoint": "U+E8F1",
+      "name": "Library",
+      "symbol": "library",
+      "fluentName": "library",
+      "fluentCodepoint": "U+F4DD",
+      "fluentRegularCodepoint": "U+F4D3"
+    },
+    {
+      "segoeCodepoint": "U+E8F7",
+      "name": "SyncFolder",
+      "symbol": "arrow_sync",
+      "fluentName": "arrow_sync",
+      "fluentCodepoint": "U+F191",
+      "fluentRegularCodepoint": "U+F191"
+    },
+    {
+      "segoeCodepoint": "U+E8FD",
+      "name": "BulletedList",
+      "symbol": "doc_text",
+      "fluentName": "slide_layout",
+      "fluentCodepoint": "U+F6F3",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F6EA"
+    },
+    {
+      "segoeCodepoint": "U+E916",
+      "name": "Stopwatch",
+      "symbol": "timer",
+      "fluentName": "timer",
+      "fluentCodepoint": "U+F840",
+      "fluentRegularCodepoint": "U+F827"
+    },
+    {
+      "segoeCodepoint": "U+E921",
+      "name": "ChromeMinimize",
+      "symbol": "caption_minimize",
+      "fluentName": "subtract",
+      "fluentCodepoint": "U+EBCB",
+      "approx": true,
+      "fluentRegularCodepoint": "U+EBD1"
+    },
+    {
+      "segoeCodepoint": "U+E922",
+      "name": "ChromeMaximize",
+      "symbol": "caption_maximize",
+      "fluentName": "maximize",
+      "fluentCodepoint": "U+E7FA",
+      "fluentRegularCodepoint": "U+E7EC"
+    },
+    {
+      "segoeCodepoint": "U+E923",
+      "name": "ChromeRestore",
+      "symbol": "caption_restore",
+      "fluentName": "square_multiple",
+      "fluentCodepoint": "U+F7A4",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F78C"
+    },
+    {
+      "segoeCodepoint": "U+E929",
+      "name": "Handwriting",
+      "symbol": "square_and_pencil",
+      "fluentName": "board",
+      "fluentCodepoint": "U+F1E3",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F1E3"
+    },
+    {
+      "segoeCodepoint": "U+E944",
+      "name": "ReturnToWindow",
+      "symbol": "window",
+      "fluentName": "window",
+      "fluentCodepoint": "U+EE5E",
+      "approx": true,
+      "fluentRegularCodepoint": "U+EE5E"
+    },
+    {
+      "segoeCodepoint": "U+E946",
+      "name": "Info",
+      "symbol": "info_circle",
+      "fluentName": "info",
+      "fluentCodepoint": "U+F4AB",
+      "fluentRegularCodepoint": "U+F4A4"
+    },
+    {
+      "segoeCodepoint": "U+E948",
+      "name": "CalculatorAddition",
+      "symbol": "plus",
+      "fluentName": "add",
+      "fluentCodepoint": "U+F10A",
+      "fluentRegularCodepoint": "U+F10A"
+    },
+    {
+      "segoeCodepoint": "U+E949",
+      "name": "CalculatorSubtract",
+      "symbol": "minus",
+      "fluentName": "subtract",
+      "fluentCodepoint": "U+EBCB",
+      "fluentRegularCodepoint": "U+EBD1"
+    },
+    {
+      "segoeCodepoint": "U+E958",
+      "name": "StorageOptical",
+      "symbol": "square_dashed",
+      "fluentName": "square_multiple",
+      "fluentCodepoint": "U+F7A4",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F78C"
+    },
+    {
+      "segoeCodepoint": "U+E9D9",
+      "name": "Diagnostic",
+      "symbol": "wrench",
+      "fluentName": "wrench",
+      "fluentCodepoint": "U+F8D9",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F8C1"
+    },
+    {
+      "segoeCodepoint": "U+EA8F",
+      "name": "Ringer",
+      "symbol": "timer",
+      "fluentName": "clock_alarm",
+      "fluentCodepoint": "U+F2E2",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F2E2"
+    },
+    {
+      "segoeCodepoint": "U+EA90",
+      "name": "PDF",
+      "symbol": "doc_text",
+      "fluentName": "document_pdf",
+      "fluentCodepoint": "U+F3AD",
+      "fluentRegularCodepoint": "U+F3AD"
+    },
+    {
+      "segoeCodepoint": "U+EC57",
+      "name": "PlaybackRate1x",
+      "symbol": "arrow_counterclockwise",
+      "fluentName": "arrow_counterclockwise",
+      "fluentCodepoint": "U+F140",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F140"
+    },
+    {
+      "segoeCodepoint": "U+ECC8",
+      "name": "SystemInPrivate",
+      "symbol": "incognito",
+      "fluentName": "glasses",
+      "fluentCodepoint": "U+F45C",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F458"
+    },
+    {
+      "segoeCodepoint": "U+ED1A",
+      "name": "FoldWpf",
+      "symbol": "arrow_left_to_line",
+      "fluentName": "arrow_minimize",
+      "fluentCodepoint": "U+F166",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F166"
+    },
+    {
+      "segoeCodepoint": "U+ED25",
+      "name": "OpenFolderHorizontal",
+      "symbol": "folder",
+      "fluentName": "folder_open",
+      "fluentCodepoint": "U+F433",
+      "fluentRegularCodepoint": "U+F42F"
+    },
+    {
+      "segoeCodepoint": "U+EDD5",
+      "name": "CaretLeft8",
+      "symbol": "chevron_left",
+      "fluentName": "chevron_left",
+      "fluentCodepoint": "U+F2AB",
+      "fluentRegularCodepoint": "U+F2AB"
+    },
+    {
+      "segoeCodepoint": "U+EDD6",
+      "name": "CaretRight8",
+      "symbol": "chevron_right",
+      "fluentName": "chevron_right",
+      "fluentCodepoint": "U+F2B1",
+      "fluentRegularCodepoint": "U+F2B1"
+    },
+    {
+      "segoeCodepoint": "U+EDD7",
+      "name": "CaretUp8",
+      "symbol": "chevron_up",
+      "fluentName": "chevron_up",
+      "fluentCodepoint": "U+F2B7",
+      "fluentRegularCodepoint": "U+F2B7"
+    },
+    {
+      "segoeCodepoint": "U+EDD8",
+      "name": "CaretDown8",
+      "symbol": "chevron_down",
+      "fluentName": "chevron_down",
+      "fluentCodepoint": "U+F2A4",
+      "fluentRegularCodepoint": "U+F2A4"
+    },
+    {
+      "segoeCodepoint": "U+EE56",
+      "name": "PenPalette",
+      "symbol": "pencil_tip",
+      "fluentName": "calligraphy_pen",
+      "fluentCodepoint": "U+F253",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F253"
+    },
+    {
+      "segoeCodepoint": "U+EE71",
+      "name": "ImageExport",
+      "symbol": "picture",
+      "fluentName": "image",
+      "fluentCodepoint": "U+F490",
+      "fluentRegularCodepoint": "U+F489"
+    },
+    {
+      "segoeCodepoint": "U+EF1F",
+      "name": "BackgroundToggle",
+      "symbol": "color_background",
+      "fluentName": "color_background",
+      "fluentCodepoint": "U+F2F8",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F2F8"
+    },
+    {
+      "segoeCodepoint": "U+F0B6",
+      "name": "StatusCircle7",
+      "symbol": "badge_circle",
+      "fluentName": "circle",
+      "fluentCodepoint": "U+F2BC",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F2BC"
+    },
+    {
+      "segoeCodepoint": "U+F128",
+      "name": "StrokeErase2",
+      "symbol": "badge_stroke",
+      "fluentName": "subtract",
+      "fluentCodepoint": "U+EBCB",
+      "approx": true,
+      "fluentRegularCodepoint": "U+EBD1"
+    },
+    {
+      "segoeCodepoint": "U+F158",
+      "name": "DialShape3",
+      "symbol": "rectangle_stack",
+      "fluentName": "shapes",
+      "fluentCodepoint": "U+F6B7",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F6AE"
+    },
+    {
+      "segoeCodepoint": "U+F271",
+      "name": "PointerHand",
+      "symbol": "hand_tap",
+      "fluentName": "hand_draw",
+      "fluentCodepoint": "U+E6E5",
+      "approx": true,
+      "fluentRegularCodepoint": "U+E6D8"
+    },
+    {
+      "segoeCodepoint": "U+F8AF",
+      "name": "ClickSolid",
+      "symbol": "badge_dot",
+      "fluentName": "circle_small",
+      "fluentCodepoint": "U+F2C0",
+      "approx": true,
+      "fluentRegularCodepoint": "U+F2C0"
+    }
+  ],
+  "symbols": [
+    {
+      "symbol": "arrow_clockwise",
+      "fluentName": "arrow_clockwise",
+      "fluentCodepoint": "U+F13E",
+      "fluentRegularCodepoint": "U+F13E"
+    },
+    {
+      "symbol": "arrow_counterclockwise",
+      "fluentName": "arrow_reset",
+      "fluentCodepoint": "U+F1A0",
+      "fluentRegularCodepoint": "U+F1A0"
+    },
+    {
+      "symbol": "arrow_down",
+      "fluentName": "arrow_down",
+      "fluentCodepoint": "U+F149",
+      "fluentRegularCodepoint": "U+F149"
+    },
+    {
+      "symbol": "arrow_down_circle",
+      "fluentName": "arrow_download",
+      "fluentCodepoint": "U+F151",
+      "fluentRegularCodepoint": "U+F151"
+    },
+    {
+      "symbol": "arrow_left_arrow_right",
+      "fluentName": "arrow_swap",
+      "fluentCodepoint": "U+F18E",
+      "fluentRegularCodepoint": "U+F18E"
+    },
+    {
+      "symbol": "arrow_left_to_line",
+      "fluentName": "arrow_minimize",
+      "fluentCodepoint": "U+F166",
+      "fluentRegularCodepoint": "U+F166"
+    },
+    {
+      "symbol": "arrow_next",
+      "fluentName": "arrow_next",
+      "fluentCodepoint": "U+F16B",
+      "fluentRegularCodepoint": "U+F16B"
+    },
+    {
+      "symbol": "arrow_previous",
+      "fluentName": "arrow_previous",
+      "fluentCodepoint": "U+F16D",
+      "fluentRegularCodepoint": "U+F16D"
+    },
+    {
+      "symbol": "arrow_right_to_line",
+      "fluentName": "power",
+      "fluentCodepoint": "U+F619",
+      "fluentRegularCodepoint": "U+F60F"
+    },
+    {
+      "symbol": "arrow_sync",
+      "fluentName": "arrow_sync",
+      "fluentCodepoint": "U+F191",
+      "fluentRegularCodepoint": "U+F191"
+    },
+    {
+      "symbol": "badge_circle",
+      "fluentName": "circle",
+      "fluentCodepoint": "U+F2BC",
+      "fluentRegularCodepoint": "U+F2BC"
+    },
+    {
+      "symbol": "badge_dot",
+      "fluentName": "circle_small",
+      "fluentCodepoint": "U+F2C0",
+      "fluentRegularCodepoint": "U+F2C0"
+    },
+    {
+      "symbol": "badge_stroke",
+      "fluentName": "subtract",
+      "fluentCodepoint": "U+EBCB",
+      "fluentRegularCodepoint": "U+EBD1"
+    },
+    {
+      "symbol": "calculator",
+      "fluentName": "calculator",
+      "fluentCodepoint": "U+E247",
+      "fluentRegularCodepoint": "U+E233"
+    },
+    {
+      "symbol": "camera",
+      "fluentName": "camera",
+      "fluentCodepoint": "U+F255",
+      "fluentRegularCodepoint": "U+F255"
+    },
+    {
+      "symbol": "caption_maximize",
+      "fluentName": "maximize",
+      "fluentCodepoint": "U+E7FA",
+      "fluentRegularCodepoint": "U+E7EC"
+    },
+    {
+      "symbol": "caption_minimize",
+      "fluentName": "subtract",
+      "fluentCodepoint": "U+EBCB",
+      "fluentRegularCodepoint": "U+EBD1"
+    },
+    {
+      "symbol": "caption_restore",
+      "fluentName": "square_multiple",
+      "fluentCodepoint": "U+F7A4",
+      "fluentRegularCodepoint": "U+F78C"
+    },
+    {
+      "symbol": "checkmark",
+      "fluentName": "checkmark",
+      "fluentCodepoint": "U+F295",
+      "fluentRegularCodepoint": "U+F295"
+    },
+    {
+      "symbol": "chevron_down",
+      "fluentName": "chevron_down",
+      "fluentCodepoint": "U+F2A4",
+      "fluentRegularCodepoint": "U+F2A4"
+    },
+    {
+      "symbol": "chevron_left",
+      "fluentName": "chevron_left",
+      "fluentCodepoint": "U+F2AB",
+      "fluentRegularCodepoint": "U+F2AB"
+    },
+    {
+      "symbol": "chevron_right",
+      "fluentName": "chevron_right",
+      "fluentCodepoint": "U+F2B1",
+      "fluentRegularCodepoint": "U+F2B1"
+    },
+    {
+      "symbol": "chevron_up",
+      "fluentName": "chevron_up",
+      "fluentCodepoint": "U+F2B7",
+      "fluentRegularCodepoint": "U+F2B7"
+    },
+    {
+      "symbol": "clock",
+      "fluentName": "history",
+      "fluentCodepoint": "U+F486",
+      "fluentRegularCodepoint": "U+F47F"
+    },
+    {
+      "symbol": "color",
+      "fluentName": "color",
+      "fluentCodepoint": "U+F2F6",
+      "fluentRegularCodepoint": "U+F2F6"
+    },
+    {
+      "symbol": "color_background",
+      "fluentName": "color_background",
+      "fluentCodepoint": "U+F2F8",
+      "fluentRegularCodepoint": "U+F2F8"
+    },
+    {
+      "symbol": "copy",
+      "fluentName": "copy",
+      "fluentCodepoint": "U+F32C",
+      "fluentRegularCodepoint": "U+F32C"
+    },
+    {
+      "symbol": "doc",
+      "fluentName": "document",
+      "fluentCodepoint": "U+F379",
+      "fluentRegularCodepoint": "U+F379"
+    },
+    {
+      "symbol": "doc_plaintext",
+      "fluentName": "document",
+      "fluentCodepoint": "U+F379",
+      "fluentRegularCodepoint": "U+F379"
+    },
+    {
+      "symbol": "doc_text",
+      "fluentName": "document_text",
+      "fluentCodepoint": "U+E564",
+      "fluentRegularCodepoint": "U+E558"
+    },
+    {
+      "symbol": "eraser_line",
+      "fluentName": "eraser",
+      "fluentCodepoint": "U+E5F2",
+      "fluentRegularCodepoint": "U+E5E5"
+    },
+    {
+      "symbol": "eraser_line_fill",
+      "fluentName": "eraser_medium",
+      "fluentCodepoint": "U+E5F4",
+      "fluentRegularCodepoint": "U+E5E7"
+    },
+    {
+      "symbol": "eye",
+      "fluentName": "eye",
+      "fluentCodepoint": "U+E600",
+      "fluentRegularCodepoint": "U+E5F3"
+    },
+    {
+      "symbol": "eye_slash",
+      "fluentName": "eye_off",
+      "fluentCodepoint": "U+E603",
+      "fluentRegularCodepoint": "U+E5F6"
+    },
+    {
+      "symbol": "folder",
+      "fluentName": "folder_open",
+      "fluentCodepoint": "U+F433",
+      "fluentRegularCodepoint": "U+F42F"
+    },
+    {
+      "symbol": "folder_open",
+      "fluentName": "folder_open",
+      "fluentCodepoint": "U+F433",
+      "fluentRegularCodepoint": "U+F42F"
+    },
+    {
+      "symbol": "gearshape",
+      "fluentName": "settings",
+      "fluentCodepoint": "U+F6B3",
+      "fluentRegularCodepoint": "U+F6AA"
+    },
+    {
+      "symbol": "hand_tap",
+      "fluentName": "hand_draw",
+      "fluentCodepoint": "U+E6E5",
+      "fluentRegularCodepoint": "U+E6D8"
+    },
+    {
+      "symbol": "highlighter_tip",
+      "fluentName": "highlight",
+      "fluentCodepoint": "U+F481",
+      "fluentRegularCodepoint": "U+F47D"
+    },
+    {
+      "symbol": "import",
+      "fluentName": "arrow_import",
+      "fluentCodepoint": "U+F15A",
+      "fluentRegularCodepoint": "U+F15A"
+    },
+    {
+      "symbol": "info_circle",
+      "fluentName": "info",
+      "fluentCodepoint": "U+F4AB",
+      "fluentRegularCodepoint": "U+F4A4"
+    },
+    {
+      "symbol": "keyboard",
+      "fluentName": "keyboard",
+      "fluentCodepoint": "U+F4C3",
+      "fluentRegularCodepoint": "U+F4B9"
+    },
+    {
+      "symbol": "library",
+      "fluentName": "library",
+      "fluentCodepoint": "U+F4DD",
+      "fluentRegularCodepoint": "U+F4D3"
+    },
+    {
+      "symbol": "lock",
+      "fluentName": "lock_closed",
+      "fluentCodepoint": "U+E79E",
+      "fluentRegularCodepoint": "U+E790"
+    },
+    {
+      "symbol": "lock_open",
+      "fluentName": "lock_open",
+      "fluentCodepoint": "U+E7A4",
+      "fluentRegularCodepoint": "U+E796"
+    },
+    {
+      "symbol": "magnifyingglass",
+      "fluentName": "zoom_in",
+      "fluentCodepoint": "U+F8DD",
+      "fluentRegularCodepoint": "U+F8C5"
+    },
+    {
+      "symbol": "minus",
+      "fluentName": "subtract",
+      "fluentCodepoint": "U+EBCB",
+      "fluentRegularCodepoint": "U+EBD1"
+    },
+    {
+      "symbol": "more",
+      "fluentName": "more_horizontal",
+      "fluentCodepoint": "U+E833",
+      "fluentRegularCodepoint": "U+E825"
+    },
+    {
+      "symbol": "mouse",
+      "fluentName": "cursor",
+      "fluentCodepoint": "U+E450",
+      "fluentRegularCodepoint": "U+E444"
+    },
+    {
+      "symbol": "move",
+      "fluentName": "drag",
+      "fluentCodepoint": "U+F3C1",
+      "fluentRegularCodepoint": "U+F3C1"
+    },
+    {
+      "symbol": "note",
+      "fluentName": "note",
+      "fluentCodepoint": "U+F576",
+      "fluentRegularCodepoint": "U+F56C"
+    },
+    {
+      "symbol": "paste",
+      "fluentName": "clipboard_paste",
+      "fluentCodepoint": "U+F2D6",
+      "fluentRegularCodepoint": "U+F2D6"
+    },
+    {
+      "symbol": "pause",
+      "fluentName": "pause",
+      "fluentCodepoint": "U+F5AC",
+      "fluentRegularCodepoint": "U+F5A2"
+    },
+    {
+      "symbol": "pencil_tip",
+      "fluentName": "edit",
+      "fluentCodepoint": "U+F3DD",
+      "fluentRegularCodepoint": "U+F3DE"
+    },
+    {
+      "symbol": "people",
+      "fluentName": "people",
+      "fluentCodepoint": "U+F5B3",
+      "fluentRegularCodepoint": "U+F5A9"
+    },
+    {
+      "symbol": "person",
+      "fluentName": "person",
+      "fluentCodepoint": "U+F5C8",
+      "fluentRegularCodepoint": "U+F5BE"
+    },
+    {
+      "symbol": "person_2",
+      "fluentName": "people",
+      "fluentCodepoint": "U+F5B3",
+      "fluentRegularCodepoint": "U+F5A9"
+    },
+    {
+      "symbol": "picture",
+      "fluentName": "image",
+      "fluentCodepoint": "U+F490",
+      "fluentRegularCodepoint": "U+F489"
+    },
+    {
+      "symbol": "pin",
+      "fluentName": "pin",
+      "fluentCodepoint": "U+F60C",
+      "fluentRegularCodepoint": "U+F602"
+    },
+    {
+      "symbol": "pin_off",
+      "fluentName": "pin_off",
+      "fluentCodepoint": "U+F60E",
+      "fluentRegularCodepoint": "U+F604"
+    },
+    {
+      "symbol": "play",
+      "fluentName": "play",
+      "fluentCodepoint": "U+F610",
+      "fluentRegularCodepoint": "U+F606"
+    },
+    {
+      "symbol": "play_circle",
+      "fluentName": "play_circle",
+      "fluentCodepoint": "U+F612",
+      "fluentRegularCodepoint": "U+F608"
+    },
+    {
+      "symbol": "plus",
+      "fluentName": "add",
+      "fluentCodepoint": "U+F10A",
+      "fluentRegularCodepoint": "U+F10A"
+    },
+    {
+      "symbol": "questionmark_circle",
+      "fluentName": "question_circle",
+      "fluentCodepoint": "U+F648",
+      "fluentRegularCodepoint": "U+F63E"
+    },
+    {
+      "symbol": "rectangle_stack",
+      "fluentName": "shapes",
+      "fluentCodepoint": "U+F6B7",
+      "fluentRegularCodepoint": "U+F6AE"
+    },
+    {
+      "symbol": "redo",
+      "fluentName": "arrow_redo",
+      "fluentCodepoint": "U+F16F",
+      "fluentRegularCodepoint": "U+F16F"
+    },
+    {
+      "symbol": "save",
+      "fluentName": "save",
+      "fluentCodepoint": "U+F68A",
+      "fluentRegularCodepoint": "U+F680"
+    },
+    {
+      "symbol": "shuffle",
+      "fluentName": "arrow_shuffle",
+      "fluentCodepoint": "U+EF37",
+      "fluentRegularCodepoint": "U+EF37"
+    },
+    {
+      "symbol": "square_and_pencil",
+      "fluentName": "board",
+      "fluentCodepoint": "U+F1E3",
+      "fluentRegularCodepoint": "U+F1E3"
+    },
+    {
+      "symbol": "square_dashed",
+      "fluentName": "square_multiple",
+      "fluentCodepoint": "U+F7A4",
+      "fluentRegularCodepoint": "U+F78C"
+    },
+    {
+      "symbol": "stack",
+      "fluentName": "stack",
+      "fluentCodepoint": "U+F7BE",
+      "fluentRegularCodepoint": "U+F7A6"
+    },
+    {
+      "symbol": "theme_dark",
+      "fluentName": "dark_theme",
+      "fluentCodepoint": "U+F33C",
+      "fluentRegularCodepoint": "U+F33C"
+    },
+    {
+      "symbol": "theme_light",
+      "fluentName": "weather_sunny",
+      "fluentCodepoint": "U+F8BA",
+      "fluentRegularCodepoint": "U+F8A2"
+    },
+    {
+      "symbol": "timer",
+      "fluentName": "timer",
+      "fluentCodepoint": "U+F840",
+      "fluentRegularCodepoint": "U+F827"
+    },
+    {
+      "symbol": "trash",
+      "fluentName": "delete",
+      "fluentCodepoint": "U+F34D",
+      "fluentRegularCodepoint": "U+F34D"
+    },
+    {
+      "symbol": "undo",
+      "fluentName": "arrow_undo",
+      "fluentCodepoint": "U+F19A",
+      "fluentRegularCodepoint": "U+F19A"
+    },
+    {
+      "symbol": "video",
+      "fluentName": "video",
+      "fluentCodepoint": "U+F865",
+      "fluentRegularCodepoint": "U+F84D"
+    },
+    {
+      "symbol": "window",
+      "fluentName": "window",
+      "fluentCodepoint": "U+EE5E",
+      "fluentRegularCodepoint": "U+EE5E"
+    },
+    {
+      "symbol": "wrench",
+      "fluentName": "wrench",
+      "fluentCodepoint": "U+F8D9",
+      "fluentRegularCodepoint": "U+F8C1"
+    },
+    {
+      "symbol": "wrench_and_screwdriver",
+      "fluentName": "grid",
+      "fluentCodepoint": "U+F467",
+      "fluentRegularCodepoint": "U+F463"
+    },
+    {
+      "symbol": "xmark",
+      "fluentName": "dismiss",
+      "fluentCodepoint": "U+F36A",
+      "fluentRegularCodepoint": "U+F36A"
+    }
+  ]
+}

@@ -24,6 +24,7 @@ public sealed class ResourceBundleWindow : Window
     private const int MaxListedFiles = 8;
 
     private readonly FeatureSettings _features;
+    private readonly string _sourceDirectory;
     private readonly bool _enabled;
     private readonly ListView _list = new()
     {
@@ -33,7 +34,7 @@ public sealed class ResourceBundleWindow : Window
     private readonly TextBlock _summary = new() { FontSize = 12, Opacity = 0.75 };
     private readonly TextBlock _emptyHint = new()
     {
-        Text = "暂无可打包的课堂会话",
+        Text = "暂无可打包的板书存档",
         FontSize = 12,
         Opacity = 0.7,
         TextWrapping = TextWrapping.Wrap,
@@ -59,16 +60,17 @@ public sealed class ResourceBundleWindow : Window
     private readonly int _theme;
     private IReadOnlyList<FileInfo> _files = Array.Empty<FileInfo>();
 
-    public ResourceBundleWindow(FeatureSettings features, int theme)
+    public ResourceBundleWindow(FeatureSettings features, int theme, string sourceDirectory)
     {
         _features = features;
+        _sourceDirectory = sourceDirectory;
         _enabled = features?.EnableResourceBundle ?? true;
         _theme = theme;
         Title = "课堂资源包";
 
         var description = new TextBlock
         {
-            Text = "把最近课堂会话（会话 JSON、快照、增量日志）打包；解包不覆盖已有文件。",
+            Text = "把最近的板书存档（.icink）打包；解包不覆盖已有文件。",
             FontSize = 12,
             Opacity = 0.78,
             TextWrapping = TextWrapping.Wrap,
@@ -146,24 +148,20 @@ public sealed class ResourceBundleWindow : Window
     }
 
     /// <summary>
-    /// 会话目录下最近的 <c>*.json</c>（含 <c>*.snapshot.json</c>）与 <c>*.journal</c>，
-    /// 按修改时间倒序，最多 <see cref="MaxListedFiles"/> 个；不读取文件内容，只列元数据。
+    /// 板书存档目录下最近的 <c>*.icink</c>，按修改时间倒序，最多 <see cref="MaxListedFiles"/> 个；
+    /// 不读取文件内容，只列元数据。时光机课堂录制数据属插件私有，不在本体打包范围内。
     /// </summary>
-    private static IReadOnlyList<FileInfo> CollectSessionFiles()
+    private IReadOnlyList<FileInfo> CollectSessionFiles()
     {
-        string directory = ClassroomSessionStore.DefaultDirectory;
-        if (!Directory.Exists(directory)) return Array.Empty<FileInfo>();
+        if (string.IsNullOrWhiteSpace(_sourceDirectory) || !Directory.Exists(_sourceDirectory))
+            return Array.Empty<FileInfo>();
 
         var files = new List<FileInfo>();
-        foreach (string path in Directory.EnumerateFiles(directory))
+        foreach (string path in Directory.EnumerateFiles(_sourceDirectory))
         {
-            string name = Path.GetFileName(path);
-            bool tracked = name.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
-                || name.EndsWith(".journal", StringComparison.OrdinalIgnoreCase);
-            if (!tracked) continue;
-
+            if (!path.EndsWith(".icink", StringComparison.OrdinalIgnoreCase)) continue;
             try { files.Add(new FileInfo(path)); }
-            catch { /* 单个文件元数据不可读时跳过，不影响其它会话。 */ }
+            catch { /* 单个文件元数据不可读时跳过，不影响其它存档。 */ }
         }
 
         return files

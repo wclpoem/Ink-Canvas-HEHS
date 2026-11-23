@@ -17,6 +17,13 @@ internal static class OptionPopupCoordinator
     // All registrations and window events run on the application's UI thread.
     private static readonly List<Pane> Panes = new();
 
+    public static void DismissUnpinned()
+    {
+        foreach (var pane in Panes.ToArray())
+            if (!pane.Closed && !pane.Header.IsPinned && pane.Window.AppWindow.IsVisible)
+                pane.Window.Close();
+    }
+
     public static void Attach(Window window, PopupHeader header)
     {
         var pane = new Pane(window, header);
@@ -52,6 +59,8 @@ internal static class OptionPopupCoordinator
             appWindow.Changed -= Changed;
             header.PinChanged -= PinChanged;
             Panes.Remove(pane);
+            // Unregister first so resetting a closed pane cannot dismiss another open pane.
+            header.IsPinned = false;
         };
     }
 }

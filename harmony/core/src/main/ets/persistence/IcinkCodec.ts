@@ -159,6 +159,16 @@ export function stringifyIcink(strokes: InkStroke[]): string {
       Highlighter: s.Attributes.IsHighlighter,
       HighlighterAlpha: s.Attributes.HighlighterAlpha,
       Taper: s.Attributes.TaperKind,
+      // 以下为鸿蒙端演进字段：必须写出，否则 parse→stringify 往返会丢失
+      // 图层序、形状来源、笔尖与笔尖旋转（Windows 端已同步支持同名 PascalCase 字段）。
+      Nib: s.Attributes.Nib,
+      NibRotation: s.Attributes.NibRotation,
+      LayerOrder: s.LayerOrder,
+      ShapeSource: s.ShapeSource === null ? null : {
+        GroupId: s.ShapeSource.GroupId,
+        Provider: s.ShapeSource.Provider,
+        Definition: s.ShapeSource.Definition
+      },
       Shape: s.IsRecognizedShape,
       ObjectFrame: s.exportObjectFrame(),
       Points: points

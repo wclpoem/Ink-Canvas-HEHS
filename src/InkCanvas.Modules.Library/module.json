@@ -1,0 +1,8 @@
+{
+  "Id": "inkcanvas.library",
+  "Name": "文稿库",
+  "Version": "1.1.0",
+  "ApiVersion": 1,
+  "EntryAssembly": "InkCanvas.Modules.Library.dll",
+  "EntryType": "InkCanvas.Modules.Library.LibraryModule"
+}

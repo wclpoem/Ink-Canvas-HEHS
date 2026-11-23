@@ -33,3 +33,20 @@ tools/toolchain.local.json
 
 # generated per-machine HarmonyOS env
 tools/harmony-env.ps1
+
+# Local HarmonyOS signing material (never commit)
+harmony/.sign/
+# MIT 授权 FluentSystemIcons.ttf 已入库（开源字体）；仅排除本地 Segoe 字体（授权资产，不入库）
+harmony/entry/src/main/resources/rawfile/fonts/SegoeFluentIcons.ttf
+harmony/entry/src/main/resources/rawfile/fonts/SegoeMDL2Assets.ttf
+src/InkCanvas.App/Assets/SegoeMDL2Assets.ttf
+
+# Local service environments, credentials and Python caches
+.env
+.env.*
+!.env.example
+__pycache__/
+.pytest_cache/
+.venv/
+*.pyc
+

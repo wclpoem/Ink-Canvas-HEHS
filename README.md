@@ -50,6 +50,8 @@ PDF 阅读与批注作为原生 WinUI 3 可选模块分发，支持原主工具�
 
 解析几何模块支持函数、隐式方程、参数方程和极坐标，提供原生公式键盘、Windows 本地手写候选及画布实时预览。插入的图形保留公式，可整体选择、变换、克隆及再次编辑。用法见 [解析几何](docs/ANALYTIC-GEOMETRY.md)。
 
+「时光机」是可选的课堂录制模块（Id `inkcanvas.time-machine`）：录制画板板书、白板文件与 PPT 放映批注的笔画级事件和章节书签，并导出 MP4 视频；可在「设置 → 模块与插件」中禁用或卸载，未安装时本体功能不受影响。课堂录制保存为单个 `.icink` 文件（ZIP，`inkcanvas-classroom` v1）；未启用插件打开此类文件会提示需要安装并启用「时光机」插件。用法见 [时光机插件操作说明](docs/timemachine-user-guide.md)。
+
 屏幕批注的滚动、缩放和页面记忆可在“设置 → 实验性设置”启用，默认关闭。适配 Word、PowerPoint 与 Edge，识别范围及验证方法见 [屏幕内容跟随说明](docs/SCREEN-TRACKING.md)。
 
 ```
@@ -86,7 +88,7 @@ tests/InkCanvas.Core.Tests  单元测试（含笔锋回归）
 选择、旋转、克隆与套索擦的操作说明和验证范围见 [SELECTION.md](./docs/SELECTION.md)。选择模式下从空白处拖动即可框选；顶部圆形控制柄负责旋转，Shift 按 15° 吸附；开启「克隆」后可从选区连续拖出副本；「套索擦」可圈选后整项删除对象，并一次撤销恢复。
 
 - **旧 `.isf` 墨迹存档无法读取**。ISF 依赖 `System.Windows.Ink`，WinUI 3 无此栈。
-  新格式为 `.icink`（JSON，逐点存宽度）。
+  新格式为 `.icink`（白板存档为 JSON / ZIP 笔画数据；「时光机」插件的课堂录制文件复用 `.icink` 扩展名，ZIP 容器内 `classroom.json` 标记 `inkcanvas-classroom` v1，需插件读取）。
 - 设置文件 `Settings.json` **保持原 JSON 键名**，可直接沿用。
 - 图形识别为自研拟合，判定边界与 `InkAnalyzer` 不完全一致。
 - 上游 502 KB 单体设置 XAML 未逐像素复刻，改为按真实设置模型重建的分组设置页。

@@ -12,6 +12,7 @@ public sealed partial class ShellController
     private event Action CanvasToolTargetChanged;
     private sealed class CanvasToolsHost(ShellController shell) : ICanvasToolsHost
     {
+        public IAiDocumentBridge DocumentAi => shell._documentAi;
         public CanvasToolTarget CaptureTarget() => new(shell.ActiveController, shell.DocumentActive ? "document" : shell._board is null ? "screen" : "board", !shell.DocumentActive || shell._documentWorkspace.CanEdit);
         public bool IsCurrent(CanvasToolTarget target) => !shell._disposed && !shell._exiting && ReferenceEquals(target.Controller, shell.ActiveController);
         public event Action TargetChanged { add => shell.CanvasToolTargetChanged += value; remove => shell.CanvasToolTargetChanged -= value; }

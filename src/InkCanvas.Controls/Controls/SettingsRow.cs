@@ -1,5 +1,6 @@
 using InkCanvas.Controls.Theming;
 using Microsoft.UI.Xaml;
+using InkCanvas.Controls.Lifecycle;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 
@@ -48,7 +49,7 @@ public sealed class SettingsRow : Grid
         SetColumn(editor, 1);
         Children.Add(text);
         Children.Add(editor);
-        SizeChanged += (_, _) => UpdateLayoutMode();
+        DeferredLayout.Observe(this, UpdateLayoutMode);
     }
 
     private void UpdateLayoutMode()

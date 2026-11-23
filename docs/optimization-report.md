@@ -4,7 +4,9 @@
 > 代码基线：`D:\hw\Ink-Canvas-HEHS`（未提交工作区）
 > 验证环境：Windows 11 Home China · .NET SDK 10.0.404 · xunit 2.9.2 · Debug · x64
 > 运行时变量：`DOTNET_ROOT=D:\dotnet`、`NUGET_PACKAGES=D:\dev-cache\nuget`
-> 结论口径：**单测与构建结论以本次实际执行为准（Ai 79/79、Classroom 164/164、App Debug x64 0 警告 0 错误）；MP4 导出（含合成 AAC 音轨）、黑屏/Esc、时光机入口、双击编辑 AI 卡片、局部圈选端到端（圈选 → RegionSelected → 定点替换，附日志链）、图形释义独立矢量图层、60 次连续翻页（30,465 ms、页码失配 0、切页 >50 ms 长任务 0、Error 0）已验证；残影/闪烁仍无客观量化，真实 AI、WPS、多屏/DPI、真实 PPT 截图回放 UI、真实系统声完整导出、90 分钟课堂等未实机项仍标注「未验证」，不声称通过。**
+> 结论口径：**单测与构建结论以本次实际执行为准（Ai 79/79、Classroom 164/164、App Debug x64 0 警告 0 错误）；黑屏/Esc、双击编辑 AI 卡片、局部圈选端到端（圈选 → RegionSelected → 定点替换，附日志链）、图形释义独立矢量图层、60 次连续翻页（30,465 ms、页码失配 0、切页 >50 ms 长任务 0、Error 0）已验证；残影/闪烁仍无客观量化，真实 AI、WPS、多屏/DPI、真实 PPT 截图回放 UI、90 分钟课堂等未实机项仍标注「未验证」，不声称通过。**
+>
+> **【历史归档 · 时光机部分】** 本文 C 组「时光机」为本体阶段实施记录。时光机已重构为独立插件模块「时光机」（Id `inkcanvas.time-machine`）：WASAPI 讲解音频录制与 AAC 音轨合入、journal / 快照异常恢复、会话存储与校验备份条目已随本体移除，不迁入插件；时间轴、书签、抽稀、检查点定位与 MP4 纯视频导出管线由插件沿用复核。下列 C 组各行的状态、用例与数字均为重构前历史基线。
 
 ---
 
@@ -30,13 +32,13 @@
 
 | 编号 | 状态 | 实现文件 / API | 关键单测 |
 |---|---|---|---|
-| P1 slideId 锚定 + 课堂子任务 | 已实现·单测通过；**P1 完成 3/5：点名贴白板、倒计时结束快照书签、会话列表上限 20（未做：两次框选合并、快捷键表自定义）** | `PptInkSession`（`SlideId` 恢复）、`PptInkFileStore`（manifest `LastSlideId`）、`PptModels`；`ShellController.PasteRosterNameAsync`（点名结果渲染 PNG 贴当前白板页，画板未开先打开）、`ShellController.CaptureTimerEndedAsync`（归零写 `TimerEnded` + 自动书签）、`ClassroomSessionStore.MaxSessionsLoaded=20`（`LoadAll`/`PruneOldSessions`/`DeleteOldSessions`，只影响内存列表、不自动删磁盘文件） | `SlideMigrationTests.ResumeIndex_PrefersSlideIdOverPageNumber`、`SaveAndLoad_RoundTripLastSlideId`、`ManifestWithoutLastSlideId_LoadsVersion2AndKeepsIndexFallback`；`AutoBookmarks_PptRosterAndTimerEnded`；`SessionRetentionTests.LoadAll_DefaultCap_ReturnsNewestTwentyInDescendingOrder`、`LoadAll_WithCap_ReportsOmittedCountWithoutDeleting`、`PruneOldSessions_ReturnsOldestIds_ButKeepsFiles`、`DeleteOldSessions_RemovesOnlyTheOldestFive_WithJournalAndSnapshot`、`RetentionBoundaries_DoNotThrow` |
+| P1 slideId 锚定 + 课堂子任务 | 已实现·单测通过；**P1 完成 3/5：点名贴白板、倒计时结束信号书签、会话列表上限 20（未做：两次框选合并、快捷键表自定义）**。其中会话列表上限 / 留存相关 `ClassroomSessionStore` 与 `SessionRetentionTests` 已随本体删除，书签信号改由插件接收 | `PptInkSession`（`SlideId` 恢复）、`PptInkFileStore`（manifest `LastSlideId`）、`PptModels`；`ShellController.PasteRosterNameAsync`（点名结果渲染 PNG 贴当前白板页，画板未开先打开）、`ShellController.CaptureTimerEndedAsync`（归零发 `TimerEnded` 信号）；~~`ClassroomSessionStore.MaxSessionsLoaded`~~（已删除） | `SlideMigrationTests.ResumeIndex_PrefersSlideIdOverPageNumber`、`SaveAndLoad_RoundTripLastSlideId`、`ManifestWithoutLastSlideId_LoadsVersion2AndKeepsIndexFallback`；`AutoBookmarks_PptRosterAndTimerEnded`；~~`SessionRetentionTests.*`~~（已删除） |
 | P2 迁移与恢复向导 | 已实现·单测通过；**向导 UI 未实机** | `SlideInkMigrator`（manifest v2、`.bak-<timestamp>` 备份）、`SlideMappingInspector`、`ShellController.ShowInkRecoveryWizardAsync` | `SlideMigrationTests.LegacyManifestWithoutVersion_MigratesToVersion2AndMapsSlideIds`、`Migration_IsIdempotent`、`Migration_KeepsLegacyIsfFilesAndWritesBackup`、`IndexNamedFilesWithoutManifest_AreMigratedByIndex`、`MissingSlides_AreSkippedAndOldFilesSurvive`、`Inspector_DetectsCountAndOrderChanges`、`Inspector_MissingRatioAboveThirtyPercent_NeedsWarning`、`Migration_WithLargeMissingRatio_ReportsSkippedWithoutClearing` |
 | P3 邻页预热/过期丢弃 | 已实现·单测通过；**预取线程实机未验证** | `SlideInkCache`（LRU 8、深拷贝）、`PptInkSession.PrefetchNeighbors`、`SlideSwitchGate`（session/generation） | `BatchBTests.Cache_GetMiss_ReturnsNull_AndCounts`、`Cache_SetThenGet_ReturnsDeepCopy`、`Cache_LruEvictsLeastRecentlyUsed`、`Cache_Capacity_IsRespected`、`Cache_ReSetSameSlide_UpdatesWithoutGrowing`、`Cache_Clear_RemovesEntries`、`Cache_ConcurrentWrites_DoNotThrow`、`PerformanceBench.Bench_SlideInkCache_HitVsMiss_100Iterations` |
 | P4 降级矩阵显式化 | 已实现·单测通过；**真实三级降级实机未验证** | `PresentationSources.cs`（`PresentationSourceSelector`：Com → Window → Keys → None） | `BatchBTests.Selector_PrefersComWindowKeys`、`Selector_ReportFailure_DegradesOneStep`、`Selector_Degraded_DoesNotPromoteBackToCom`、`Selector_AllUnavailable_FallsBackToKeys`、`Selector_Reset_RestoresCom`、`Selector_NeverThrows` |
 | P5 翻页笔/黑屏 | 已实现·单测通过；**黑屏 F9/Esc 已实测通过；翻页键未实机** | `PresentationKeyMap`、`BlackScreenWindow`、`ShellController.ToggleBlackScreen`、`OverlayHost` 热键注册 | `BatchBTests.KeyMap_NextKeys`、`KeyMap_PreviousKeys`、`KeyMap_B_TogglesBlackScreen`、`KeyMap_UnknownKey_IsNone`；实测 F9 打开「黑屏」全屏窗口、Esc 关闭成功（修复后复测：after F9 列表含“黑屏”，after Esc 不含），点击关闭亦保留 |
 
-### 1.3 C 组：时光机（审计 2.3）
+### 1.3 C 组：时光机（审计 2.3）〔历史归档：本体实现；插件化后仅时间轴 / 书签 / 导出纯视频结论沿用，音频与恢复条目关闭〕
 
 | 编号 | 状态 | 实现文件 / API | 关键单测 / 实测 |
 |---|---|---|---|
@@ -44,8 +46,8 @@
 | T1 统一时间轴 | 已实现·单测通过 | `TimelineEvent`（Ink/Ppt/Roster/Timer/Bookmark）、`InkTimeline.SceneAt`、`InkRecorder.Append` | `TimeAxisTests.RecorderAppend_MergesCrossSourceEventsInTimeOrder`、`RecorderAppend_WhenNotRecording_IsIgnored`、`RecorderAppend_ConcurrentDuringRecording_DoesNotThrow`、`SceneAt_RestoresPageAndBackgroundAtAnyTime`、`SceneAt_RestoresPptSlideRosterAndTimer`、`SceneAt_NoEvents_UsesDefaults` |
 | T2 自动书签 | 已实现·单测通过 | `InkTimeline.AutoBookmarks/ApplyAutoBookmarks`、`SessionBookmark` | `TimeAxisTests.AutoBookmarks_PageAndClearNamedByPageNumber`、`AutoBookmarks_PptRosterAndTimerEnded`、`AutoBookmarks_MergesEventsWithinTwoSeconds`、`AutoBookmarks_KeepsEventsTwoSecondsOrMoreApart`、`AutoBookmarks_ApplyWritesIntoSession_AndAddBookmarkIsSorted`、`Bookmarks_RenameAndRemove`、`Bookmarks_RenamedAutoBookmark_IsNotOverwrittenByAutoRules`、`SessionV2_SaveLoad_RoundTripsBookmarks` |
 | T3 长课性能 | 已实现·单测通过；**抽稀与回放定位已实测** | `StrokeSimplifier`（RDP，容差 0.8）、`SessionJournal`（JSONL，2s/50 事件 flush）、`InkTimeline` 检查点 | `BatchCTests.Simplify_*`（8 项）、`Journal_AppendAndRecover_ReturnsSameEvents`、`Journal_TruncatedLastLine_RecoversWithoutThrowing`、`Journal_MergesWithSnapshot_AndPrefersLongerEventStream`、`Journal_RecoveredSessionMatchesFullSave`、`TimeMachineTests.Checkpoint_GeneratedByCount_AndNearestIsCorrect`、`BuildFrame_CheckpointIncrementalMatchesExpected`、`PerformanceBench.Bench_StrokeSimplifier_10000Points`、`Bench_InkTimeline_BuildFrameFromCheckpoint` |
-| T4 视频导出 | **已实测通过（含合成 AAC 音轨）** | `TimeMachineExporter`（Media Foundation `IMFSinkWriter` H.264）、`TimeMachineWindow.RunExportAsync` | `BatchCTests.ExportOptions_ValidateRejectsBadRangesAndPaths`、`ExportOptions_SampleFrameTimes_RespectsFpsAndBounds`；实测合成会话 2 秒/30fps → 60 帧、66,537 字节，文件头 `ftypmp42` 有效；带音频合成 48,167 字节，容器内检出 `soun`/`mp4a` |
-| T5 音频录制与合成 | **已实现·合成音轨实测通过；真实系统声完整导出未单独验证** | `TimeMachineAudioCapture`（WASAPI loopback）、`TimeMachineExporter` 音轨合并（MF AAC） | 合成音轨 MP4 实测 48,167 字节、含 `soun`/`mp4a`；无音频设备时如实降级 `HasAudio=false` 并给出 `AudioNote` |
+| T4 视频导出〔历史归档：视频管线迁至插件；音频列作废〕 | 当时已实现 | `TimeMachineExporter`（Media Foundation `IMFSinkWriter` H.264）、`TimeMachineWindow.RunExportAsync` | `BatchCTests.ExportOptions_ValidateRejectsBadRangesAndPaths`、`ExportOptions_SampleFrameTimes_RespectsFpsAndBounds`；实测合成会话 2 秒/30fps → 60 帧、66,537 字节，文件头 `ftypmp42` 有效；~~带音频合成 48,167 字节，`soun`/`mp4a`~~ 音频链已删除 |
+| T5 音频录制与合成 | **〔已随插件化移除〕** WASAPI loopback 录制、WAV 重采样与 MF AAC 音轨合入不迁入插件，插件导出为纯视频；本行历史实测数字（合成音轨 48,167 字节、`soun`/`mp4a`）仅留档 | ~~`TimeMachineAudioCapture`~~（已删除）、~~`TimeMachineExporter` 音轨合并~~ | ~~合成音轨 MP4、无音频设备降级 `HasAudio=false` / `AudioNote`~~ |
 | T6 回放还原 PPT 画面 | **已实现·单测通过；真实 PPT 截图回放 UI 未实机** | `PptSlideChanged` payload 携带截图路径；回放窗口 `Image` 背景 + 网格/坐标；`ReplayBackgrounds` | Classroom 全量 164/164 通过（含回放背景渲染与图形释义几何路径）；真实 PPT 截图回放 UI 仍未实机 |
 
 ### 1.4 F 组：跨模块工程（审计第 4 节）
@@ -53,7 +55,7 @@
 | 编号 | 状态 | 实现文件 / API | 验证情况 |
 |---|---|---|---|
 | F1 Feature Flag | **部分**：`AiSettings` 4 项已实现；`ClassroomSettings` 未新增 | `Core/Settings/AppSettings.cs:AiSettings`、`ShellController` 4 处开关分支 | 无专门单测；默认值/回退分支见第 2 节 |
-| F2 数据版本 | 已实现·单测通过 | Board v3（`BoardService.BoardFormatVersion`）、Ppt manifest v2（`PptInkFileStore.CurrentManifestVersion`）、Session v2（`ClassroomSession.Version`）、journal/snapshot | 见 A2/P2/T3 单测；本次复跑通过 |
+| F2 数据版本 | 已实现·单测通过（历史记录） | Board v3（`BoardService.BoardFormatVersion`）、Ppt manifest v2（`PptInkFileStore.CurrentManifestVersion`）；~~Session v2（`ClassroomSession.Version`）、journal/snapshot~~ 已随本体删除，插件课堂录制改 `.icink` ZIP | 见 A2/P2/T3 单测；本次复跑通过 |
 | F3 测试基线 | **部分（欠账登记）** | 既有 `tests/InkCanvas.Core.Tests` 仍不可编译；独立项目已覆盖 | 本次复核 `dotnet build tests/InkCanvas.Core.Tests` 失败；Ai 79/79、Classroom 164/164 通过 |
 | F4 性能度量 | **部分（合成/mock 已实测）** | `tests/InkCanvas.Classroom.Tests/PerformanceBench.cs` | 本次 5 个基准测试全通过，输出 8 条 `[PERF]`；真实端点/真实渲染未验证 |
 
@@ -99,14 +101,14 @@
 - 单测：`LegacyManifestWithoutVersion_MigratesToVersion2AndMapsSlideIds`、`Migration_KeepsLegacyIsfFilesAndWritesBackup`、`Migration_IsIdempotent`、`IndexNamedFilesWithoutManifest_AreMigratedByIndex`。
 - **回滚方法**：停止 App → 用 `.bak-*` 目录整体替换当前课件墨迹目录 → 恢复旧客户端可读的按页码布局。若旧客户端仍读 manifest，它会忽略未知字段；但若新版本已删除旧位置文件，必须使用备份目录恢复。
 
-### 3.3 Session v2
+### 3.3 Session v2〔历史归档：旧录制会话 JSON 格式已删除；插件课堂录制改 `.icink` ZIP（`inkcanvas-classroom` v1）〕
 
 - `ClassroomSession.Version` 默认 `2`；v1 无 `Version/Bookmarks` 时按默认值兼容。
 - 新增 `Bookmarks`（`timeMs/pageIndex/name/auto/kind`）；JSON 使用 camelCase 键名。
 - 单测：`SessionV2_SaveLoad_RoundTripsBookmarks`、`LegacyV1Session_WithoutVersionOrBookmarks_Loads`、`SessionV2_JsonUsesCamelCaseKeys`、`Session_SaveLoad_RoundTrips`。
 - **回滚**：v2 文件交给不支持书签的旧客户端时，未知字段被忽略，事件流仍可回放；但旧客户端保存后会丢失书签。回滚前保留原 JSON。
 
-### 3.4 journal / 快照
+### 3.4 journal / 快照〔历史归档：增量 journal 与快照恢复链路已删除，不迁入插件〕
 
 - 路径：`%APPDATA%\InkCanvas\sessions\<id>.journal`（JSONL）；快照 `<id>.snapshot.json`。
 - 追加写：每 2 秒或 50 个事件 flush；正常停止时合并为正式会话 JSON 并删除恢复产物；异常退出最多丢约 2 秒。
@@ -216,14 +218,14 @@ dotnet test tests\InkCanvas.Classroom.Tests --filter FullyQualifiedName~Performa
 | 多屏 / 不同 DPI | **未验证** | 需多显示器实机 |
 | 三级降级矩阵 | 单测通过 | `BatchBTests.Selector_*` 6 项 |
 | 黑屏 / 翻页笔 | **黑屏已实测通过（F9 开、Esc 关、点击关闭）**；翻页键单测通过 | 实机复测：after F9 列表含“黑屏”，after Esc 不含；`BatchBTests.KeyMap_*` 4 项 |
-| 时光机入口 | 已实测通过 | 无录制显示「暂无录制记录。先在画板中书写，再打开时光机。」；有录制打开回放窗口 |
+| 时光机入口〔历史归档〕 | 当时已实测通过 | 无录制显示「暂无录制记录。先在画板中书写，再打开时光机。」；有录制打开回放窗口。插件化后入口为插件命令「开始时光机录制 / 停止录制」「时光机录制」 |
 | 双击编辑 AI 贴回 | **已实测通过** | 贴回 AI 卡片后双击（UIA 坐标 352,156）→ 弹出「编辑 AI 卡片」对话框；日志命中 Formula 并进入 `EditAiCardAsync`，手动判定与 `DoubleTapped` 去重正常 |
 | 局部圈选纠错 | **已端到端实测成功（圈选 → RegionSelected → LocalCorrectionFlow 定点替换）** | 实测日志链：`AI 圈选按下：enabled=True anchorEmpty=False` → `松手：rect=(122.4,33.6)-(364.0,153.6)` → `发送 RegionSelected，region=(537.8,302.4)-(1599.3,1382.4)` → `EnableLocalCorrection=True，会话=Done` → `结果应用成功：Field=Formula，start=2，length=6，长度 8->10`；另 `LocalCorrectionFlowTests` 14 项 + `RegionTextMapperTests` 12 项保证其余 Formula/Text/Steps/Annotations 逐字不变 |
 | 图形释义矢量层 | 已实现·单测通过 | `ShapeAnnotationGeometryTests` 7 项；Win2D `CanvasControl` 独立矢量折线层，随资产移动/缩放，删除资产即删除，不写入墨迹 Document |
 | 连续翻页压力 | **已实测（60 次 / 30,465 ms，页码失配 0，切页 >50 ms 长任务 0，Error 0，进程存活）** | 采样 10:1、20:2、30:3、40:1、50:2、60:3；`PPT slide apply >50ms` 计数 0（`over50 count=0`）；17 点日志 Error 0；RPC 忙已降级为 Trace + 10 秒节流；**残影/闪烁仍未量化** |
 | 回放还原 PPT 画面 | 已实现·单测通过 | `PptSlideChanged` payload 含截图路径；回放 `Image` 背景 + 网格/坐标；真实 PPT 截图回放 UI 未实机 |
-| 恢复向导 / journal 启动弹窗 | 向导代码存在但**未实机**；启动弹窗**未实现** | `ShellController.ShowInkRecoveryWizardAsync`；App 未调用 `SessionJournal.HasPending` |
-| MP4 导出（含音频） | **已实测通过** | 纯视频：2 秒/30fps → 60 帧、66,537 字节，`ftypmp42` 有效；含合成 AAC 音轨：48,167 字节、检出 `soun`/`mp4a`；无音频设备时如实 `HasAudio=false` |
+| 恢复向导 / journal 启动弹窗〔已随本体移除〕 | 向导代码存在但**未实机**；启动弹窗**未实现** | ~~`ShellController.ShowInkRecoveryWizardAsync`~~；~~`SessionJournal.HasPending`~~ 均已删除，异常恢复提示不迁入插件 |
+| MP4 导出〔历史归档：视频管线迁至插件；音频链已移除〕 | 当时已实测通过 | 纯视频：2 秒/30fps → 60 帧、66,537 字节，`ftypmp42` 有效；~~含合成 AAC 音轨：48,167 字节、`soun`/`mp4a`；`HasAudio=false` 降级~~ 音频部分作废，插件导出为纯视频 |
 
 ### 5.3 既有基线欠账
 
@@ -240,20 +242,20 @@ dotnet test tests\InkCanvas.Classroom.Tests --filter FullyQualifiedName~Performa
 
 ## 6. 未实现 / 降级项
 
-> 原列于本节的“MP4 实机编码”“双击编辑 UI”“局部圈选 UI”已实机复测通过并移出本节：MP4（2 秒/30fps → 60 帧、66,537 字节，`ftypmp42` 有效）；双击贴回卡片弹出「编辑 AI 卡片」对话框（日志命中 Formula、进入 `EditAiCardAsync`）；局部圈选端到端成功（圈选 → RegionSelected → 定点替换，日志链见 A1/5.2）。本轮“局部纠错替换策略（v1 降级）”已由定点替换实现替代、“图形释义未实现”已由独立矢量图层补齐，两条均已移出本节；新增“连续翻页的残影/闪烁量化”“90 分钟长课”作为未量化项保留。音频已实现录制与合成，但真实系统声完整导出仍未单独验证，保留在下表。
+> 原列于本节的“MP4 实机编码”“双击编辑 UI”“局部圈选 UI”已实机复测通过并移出本节：MP4（2 秒/30fps → 60 帧、66,537 字节，`ftypmp42` 有效）；双击贴回卡片弹出「编辑 AI 卡片」对话框（日志命中 Formula、进入 `EditAiCardAsync`）；局部圈选端到端成功（圈选 → RegionSelected → 定点替换，日志链见 A1/5.2）。本轮“局部纠错替换策略（v1 降级）”已由定点替换实现替代、“图形释义未实现”已由独立矢量图层补齐，两条均已移出本节；新增“连续翻页的残影/闪烁量化”“90 分钟长课”作为未量化项保留。~~音频已实现录制与合成~~ 讲解音频链路已随插件化移除，不再保留为未验证项。
 
 | 项目 | 现状 | 影响 / 说明 |
 |---|---|---|
 | 真实 PPT/WPS 截图回放 UI | `PptSlideChanged` 已带截图路径，回放 `Image` 背景 + 网格/坐标已实现；真实 PPT/WPS 截图与回放 UI 未实机 | 回放画面依赖真实截图产物，合成/单测不能替代真实放映抓图 |
-| 音频真实系统声完整导出 | WASAPI loopback 录制 + MF AAC 合并已实现；合成音轨 MP4 实测 48,167 字节、含 `soun`/`mp4a` | 真实系统声（多人讲解、设备切换、长时间）未单独验证；无设备时如实降级 `HasAudio=false`，不冒充含音频 |
+| 音频真实系统声完整导出〔已随本体移除〕 | ~~WASAPI loopback 录制 + MF AAC 合并~~ 已删除，插件导出为纯视频，无音轨 | 该行历史实测数字（48,167 字节、`soun`/`mp4a`、`HasAudio=false`）仅留档，不作为现行能力 |
 | 连续翻页的残影/闪烁 | 60 次翻页压力已实测（30,465 ms、失配 0、切页 >50 ms 长任务 0 次、Error 0）；**未采集批注墨迹、未开 ETW** | 切页长任务已量化 0 次；残影/闪烁无帧级客观量化，需带批注 + ETW 的专项压测，不作为性能达标证据 |
-| 90 分钟长课 | 未实测 | 现有 journal/检查点/抽稀为单测与合成基准；90 分钟真实课堂未跑通 |
-| journal 启动弹窗 | `SessionJournal.HasPending/PendingSessionIds` 存在，App 启动未接线 | 异常退出后需人工/后续版本触发恢复；本次未实现弹窗 |
+| 90 分钟长课〔历史归档：压测归属插件〕 | 未实测 | 当时 journal/检查点/抽稀为单测与合成基准；90 分钟真实课堂未跑通；长课压测后续归「时光机」插件测试 |
+| ~~journal 启动弹窗~~〔已随本体移除〕 | ~~`SessionJournal.HasPending/PendingSessionIds`~~ 已删除 | 异常退出恢复链路不迁入插件 |
 | 缩略图 | `BoardService.GetPageThumbnail` 返回计数与名称 | 非位图缩略图，不能直接作为页面预览贴图 |
 | 放大镜 | 降级为截图方案 | 非实时矢量放大；未实机验证效果 |
-| 回放帧级 | `InkTimeline.BuildFrame` 整笔增删 | 无笔内插值/逐点显现，快速书写回放可能“整笔跳出” |
+| 回放帧级〔历史归档：时间轴帧渲染归插件参考〕 | ~~`InkTimeline.BuildFrame`~~ 整笔增删 | 无笔内插值/逐点显现，快速书写回放可能“整笔跳出” |
 | `ClassroomSettings` | 未新增 | F1 仅完成 `AiSettings` 4 项；课堂侧仍用既有设置字段 |
-| P1 剩余两项 | 两次框选合并、快捷键表自定义未做 | P1 当前 3/5：点名贴白板、倒计时结束快照书签、会话列表上限 20 已完成 |
+| P1 剩余两项 | 两次框选合并、快捷键表自定义未做 | P1 历史 3/5：点名贴白板、倒计时结束信号书签已完成；~~会话列表上限 20~~ 已随本体删除 |
 | 真实 AI 两阶段收益 | 端点未配置 | mock 首字 63 ms 不能代表真实首字 |
 | WPS / 多屏 / DPI | 未联调/未验证 | 不声称兼容 |
 
@@ -269,9 +271,9 @@ dotnet test tests\InkCanvas.Classroom.Tests --filter FullyQualifiedName~Performa
   - **局部纠错定点替换与圈选**：`RegionTextMapper`（rect 比例 → 字符区间）+ `LocalCorrectionFlow.Apply`（克隆会话、仅替换目标区间，Text/Formula/Steps/Annotations/Regions 其余逐字不变）；`LocalCorrectionFlowTests` 14 项端到端逻辑测试、`RegionTextMapperTests` 12 项。**UI 圈选已端到端实测成功**：日志链 `AI 圈选按下：enabled=True anchorEmpty=False` → `松手：rect=(122.4,33.6)-(364.0,153.6)` → `发送 RegionSelected，region=(537.8,302.4)-(1599.3,1382.4)` → `EnableLocalCorrection=True，会话=Done` → `结果应用成功：Field=Formula，start=2，length=6，长度 8->10`。
   - **图形释义独立矢量图层**：`ShapeAnnotationGeometry.Normalize/Project` + `BoardImageLayer` 的 Win2D 矢量折线层，随资产移动/缩放重新投影、删除资产即删除，**不写入墨迹 Document**；`ShapeAnnotationGeometryTests` 7 项。
   - **连续翻页压力（含切页耗时埋点）**：60 次 / **30,465 ms**（约 2 页/秒），页码采样 10:1、20:2、30:3、40:1、50:2、60:3，**失配 0**；`PPT slide apply >50ms` 长任务计数 **0**（`over50 count=0`），17 点日志 **Error 0**；RPC 忙已降级为 Trace + 10 秒节流，进程存活未崩溃。**残影/闪烁仍未量化**（无批注墨迹、无 ETW），不作为性能达标证据。
-  - **P1 子任务 3/5**：点名贴白板、倒计时结束快照书签、会话列表上限 20（`LoadAll/Prune/Delete`，不自动删文件）已完成；两次框选合并、快捷键表自定义未做。
-- **既有已实测通过**：双击编辑 AI 卡片（UIA 352,156 → 对话框）；MP4 纯视频 60 帧 / 66,537 字节、含合成 AAC 48,167 字节（`soun`/`mp4a`）；黑屏 F9 开 / Esc 关；时光机入口；Office 2021 放映 / 翻页 / 按页批注（P0 早期联调）。
+  - **P1 子任务 3/5（历史记录）**：点名贴白板、倒计时结束信号书签已完成；~~会话列表上限 20（`LoadAll/Prune/Delete`）~~ 随本体删除；两次框选合并、快捷键表自定义未做。
+- **既有已实测通过（历史记录）**：双击编辑 AI 卡片（UIA 352,156 → 对话框）；MP4 纯视频 60 帧 / 66,537 字节（视频管线后迁至插件）；~~含合成 AAC 48,167 字节（`soun`/`mp4a`）~~ 音频链已删除；黑屏 F9 开 / Esc 关；~~时光机入口~~ 插件化后改为插件命令；Office 2021 放映 / 翻页 / 按页批注（P0 早期联调）。
 - **性能数据**（mock/合成基准，真实环境未复现）：切页缓存命中 0.135 ms/次、未命中 0.001 ms/次；回放定位 131.021 ms（冷 664.804 ms）；抽稀 3.641 ms、保留率 11.79%；mock 首字 63.235 ms；1000 笔画缓存约 1,027.4 KB。
-- **仍未验证（不计入“已通过”）**：真实 AI 端点与两阶段收益、WPS 放映、多屏 / 不同 DPI、真实 PPT 截图回放 UI、真实系统声完整导出、带批注/ETW 的残影/闪烁量化、90 分钟长课、journal 启动弹窗、P1 剩余两项（两次框选合并、快捷键表自定义）。
+- **仍未验证（历史记录，不计入“已通过”）**：真实 AI 端点与两阶段收益、WPS 放映、多屏 / 不同 DPI、真实 PPT 截图回放 UI、带批注/ETW 的残影/闪烁量化、P1 剩余两项（两次框选合并、快捷键表自定义）。~~真实系统声完整导出、90 分钟长课、journal 启动弹窗~~ 对应音频 / 长课压测 / 恢复链路已移除或归插件测试，不再作为本体未验证项。
 
 **结论：单测、构建与上述已实测项满足 7.2 验收口径；剩余仅真实环境（真实 AI/WPS、多屏/DPI、真实截图回放 UI、真实系统声、90 分钟长课）、残影/闪烁量化、P1 两项（框选合并、快捷键表自定义）仍为“未验证/未做”，不声称端到端全部通过。**

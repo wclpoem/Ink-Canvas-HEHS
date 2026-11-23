@@ -1,7 +1,8 @@
-using InkCanvas.App.Services;
+﻿using InkCanvas.App.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using InkCanvas.Controls.Controls;
 
 namespace InkCanvas.App.Views;
 
@@ -15,8 +16,8 @@ internal sealed class FoldedBarHandleWindow : Window
         _owner = owner;
         var icon = new Microsoft.UI.Xaml.Controls.FontIcon
         {
-            Glyph = "",
-            FontFamily = new FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
+            Glyph = "",
+            FontFamily = IconFontStyle.Font,
             FontSize = 16,
             // Icon sits on the protruding sliver (the rest of the window is off-screen).
             HorizontalAlignment = left ? HorizontalAlignment.Right : HorizontalAlignment.Left,

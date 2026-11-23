@@ -24,8 +24,6 @@ public sealed partial class SettingsWindow
     private string PresentationRequirement() => !S.PowerPoint.PowerPointSupport ? "请先启用 PowerPoint 支持。"
         : HasComClass("PowerPoint.Application") || S.PowerPoint.IsSupportWPS && HasComClass("KWPP.Application")
             ? null : "未检测到 PowerPoint 或已启用的 WPS 演示 COM 接口，请安装对应的桌面版应用。";
-    private string TrackingRequirement() => _services.Modules.HasExport<IScreenTrackingService>() ? null
-        : "屏幕内容跟随模块未运行，请在“模块与插件”中安装或启用该模块并重启。";
 
     private string SaveDirectoryRequirement()
     {
@@ -55,12 +53,6 @@ public sealed partial class SettingsWindow
                 : !S.Startup.IsAutoUpdate || !S.Startup.IsAutoUpdateWithSilence ? "请先启用自动检查更新和静默更新。" : null,
             "检查更新" or "版本列表" => () => _updater is null ? "更新服务未启动，请从主程序打开设置。"
                 : _updater.IsBusy ? "正在处理更新，请等待当前操作完成。" : null,
-            "启用屏幕内容跟随（实验性）" => TrackingRequirement,
-            "批注跟随正文滚动" or "批注跟随页面缩放" or "遮罩固定区域和悬浮界面" or "自动记忆不同文档与页面的墨迹"
-                or "适配 Microsoft Word" or "适配 Microsoft PowerPoint" or "适配 Microsoft Edge" or "重新绑定当前批注位置"
-                => () => TrackingRequirement() ?? (!S.Experimental.ScreenContentTracking ? "请先启用屏幕内容跟随。" : null),
-            "保留页面中未变化区域的批注" => () => TrackingRequirement() ?? (!S.Experimental.ScreenContentTracking
-                ? "请先启用屏幕内容跟随。" : !S.Experimental.RememberPages ? "请先启用页面墨迹记忆。" : null),
             "特殊屏幕触摸大小倍数" => () => !S.Advanced.IsSpecialScreen ? "请先启用特殊屏幕模式。" : null,
             "启用多点触控模式" or "启用笔尖模式" or "四边红外模式" or "特殊屏幕模式" or "允许双指旋转选中的墨迹" => TouchRequirement,
             "双指缩放" or "双指平移" or "双指旋转" or "缩放/旋转变换中心点" => () => TouchRequirement()

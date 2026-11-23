@@ -46,6 +46,28 @@ public sealed class ScreenTrackingTests
     }
 
     [Fact]
+    public void PowerPointPreviewsPreservePageIdentityAndMapInkIntoSlideCoordinates()
+    {
+        using var controller = new InkController();
+        var memory = new ScreenAnnotationMemory(controller, new BoardService(controller));
+        var origin = new Vector2(40, 60);
+        var first = View("PowerPoint:42:deck:256", zoom: 2);
+        memory.Apply(first, Options(), origin, 1.5f);
+        var stroke = Stroke(); controller.Document.Add(stroke);
+        Matrix3x2.Invert(first.ContentToScreen(), out var screenToContent);
+        var expected = Vector2.Transform(stroke.Points[0].Position,
+            controller.ViewTransform * Matrix3x2.CreateScale(1.5f) * Matrix3x2.CreateTranslation(origin) * screenToContent);
+        var current = memory.CapturePreview(":deck:256").Value;
+        Near(expected, Vector2.Transform(current.Strokes[0].Points[0].Position, current.WorldToContent));
+        Assert.NotSame(stroke, current.Strokes[0]);
+        memory.Apply(View("PowerPoint:42:deck:257"), Options(), origin, 1.5f);
+        var stored = memory.CapturePreview(":deck:256").Value;
+        Near(expected, Vector2.Transform(stored.Strokes[0].Points[0].Position, stored.WorldToContent));
+        Assert.Empty(controller.Document.Strokes);
+        Assert.Null(memory.CapturePreview(":other-deck:256"));
+    }
+
+    [Fact]
     public void PagesRestoreObjectIdentityImagesAndUndoRedo()
     {
         using var controller = new InkController(); var images = new BoardService(controller);

@@ -1,35 +1,197 @@
 using InkCanvas.AnalyticGeometry.Construction;
+using InkCanvas.Controls.Controls;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Shapes;
+using Windows.UI;
 
 namespace InkCanvas.Modules.AnalyticGeometry;
 
 public sealed partial class GeometryWorkbenchWindow
 {
-    private sealed record DrawingTool(string Name, string Command, int Points, string Help);
+    private sealed record DrawingTool(string Category, string Name, string Command, int Points, string Help, string Icon);
+
     private static readonly DrawingTool[] DrawingTools =
     {
-        new("移动 / 选择", "", 0, "拖动自由点可更新关联对象。拖动空白处平移，双指捏合缩放。3D 中拖动空白处旋转视图。"),
-        new("点", "Point", 1, "点击视图放置自由点。"),
-        new("线段", "Segment", 2, "依次选择两个点，或点击视图建立点。"),
-        new("直线", "Line", 2, "依次选择两个点。"),
-        new("射线", "Ray", 2, "依次选择端点与方向点。"),
-        new("向量", "Vector", 2, "依次选择起点与终点。"),
-        new("圆", "Circle", 2, "依次选择圆心与圆上一点。"),
-        new("三点圆", "Circumcircle", 3, "依次选择圆上的三个点。"),
-        new("中点", "Midpoint", 2, "依次选择两个点。"),
-        new("垂直平分线", "PerpendicularBisector", 2, "依次选择线段的两个端点。"),
-        new("角平分线", "AngleBisector", 3, "依次选择角的起点、顶点与终点。"),
-        new("多边形", "Polygon", -1, "依次选择顶点，再点第一个顶点完成多边形。"),
-        new("圆弧", "Arc", 3, "依次选择圆心、起点、终点，沿逆时针方向作弧。"),
-        new("扇形", "Sector", 3, "依次选择圆心、起点和终点。"),
-        new("半圆", "Semicircle", 2, "依次选择直径的两个端点。"),
-        new("三点平面", "Plane", 3, "依次选择三个空间点。空间坐标可在输入栏中指定。"),
+        new("基本工具", "移动 / 选择", "", 0, "拖动自由点可更新关联对象。拖动空白处平移，双指捏合缩放。3D 中拖动空白处旋转视图。", "move"),
+        new("基本工具", "点", "Point", 1, "点击视图放置自由点。", "point"),
+        new("基本工具", "线段", "Segment", 2, "依次选择两个点，或点击视图建立点。", "segment"),
+        new("基本工具", "直线", "Line", 2, "依次选择两个点。", "line"),
+        new("基本工具", "多边形", "Polygon", -1, "依次选择顶点，再点第一个顶点完成多边形。", "polygon"),
+        new("基本工具", "圆", "Circle", 2, "依次选择圆心与圆上一点。", "circle"),
+        new("构造", "中点", "Midpoint", 2, "依次选择两个点。", "midpoint"),
+        new("构造", "垂直平分线", "PerpendicularBisector", 2, "依次选择线段的两个端点。", "perpbisector"),
+        new("构造", "角平分线", "AngleBisector", 3, "依次选择角的起点、顶点与终点。", "anglebisector"),
+        new("构造", "三点圆", "Circumcircle", 3, "依次选择圆上的三个点。", "circumcircle"),
+        new("曲线与立体", "射线", "Ray", 2, "依次选择端点与方向点。", "ray"),
+        new("曲线与立体", "向量", "Vector", 2, "依次选择起点与终点。", "vector"),
+        new("曲线与立体", "圆弧", "Arc", 3, "依次选择圆心、起点、终点，沿逆时针方向作弧。", "arc"),
+        new("曲线与立体", "扇形", "Sector", 3, "依次选择圆心、起点和终点。", "sector"),
+        new("曲线与立体", "半圆", "Semicircle", 2, "依次选择直径的两个端点。", "semicircle"),
+        new("曲线与立体", "三点平面", "Plane", 3, "依次选择三个空间点。空间坐标可在输入栏中指定。", "plane"),
     };
+
+    private readonly List<TouchIconButton> _toolButtons = new();
+    private int _activeToolIndex;
+
+    private FrameworkElement BuildToolsPanel()
+    {
+        var panel = new StackPanel { Spacing = 14, Padding = new Thickness(12, 8, 12, 16) };
+        _toolButtons.Clear();
+        for (int i = 0; i < DrawingTools.Length; i++) _toolButtons.Add(null);
+
+        foreach (var group in DrawingTools.Select((tool, index) => (tool, index)).GroupBy(item => item.tool.Category))
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = group.Key,
+                FontSize = 13,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Opacity = 0.72,
+                Margin = new Thickness(2, 2, 0, 0),
+            });
+
+            var grid = new Grid { ColumnSpacing = 6, RowSpacing = 6 };
+            const int columns = 3;
+            for (int c = 0; c < columns; c++) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            var items = group.ToArray();
+            int rows = (items.Length + columns - 1) / columns;
+            for (int r = 0; r < rows; r++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            for (int k = 0; k < items.Length; k++)
+            {
+                var (tool, toolIndex) = items[k];
+                var button = new TouchIconButton
+                {
+                    Label = tool.Name,
+                    LabelFontSize = 11,
+                    IconAreaHeight = 30,
+                    MinHeight = 62,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    Padding = new Thickness(4, 6, 4, 6),
+                    CornerRadius = new CornerRadius(10),
+                };
+                button.SetContent(CreateToolGlyph(tool.Icon));
+                AutomationProperties.SetName(button, "几何工具 " + tool.Name);
+                ToolTipService.SetToolTip(button, tool.Help);
+                int captured = toolIndex;
+                button.Click += (_, _) => SelectTool(captured);
+                Grid.SetColumn(button, k % columns);
+                Grid.SetRow(button, k / columns);
+                grid.Children.Add(button);
+                _toolButtons[toolIndex] = button;
+            }
+            panel.Children.Add(grid);
+        }
+
+        SelectTool(0);
+        return new ScrollViewer { Content = panel, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+    }
+
+    private void SelectTool(int index)
+    {
+        _activeToolIndex = Math.Clamp(index, 0, DrawingTools.Length - 1);
+        _toolPoints.Clear();
+        _view.ConstructionToolActive = _activeToolIndex > 0;
+        for (int i = 0; i < _toolButtons.Count; i++)
+            if (_toolButtons[i] is not null) _toolButtons[i].IsSelected = i == _activeToolIndex;
+
+        var tool = DrawingTools[_activeToolIndex];
+        if (_toolBanner is not null)
+        {
+            _toolBanner.Visibility = _activeToolIndex > 0 ? Visibility.Visible : Visibility.Collapsed;
+            _toolBannerText.Text = $"{tool.Name}：{tool.Help}";
+        }
+        SetStatus(tool.Help);
+    }
+
+    private static UIElement CreateToolGlyph(string kind)
+    {
+        var canvas = new Canvas { Width = 28, Height = 28 };
+        var accent = new SolidColorBrush(Color.FromArgb(255, 34, 105, 222));
+        var line = new SolidColorBrush(Color.FromArgb(255, 72, 86, 106));
+        void Dot(double x, double y, Brush fill = null)
+        {
+            var e = new Ellipse { Width = 6.5, Height = 6.5, Fill = fill ?? accent, Stroke = new SolidColorBrush(Microsoft.UI.Colors.White), StrokeThickness = 1 };
+            Canvas.SetLeft(e, x - 3.25); Canvas.SetTop(e, y - 3.25); canvas.Children.Add(e);
+        }
+        void Seg(double x1, double y1, double x2, double y2, Brush stroke = null)
+            => canvas.Children.Add(new Line { X1 = x1, Y1 = y1, X2 = x2, Y2 = y2, Stroke = stroke ?? line, StrokeThickness = 1.8 });
+
+        switch (kind)
+        {
+            case "move":
+                canvas.Children.Add(new Polygon
+                {
+                    Points = new PointCollection { new(7, 4), new(7, 22), new(12, 17), new(16, 23), new(19, 21), new(15, 15), new(22, 15) },
+                    Fill = line,
+                });
+                break;
+            case "point":
+                Dot(14, 14);
+                break;
+            case "segment":
+                Seg(6, 22, 22, 6); Dot(6, 22); Dot(22, 6);
+                break;
+            case "line":
+                Seg(3, 25, 25, 3); Dot(9, 19); Dot(19, 9);
+                break;
+            case "ray":
+                Seg(6, 22, 25, 3); Dot(6, 22); Dot(17, 11);
+                break;
+            case "vector":
+                Seg(6, 22, 22, 6, accent); Seg(22, 6, 15, 7, accent); Seg(22, 6, 21, 13, accent); Dot(6, 22);
+                break;
+            case "circle":
+            case "circumcircle":
+                var c = new Ellipse { Width = 20, Height = 20, Stroke = line, StrokeThickness = 1.8 };
+                Canvas.SetLeft(c, 4); Canvas.SetTop(c, 4); canvas.Children.Add(c);
+                if (kind == "circle") { Dot(14, 14); Dot(24, 14); }
+                else { Dot(14, 4); Dot(5, 18); Dot(23, 18); }
+                break;
+            case "midpoint":
+                Seg(5, 22, 23, 6); Dot(5, 22, line); Dot(23, 6, line); Dot(14, 14, accent);
+                break;
+            case "perpbisector":
+                Seg(5, 20, 23, 20); Seg(14, 4, 14, 24, accent); Dot(5, 20); Dot(23, 20);
+                break;
+            case "anglebisector":
+                Seg(6, 22, 24, 22); Seg(6, 22, 18, 5); Seg(6, 22, 23, 12, accent); Dot(6, 22);
+                break;
+            case "polygon":
+                canvas.Children.Add(new Polygon
+                {
+                    Points = new PointCollection { new(14, 5), new(23, 22), new(5, 22) },
+                    Fill = new SolidColorBrush(Color.FromArgb(46, 34, 105, 222)),
+                    Stroke = line,
+                    StrokeThickness = 1.6,
+                });
+                Dot(14, 5); Dot(23, 22); Dot(5, 22);
+                break;
+            case "plane":
+                canvas.Children.Add(new Polygon
+                {
+                    Points = new PointCollection { new(8, 7), new(24, 7), new(20, 21), new(4, 21) },
+                    Fill = new SolidColorBrush(Color.FromArgb(46, 34, 105, 222)),
+                    Stroke = accent,
+                    StrokeThickness = 1.6,
+                });
+                Dot(8, 7); Dot(24, 7); Dot(4, 21);
+                break;
+            default:
+                var arc = new Ellipse { Width = 18, Height = 18, Stroke = accent, StrokeThickness = 1.8 };
+                Canvas.SetLeft(arc, 5); Canvas.SetTop(arc, 5); canvas.Children.Add(arc);
+                Dot(14, 14);
+                break;
+        }
+        return canvas;
+    }
 
     private void GraphClicked(GeoVector point, string hit)
     {
-        if (_tools.SelectedIndex <= 0)
+        if (_activeToolIndex <= 0)
         {
             if (hit is not null && _rows.TryGetValue(hit, out var row)) _objects.SelectedItem = row.Item;
             if (hit is not null) RunEventScript(Document.State.Objects.First(item => item.Label == hit).OnClick);
@@ -37,7 +199,7 @@ public sealed partial class GeometryWorkbenchWindow
         }
         Guard(() =>
         {
-            var tool = DrawingTools[_tools.SelectedIndex];
+            var tool = DrawingTools[_activeToolIndex];
             Document.BeginGesture();
             string label;
             if (hit is not null && Evaluation?.Values.TryGetValue(hit, out var value) == true && value.Kind == GeometryKind.Point) label = hit;
@@ -60,7 +222,9 @@ public sealed partial class GeometryWorkbenchWindow
                 }
             }
             Document.EndGesture();
-            SetStatus(tool.Help + (_toolPoints.Count > 0 ? " · 已选择 " + _toolPoints.Count + " 个点" : ""));
+            string progress = _toolPoints.Count > 0 ? $" · 已选择 {_toolPoints.Count} 个点" : "";
+            if (_toolBannerText is not null) _toolBannerText.Text = $"{tool.Name}：{tool.Help}{progress}";
+            SetStatus(tool.Help + progress);
         });
     }
 
@@ -109,7 +273,7 @@ public sealed partial class GeometryWorkbenchWindow
     };
     internal static IEnumerable<(string Group, string Name, string Input)> ExampleCommands => Examples;
 
-    private void ShowCommandHelp()
+    private void ShowCommandHelp(FrameworkElement anchor = null)
     {
         var panel = new StackPanel { Spacing = 8, Width = 460 };
         foreach (var group in Examples.GroupBy(example => example.Group))
@@ -117,7 +281,7 @@ public sealed partial class GeometryWorkbenchWindow
             var rows = new StackPanel { Spacing = 4 };
             foreach (var example in group)
             {
-                var button = new Button { Content = example.Name, MinHeight = 44, HorizontalAlignment = HorizontalAlignment.Stretch };
+                var button = new Button { Content = example.Name, MinHeight = 42, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left };
                 button.Click += (_, _) =>
                 {
                     _input.Text = example.Input;
@@ -128,12 +292,12 @@ public sealed partial class GeometryWorkbenchWindow
             }
             panel.Children.Add(new Expander { Header = group.Key, Content = rows, HorizontalAlignment = HorizontalAlignment.Stretch });
         }
-        var protocol = new Slider { Header = "构造步骤", Minimum = 0, Maximum = Document.State.Objects.Count, Value = Document.State.Objects.Count, StepFrequency = 1 };
+        var protocol = new Slider { Header = "构造步骤回放", Minimum = 0, Maximum = Document.State.Objects.Count, Value = Document.State.Objects.Count, StepFrequency = 1 };
         protocol.ValueChanged += (_, _) => { _protocolStep = (int)protocol.Value; RenderView(); };
         panel.Children.Add(protocol);
-        var all = new Button { Content = "显示完整构造", MinHeight = 44 };
+        var all = new Button { Content = "显示完整构造", MinHeight = 40 };
         all.Click += (_, _) => { _protocolStep = int.MaxValue; RenderView(); }; panel.Children.Add(all);
         var flyout = new Flyout { Content = new ScrollViewer { Content = panel, MaxHeight = 620 }, Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.Bottom };
-        flyout.ShowAt(_input);
+        flyout.ShowAt(anchor ?? _input);
     }
 }

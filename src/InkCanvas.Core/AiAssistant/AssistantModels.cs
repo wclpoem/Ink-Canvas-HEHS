@@ -80,6 +80,8 @@ public sealed class AssistantRegion
 
 public sealed class AssistantRequest
 {
+    /// <summary>Previous visible conversation turns, oldest first. Screenshots remain in Images.</summary>
+    public IReadOnlyList<AssistantMessage> Messages { get; set; } = Array.Empty<AssistantMessage>();
     public string ImageBase64 { get; set; } = "";
 
     public IReadOnlyList<AssistantStroke> InkStrokes { get; set; } = Array.Empty<AssistantStroke>();
@@ -89,6 +91,8 @@ public sealed class AssistantRequest
     public AssistantMode Mode { get; set; }
 
     public string SessionId { get; set; } = "";
+
+    public string Question { get; set; } = "";
 
     public AssistantStage Stage { get; set; } = AssistantStage.WithImage;
 
@@ -115,6 +119,8 @@ public sealed class AssistantRequest
     /// <summary>课件上下文（标题/本页/前后页文本），仅作辅助，不覆盖框选。</summary>
     public SlideContext SlideContext { get; set; }
 }
+
+public sealed record AssistantMessage(string Role, string Content);
 
 public enum AssistantEventKind
 {

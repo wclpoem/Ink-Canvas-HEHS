@@ -1,4 +1,4 @@
-using InkCanvas.Controls.Theming;
+﻿using InkCanvas.Controls.Theming;
 using InkCanvas.Core.Ink;
 using InkCanvas.Core.Settings;
 using InkCanvas.Ink;
@@ -93,7 +93,7 @@ public sealed class PenPalette : UserControl
                 Controller.CurrentAttributes.TaperKind = OriginalMenuCatalog.ToTaperKind(_style.SelectedIndex);
                 InkStyleChanged?.Invoke(_style.SelectedIndex);
                 AttributesChanged?.Invoke();
-                UpdatePreview();
+                RefreshFromController();
             };
         }
 
@@ -108,11 +108,13 @@ public sealed class PenPalette : UserControl
                 return;
             }
 
-            double stored = OriginalMenuCatalog.ToStoredPenWidth(snapped);
+            bool waterInk = !_highlighter && Controller.CurrentAttributes.TaperKind == TaperKind.InkWash;
+            double stored = waterInk ? snapped : OriginalMenuCatalog.ToStoredPenWidth(snapped);
             Controller.Tool = _highlighter ? InkTool.Highlighter : InkTool.Pen;
-            // 原菜单读数显示菜单刻度 1–30（WPF 绑定 Slider.Value），持久化值为其一半。
-            _widthValue.Text = snapped.ToString("0");
-            Controller.CurrentAttributes.BaseWidth = (float)stored;
+            // Standard pens retain the original menu scale. Water-ink uses its independent pixel width.
+            _widthValue.Text = snapped.ToString("0") + (waterInk ? " px" : "");
+            if (waterInk) Controller.InkWashWidth = (float)stored;
+            else Controller.CurrentAttributes.BaseWidth = (float)stored;
             InkWidthChanged?.Invoke(stored);
             AttributesChanged?.Invoke();
             UpdatePreview();
@@ -294,8 +296,8 @@ public sealed class PenPalette : UserControl
             var swatch = colors[i];
             var check = new FontIcon
             {
-                Glyph = "\uE73E",
-                FontFamily = new FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
+                Glyph = "\uF295",
+                FontFamily = IconFontStyle.Font,
                 FontSize = 16,
                 Foreground = new SolidColorBrush(swatch.Name == "白色"
                     ? Microsoft.UI.Colors.Black : Microsoft.UI.Colors.White),
@@ -356,7 +358,7 @@ public sealed class PenPalette : UserControl
     {
         _themeGlyph = new FontIcon
         {
-            FontFamily = new FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
+            FontFamily = IconFontStyle.Font,
             FontSize = 14,
             Foreground = _foreground,
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -412,7 +414,7 @@ public sealed class PenPalette : UserControl
     {
         if (_themeGlyph is null) return;
         // 与原版一致：显示将要切换到的目标色系。
-        _themeGlyph.Glyph = _lightColorScheme ? "\uE708" : "\uE706";
+        _themeGlyph.Glyph = _lightColorScheme ? "\uF33C" : "\uF8BA";
         _themeText.Text = _lightColorScheme ? "暗系" : "亮系";
     }
 
@@ -435,7 +437,7 @@ public sealed class PenPalette : UserControl
 
     public Action RequestClose { get; set; }
 
-    /// <summary>Optional persistence callbacks; persisted width is stored in Canvas.InkWidth units.</summary>
+    /// <summary>Persists the active brush width. Water-ink uses pixels, other pens use Canvas.InkWidth units.</summary>
     public Action<double> InkWidthChanged { get; set; }
     public Action<int> InkStyleChanged { get; set; }
     public Action<PenNib> PenNibChanged { get; set; }
@@ -505,11 +507,15 @@ public sealed class PenPalette : UserControl
         _suppress = true;
         try
         {
-            double menuWidth = Math.Clamp(OriginalMenuCatalog.ToMenuPenWidth(Controller.CurrentAttributes.BaseWidth),
+            bool waterInk = !_highlighter && Controller.CurrentAttributes.TaperKind == TaperKind.InkWash;
+            _width.Maximum = waterInk ? 120 : _highlighter ? OriginalMenuCatalog.HighlighterWidthMaximum : OriginalMenuCatalog.PenWidthMaximum;
+            Accessible(_width, _highlighter ? "荧光笔粗细" : "画笔粗细", waterInk ? "水墨笔刷宽度，范围 1 到 120 像素"
+                : _highlighter ? "荧光笔粗细，范围 1 到 120，步长 1" : "画笔粗细，范围 1 到 30，步长 1");
+            double menuWidth = Math.Clamp(waterInk ? Controller.InkWashWidth : OriginalMenuCatalog.ToMenuPenWidth(Controller.GetDrawingAttributes(_highlighter).BaseWidth),
                 OriginalMenuCatalog.PenWidthMinimum, _width.Maximum);
             _width.Value = menuWidth;
             _nib.SelectedIndex = Enum.IsDefined(Controller.CurrentAttributes.Nib) ? (int)Controller.CurrentAttributes.Nib : 0;
-            _widthValue.Text = menuWidth.ToString("0");
+            _widthValue.Text = menuWidth.ToString("0") + (waterInk ? " px" : "");
             if (_style is not null) _style.SelectedIndex = OriginalMenuCatalog.ToPenStyle(Controller.CurrentAttributes.TaperKind);
             if (InkAlphaChanged is not null)
             {

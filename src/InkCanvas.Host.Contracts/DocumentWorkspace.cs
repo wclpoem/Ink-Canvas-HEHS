@@ -23,6 +23,7 @@ public interface IDocumentWorkspace
 
 public interface IDocumentWorkspaceHost
 {
+    IAiDocumentBridge DocumentAi => null;
     Window Owner { get; }
     AppSettings Settings { get; }
     Rect ToolbarScreenBounds { get; }

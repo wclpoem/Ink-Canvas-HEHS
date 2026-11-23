@@ -13,7 +13,7 @@ namespace InkCanvas.App.Services;
 /// </summary>
 public sealed class OverlayHost : IDisposable
 {
-private Action _undo, _redo, _togglePen, _toggleEraser, _clear;
+    private Action _undo, _redo, _togglePen, _toggleEraser, _clear;
     private Action _togglePassThrough, _toggleBoard;
     private Action _pptNext, _pptPrevious, _pptExit, _toggleBlackScreen;
     private Action _screenshot, _fold, _select, _line, _draw, _ai;
@@ -117,7 +117,7 @@ private Action _undo, _redo, _togglePen, _toggleEraser, _clear;
         InteractionChanged?.Invoke();
     }
 
-public void Hide()
+    public void Hide()
     {
         Controller.CancelLassoErase();
         Presenter.Suspend();

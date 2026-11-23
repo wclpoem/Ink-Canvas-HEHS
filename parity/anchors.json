@@ -2,6 +2,10 @@
   "note": "ArkTS→C# 锚点登记；C# 反向锚点延后（见 notes）。",
   "pairs": [
     {
+      "arkts": "harmony/core/src/main/ets/ai/AiAssistant.ts",
+      "csharp": "src/InkCanvas.Core/Recognition/ShapeRecognizer.cs"
+    },
+    {
       "arkts": "harmony/controls/src/main/ets/FloatingBar.ets",
       "csharp": "src/InkCanvas.Controls/Controls/FloatingBar.cs"
     },
@@ -31,11 +35,11 @@
     },
     {
       "arkts": "harmony/controls/src/main/ets/ShapePicker.ets",
-      "csharp": "src/InkCanvas.App/Views/PickerWindows.cs"
+      "csharp": "src/InkCanvas.Controls/Controls/ShapePreview.cs"
     },
     {
       "arkts": "harmony/controls/src/main/ets/ShapePickerCatalog.ts",
-      "csharp": "src/InkCanvas.App/Views/PickerWindows.cs"
+      "csharp": "src/InkCanvas.Controls/Controls/ShapePreview.cs"
     },
     {
       "arkts": "harmony/controls/src/main/ets/ThemeTokens.ts",
@@ -359,7 +363,7 @@
     },
     {
       "arkts": "harmony/platform/src/main/ets/system/SystemServices.ets",
-      "csharp": "src/InkCanvas.Platform/System/SystemServices.cs"
+      "csharp": "src/InkCanvas.Platform/System/SoftwareLauncher.cs"
     },
     {
       "arkts": "harmony/core/src/main/ets/assistant/AssistantTypes.ts",

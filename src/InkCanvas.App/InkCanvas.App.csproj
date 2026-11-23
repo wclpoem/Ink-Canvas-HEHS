@@ -16,11 +16,16 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <SelfContained>false</SelfContained>
     <ApplicationIcon>Assets\InkCanvas.ico</ApplicationIcon>
-    <Version>3.7.5</Version>
+    <Version>3.10.0</Version>
     <Product>Ink Canvas (WinUI 3)</Product>
     <IncludeScreenTrackingModule Condition="'$(IncludeScreenTrackingModule)' == ''">true</IncludeScreenTrackingModule>
+    <IncludeAiAssistantModule Condition="'$(IncludeAiAssistantModule)' == ''">true</IncludeAiAssistantModule>
+    <IncludeLibraryModule Condition="'$(IncludeLibraryModule)' == ''">true</IncludeLibraryModule>
     <IncludePdfModule Condition="'$(IncludePdfModule)' == ''">true</IncludePdfModule>
     <IncludeAnalyticGeometryModule Condition="'$(IncludeAnalyticGeometryModule)' == ''">true</IncludeAnalyticGeometryModule>
+    <IncludeTimeMachineModule Condition="'$(IncludeTimeMachineModule)' == ''">true</IncludeTimeMachineModule>
+    <IncludeCloudSyncModule Condition="'$(IncludeCloudSyncModule)' == ''">true</IncludeCloudSyncModule>
+    <IncludeMcpModule Condition="'$(IncludeMcpModule)' == ''">true</IncludeMcpModule>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\InkCanvas.UpdateHost\InkCanvas.UpdateHost.csproj" ReferenceOutputAssembly="false" Private="false" />
@@ -43,14 +48,19 @@
     <ProjectReference Include="..\InkCanvas.Modules.ScreenTracking\InkCanvas.Modules.ScreenTracking.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeScreenTrackingModule)' == 'true'" />
     <ProjectReference Include="..\InkCanvas.Modules.Pdf\InkCanvas.Modules.Pdf.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludePdfModule)' == 'true'" />
     <ProjectReference Include="..\InkCanvas.Modules.AnalyticGeometry\InkCanvas.Modules.AnalyticGeometry.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeAnalyticGeometryModule)' == 'true'" />
+    <ProjectReference Include="..\InkCanvas.Modules.AiAssistant\InkCanvas.Modules.AiAssistant.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeAiAssistantModule)' == 'true'" />
+    <ProjectReference Include="..\InkCanvas.Modules.Library\InkCanvas.Modules.Library.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeLibraryModule)' == 'true'" />
+    <ProjectReference Include="..\InkCanvas.Modules.TimeMachine\InkCanvas.Modules.TimeMachine.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeTimeMachineModule)' == 'true'" />
+    <ProjectReference Include="..\InkCanvas.Modules.CloudSync\InkCanvas.Modules.CloudSync.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeCloudSyncModule)' == 'true'" />
     <ProjectReference Include="..\InkCanvas.PluginHost\InkCanvas.PluginHost.csproj" ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\InkCanvas.Modules.Mcp\InkCanvas.Modules.Mcp.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeMcpModule)' == 'true'" />
+    <ProjectReference Include="..\InkCanvas.McpHost\InkCanvas.McpHost.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeMcpModule)' == 'true'" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="Assets\**\*.*" Exclude="Assets\SegoeFluentIcons.ttf;Assets\SegoeMDL2Assets.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\**\*.*" Exclude="Assets\FluentSystemIcons*.ttf;Assets\SegoeMDL2Assets.ttf" CopyToOutputDirectory="PreserveNewest" />
     <Content Update="Assets\Board\*.png" CopyToPublishDirectory="PreserveNewest" />
-    <!-- Required icon font: ship it with both build and publish outputs, never rely on an OS font. -->
-    <Content Include="Assets\SegoeFluentIcons.ttf" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="Assets\SegoeMDL2Assets.ttf" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- MIT 开源图标字体（microsoft/fluentui-system-icons）：随构建与发布输出，跨 Win10/11 一致渲染。 -->
+    <Content Include="Assets\FluentSystemIcons.ttf;Assets\FluentSystemIcons-Regular.ttf" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\..\CHANGELOG.md" Link="CHANGELOG.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
@@ -82,14 +92,32 @@
              Condition="!Exists('$(OutDir)$(TargetName).pri')" />
   </Target>
   <Target Name="CopyExtensionPackages" AfterTargets="Build;Publish">
+    <ItemGroup Condition="'$(IncludeMcpModule)' == 'true'">
+      <_McpOutputFiles Include="..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\InkCanvas.Modules.Mcp.dll;..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\InkCanvas.Modules.Mcp.deps.json;..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\ModelContextProtocol.Core.dll;..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\Microsoft.Extensions.AI.Abstractions.dll;..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\Microsoft.Extensions.Logging.Abstractions.dll;..\InkCanvas.Modules.Mcp\module.json" />
+      <_McpOutputFiles Include="..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\Microsoft.Extensions.DependencyInjection.Abstractions.dll" />
+      <_McpOutputFiles Include="..\InkCanvas.McpHost\bin\$(Platform)\$(Configuration)\net10.0\$(RuntimeIdentifier)\InkCanvas.McpHost.*" Exclude="..\InkCanvas.McpHost\bin\$(Platform)\$(Configuration)\net10.0\$(RuntimeIdentifier)\*.pdb" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_McpOutputFiles)" DestinationFolder="$(OutDir)Modules\inkcanvas.mcp\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_McpOutputFiles)" DestinationFolder="$(PublishDir)Modules\inkcanvas.mcp\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
+    <ItemGroup Condition="'$(IncludeCloudSyncModule)' == 'true'">
+      <_CloudSyncFiles Include="..\InkCanvas.Modules.CloudSync\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\InkCanvas.Modules.CloudSync.dll;..\InkCanvas.Modules.CloudSync\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\InkCanvas.Modules.CloudSync.deps.json;..\InkCanvas.Modules.CloudSync\module.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_CloudSyncFiles)" DestinationFolder="$(OutDir)Modules\inkcanvas.cloud-sync\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_CloudSyncFiles)" DestinationFolder="$(PublishDir)Modules\inkcanvas.cloud-sync\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
     <PropertyGroup>
       <_ExtensionOutput>$(MSBuildProjectDirectory)\..\InkCanvas.Modules.ScreenTracking\bin\$(Platform)\$(Configuration)\net10.0-windows10.0.26100.0\$(RuntimeIdentifier)\</_ExtensionOutput>
       <_WorkerOutput>$(MSBuildProjectDirectory)\..\InkCanvas.PluginHost\bin\$(Platform)\$(Configuration)\net10.0\$(RuntimeIdentifier)\</_WorkerOutput>
       <_UpdaterOutput>$(MSBuildProjectDirectory)\..\InkCanvas.UpdateHost\bin\$(Platform)\$(Configuration)\net10.0\$(RuntimeIdentifier)\</_UpdaterOutput>
       <_PdfOutput>$(MSBuildProjectDirectory)\..\InkCanvas.Modules.Pdf\bin\$(Platform)\$(Configuration)\net10.0-windows10.0.26100.0\$(RuntimeIdentifier)\</_PdfOutput>
+      <_AssistantOutput>$(MSBuildProjectDirectory)\..\InkCanvas.Modules.AiAssistant\bin\$(Platform)\$(Configuration)\net10.0-windows10.0.26100.0\$(RuntimeIdentifier)\</_AssistantOutput>
+      <_LibraryOutput>$(MSBuildProjectDirectory)\..\InkCanvas.Modules.Library\bin\$(Platform)\$(Configuration)\net10.0-windows10.0.26100.0\$(RuntimeIdentifier)\</_LibraryOutput>
       <_GeometryOutput>$(MSBuildProjectDirectory)\..\InkCanvas.Modules.AnalyticGeometry\bin\$(Platform)\$(Configuration)\net10.0-windows10.0.26100.0\$(RuntimeIdentifier)\</_GeometryOutput>
+      <_TimeMachineOutput>$(MSBuildProjectDirectory)\..\InkCanvas.Modules.TimeMachine\bin\$(Platform)\$(Configuration)\net10.0-windows10.0.26100.0\$(RuntimeIdentifier)\</_TimeMachineOutput>
     </PropertyGroup>
     <ItemGroup>
+      <_AssistantFiles Include="$(_AssistantOutput)InkCanvas.Modules.AiAssistant.dll;$(_AssistantOutput)InkCanvas.Modules.AiAssistant.deps.json;$(_AssistantOutput)module.json" Condition="'$(IncludeAiAssistantModule)' == 'true'" />
+      <_AssistantLicenses Include="$(_AssistantOutput)Licenses\ProviderIcons.txt;$(_AssistantOutput)Licenses\OpenCode.txt" Condition="'$(IncludeAiAssistantModule)' == 'true'" />
+      <_LibraryFiles Include="$(_LibraryOutput)InkCanvas.Modules.Library.dll;$(_LibraryOutput)InkCanvas.Modules.Library.deps.json;$(_LibraryOutput)module.json" Condition="'$(IncludeLibraryModule)' == 'true'" />
       <_ModuleFiles Include="$(_ExtensionOutput)InkCanvas.Modules.ScreenTracking.dll;$(_ExtensionOutput)InkCanvas.Modules.ScreenTracking.deps.json;$(_ExtensionOutput)Interop.UIAutomationClient.dll;$(_ExtensionOutput)module.json;$(_ExtensionOutput)UIAutomation-Interop.txt" Condition="'$(IncludeScreenTrackingModule)' == 'true'" />
       <_WorkerFiles Include="$(_WorkerOutput)*.dll;$(_WorkerOutput)*.exe;$(_WorkerOutput)*.json" />
       <_UpdaterFiles Include="$(_UpdaterOutput)*.dll;$(_UpdaterOutput)*.exe;$(_UpdaterOutput)*.json" />
@@ -100,7 +128,14 @@
       <_GeometryFiles Include="$(_GeometryOutput)AngouriMath.dll;$(_GeometryOutput)Antlr4.Runtime.Standard.dll;$(_GeometryOutput)GenericTensor.dll;$(_GeometryOutput)HonkSharp.dll;$(_GeometryOutput)Numbers.dll;$(_GeometryOutput)PdfSharp.dll;$(_GeometryOutput)PdfSharp.Shared.dll;$(_GeometryOutput)PdfSharp.System.dll;$(_GeometryOutput)PdfSharp.Cryptography.dll;$(_GeometryOutput)Microsoft.Extensions.Logging.Abstractions.dll;$(_GeometryOutput)Microsoft.Extensions.DependencyInjection.Abstractions.dll;$(_GeometryOutput)System.Security.Cryptography.Pkcs.dll" Condition="'$(IncludeAnalyticGeometryModule)' == 'true'" />
       <_GeometryLicenses Include="$(_GeometryOutput)Licenses\*.txt" Condition="'$(IncludeAnalyticGeometryModule)' == 'true'" />
       <_GeometryFiles Include="$(_GeometryOutput)Jint.dll;$(_GeometryOutput)Acornima.dll" Condition="'$(IncludeAnalyticGeometryModule)' == 'true'" />
+      <_TimeMachineFiles Include="$(_TimeMachineOutput)InkCanvas.Modules.TimeMachine.dll;$(_TimeMachineOutput)InkCanvas.Modules.TimeMachine.deps.json;$(_TimeMachineOutput)module.json" Condition="'$(IncludeTimeMachineModule)' == 'true'" />
     </ItemGroup>
+    <Copy SourceFiles="@(_AssistantFiles)" DestinationFolder="$(OutDir)Modules\inkcanvas.ai-assistant\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_AssistantLicenses)" DestinationFolder="$(OutDir)Modules\inkcanvas.ai-assistant\Licenses\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_LibraryFiles)" DestinationFolder="$(OutDir)Modules\inkcanvas.library\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_LibraryFiles)" DestinationFolder="$(PublishDir)Modules\inkcanvas.library\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
+    <Copy SourceFiles="@(_AssistantFiles)" DestinationFolder="$(PublishDir)Modules\inkcanvas.ai-assistant\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
+    <Copy SourceFiles="@(_AssistantLicenses)" DestinationFolder="$(PublishDir)Modules\inkcanvas.ai-assistant\Licenses\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
     <Copy SourceFiles="@(_ModuleFiles)" DestinationFolder="$(OutDir)Modules\inkcanvas.screen-tracking\" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_WorkerFiles)" DestinationFolder="$(OutDir)PluginHost\" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_UpdaterFiles)" DestinationFolder="$(OutDir)UpdateHost\" SkipUnchangedFiles="true" />
@@ -115,6 +150,8 @@
     <Copy SourceFiles="@(_PdfLicenses)" DestinationFolder="$(PublishDir)Modules\inkcanvas.pdf\Licenses\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
     <Copy SourceFiles="@(_GeometryFiles)" DestinationFolder="$(PublishDir)Modules\inkcanvas.analytic-geometry\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
     <Copy SourceFiles="@(_GeometryLicenses)" DestinationFolder="$(PublishDir)Modules\inkcanvas.analytic-geometry\Licenses\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
+    <Copy SourceFiles="@(_TimeMachineFiles)" DestinationFolder="$(OutDir)Modules\inkcanvas.time-machine\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_TimeMachineFiles)" DestinationFolder="$(PublishDir)Modules\inkcanvas.time-machine\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
   </Target>
   <!--
     The self-contained Windows App SDK runtime payload ships components this app never uses:

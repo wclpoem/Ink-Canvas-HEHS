@@ -1,4 +1,4 @@
-using InkCanvas.Controls.Controls;
+﻿using InkCanvas.Controls.Controls;
 using InkCanvas.Controls.Theming;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -53,7 +53,7 @@ internal static class ClassroomControls
         button.Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10,
             HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Children =
             {
-                new FontIcon { Glyph = glyph, FontFamily = new FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
+                new FontIcon { Glyph = glyph, FontFamily = IconFontStyle.Font,
                     FontSize = 20, IsTextScaleFactorEnabled = false, VerticalAlignment = VerticalAlignment.Center },
                 new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center },
             } };

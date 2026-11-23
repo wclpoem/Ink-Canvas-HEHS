@@ -1,4 +1,4 @@
-using InkCanvas.App.Services;
+﻿using InkCanvas.App.Services;
 using InkCanvas.Controls.Controls;
 using InkCanvas.Core.Update;
 using InkCanvas.Core.Versioning;
@@ -60,7 +60,7 @@ internal sealed class UpdateWindow : Window
         header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         header.Children.Add(new FontIcon { Glyph = Glyphs.Download, FontSize = 32, Foreground = foreground,
-            FontFamily = new FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"), Width = 44 });
+            FontFamily = IconFontStyle.Font, Width = 44 });
         var titles = new StackPanel { Spacing = 6 };
         titles.Children.Add(new TextBlock { Text = noticeTitle ?? (chooseVersion ? "选择更新版本" : "发现新版本"), FontSize = 26,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = foreground, TextWrapping = TextWrapping.Wrap });

@@ -17,6 +17,7 @@ using InkCanvas.Ink.Manipulation;
 using InkCanvas.Ink.Rendering;
 using InkCanvas.Platform.Windows;
 using Microsoft.Graphics.Canvas;
+using Microsoft.Graphics.Canvas.Geometry;
 using Microsoft.Graphics.Canvas.UI.Xaml;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
@@ -24,6 +25,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
 using System.Numerics;
 using WinRT.Interop;
@@ -38,45 +40,52 @@ namespace InkCanvas.App.Views;
 /// center tools, right page-navigation mirror — themed to the black/white board, plus the
 /// top-left selection action panel (MW_SelectionGestures.cs).
 /// </summary>
-public sealed class BoardWindow : Window
+public sealed partial class BoardWindow : Window
 {
     // WPF board glyph codes (Segoe Fluent Icons / MDL2), MainWindow.xaml board regions.
-    private const string GlyphPrev = "";
-    private const string GlyphNext = "";
-    private const string GlyphAddPage = "";
-    private const string GlyphExit = "";
-    private const string GlyphGesture = "";
-    private const string GlyphCanvas = "";
-    private const string GlyphSelect = "";
-    private const string GlyphSelectBadge = "";
-    private const string GlyphPen = "";
-    private const string GlyphHighlighter = "";
-    private const string GlyphEraser = "";
-    private const string GlyphShape = "";
-    private const string GlyphImage = "";
-    private const string GlyphUndo = "";
-    private const string GlyphRedo = "";
-    private const string GlyphMore = "";
-    private const string GlyphClear = "";
+    private const string GlyphPrev = "\uF16D";
+    private const string GlyphNext = "\uF16B";
+    private const string GlyphAddPage = Glyphs.AddPage;
+    private const string GlyphExit = Glyphs.ExitBoard;
+    private const string GlyphGesture = "\uE6E5";
+    private const string GlyphCanvas = "\uF2F8";
+    private const string GlyphSelect = Glyphs.Select;
+    private const string GlyphPen = "\uF253";
+    private const string GlyphHighlighter = "\uF481";
+    private const string GlyphEraser = "\uE5F2";
+    private const string GlyphShape = "\uF6B7";
+    private const string GlyphImage = "\uF490";
+    private const string GlyphUndo = "\uF19A";
+    private const string GlyphRedo = "\uF16F";
+    private const string GlyphMore = "\uF467";
+    private const string GlyphClear = "\uF34D";
 
-    private static readonly FontFamily IconFont = new("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons");
+    private static FontFamily IconFont => IconFontStyle.Font;
 
     private readonly AppServices _services;
     private readonly BoardService _board;
     private readonly IShellActions _shell;
     private readonly InkSurface _surface = new();
     private readonly BoardImageLayer _images = new();
+    private bool _editingAiCard;
     private readonly BoardMediaLayer _media = new();
     private readonly BoardDrawingLayers _drawingLayers = new();
     private readonly CanvasControl _paper;
     private readonly Border _background;
-private readonly Grid _surfaceHost;
+    private readonly Grid _surfaceHost;
     private readonly Grid _contentRoot;
     private readonly Grid _windowedContent;
     private readonly Border _selectionPanel;
     private readonly Border _pagePane;
+    private readonly Grid _pageOverlay;
+    private bool _pagePaneOpen, _pagePaneRight;
+    private int _pagePaneAnimation;
+    private Microsoft.UI.Composition.CompositionPathGeometry _pageClipGeometry;
+    private Microsoft.UI.Composition.CompositionGeometricClip _pageClip;
+    private CanvasGeometry _pageClipSource;
     internal BoardPageNavigator PageNavigator { get; }
-    internal bool PagePaneOpen => _pagePane.Visibility == Visibility.Visible;
+    internal bool PagePaneOpen => _pagePaneOpen;
+    internal FrameworkElement PagePaneSurface => _pagePane;
 
     private readonly StackPanel _leftHost;
     private readonly StackPanel _centerHost;
@@ -116,6 +125,10 @@ private readonly Grid _surfaceHost;
     private bool _isFullscreen;
     private bool _entrancePlayed;
     private bool _closed;
+    internal bool IsClosed => _closed;
+    internal long CachedBoardRasterBytes => _drawingLayers.RasterBytes;
+    internal int DrawingSurfaceCount => _drawingLayers.SurfaceCount;
+    internal bool IdleResourcesReleased => _idleResources.IsReleased;
     private readonly WindowIdleResources _idleResources;
     private bool _imagePicking;
     private CancellationTokenSource _imageImportCancellation;
@@ -126,7 +139,6 @@ private readonly Grid _surfaceHost;
     private Windows.Foundation.Point _lastNativeTapPoint;
     private bool _pendingAiNativeEdit;
     private Windows.Foundation.Point _pendingAiNativeEditPoint;
-    private bool _editingAiCard;
 
     // Selection panel clone toggle (WPF ToggleButtonStrokeSelectionClone) and its icon/label,
     // whose foreground swaps when checked (BorderStrokeSelectionClone_Click).
@@ -146,7 +158,6 @@ private readonly Grid _surfaceHost;
     public InkController CurrentController => _board.Current;
     internal BoardMediaLayer MediaLayer => _media;
     internal IReadOnlyList<FrameworkElement> DockSurfaces => new FrameworkElement[] { _leftDock, _centerDock, _rightDock };
-    internal bool IsClosed => _closed;
     internal Vector2 PasteViewport
     {
         get
@@ -179,7 +190,7 @@ private readonly Grid _surfaceHost;
         _paper = new CanvasControl { ClearColor = Windows.UI.Color.FromArgb(0, 0, 0, 0) };
         _paper.Draw += OnDrawPaper;
         _images.SelectionChanged += OnImageSelectionChanged;
-// Image views mark pointer presses as handled for dragging, so observe them at the layer
+        // Image views mark pointer presses as handled for dragging, so observe them at the layer
         // level to detect a double tap without touching the existing drag/delete interaction.
         _images.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnImageLayerPointerPressed), true);
         // Native gesture is registered in parallel so system-injected or synthesized double taps
@@ -238,7 +249,7 @@ private readonly Grid _surfaceHost;
         _rightDock = DockStrip(_rightHost, HorizontalAlignment.Right);
         _dock.Children.Add(_leftDock); _dock.Children.Add(_centerDock); _dock.Children.Add(_rightDock);
 
-        _contentRoot = new Grid { Background = new SolidColorBrush(Microsoft.UI.Colors.Black) };
+        _contentRoot = new Grid { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
         _contentRoot.KeyDown += OnBoardKeyDown;
         _contentRoot.Children.Add(_surfaceHost);
         _contentRoot.Children.Add(_dock);
@@ -256,11 +267,13 @@ private readonly Grid _surfaceHost;
         {
             _surface.SuspendRendering();
             _drawingLayers.SuspendRendering();
+            _media.ReleasePlayers();
             PageNavigator?.SetSuspended(true);
         }, () =>
         {
             _surface.ResumeRendering();
             _drawingLayers.ResumeRendering();
+            _media.Refresh();
             _paper.Invalidate();
             PageNavigator?.SetSuspended(false);
         });
@@ -270,18 +283,27 @@ private readonly Grid _surfaceHost;
 
         PageNavigator = new BoardPageNavigator(_board,
             () => new Vector2(Math.Max(1, (float)_surfaceHost.ActualWidth), Math.Max(1, (float)_surfaceHost.ActualHeight)),
-            NavigateToPage, InsertPage, DuplicatePage, DeleteCurrentPage);
-        _pagePane = new Border { Child = PageNavigator, Width = 244, HorizontalAlignment = HorizontalAlignment.Left,
-            BorderThickness = new Thickness(0, 0, 1, 0), Visibility = Visibility.Collapsed };
-        PageNavigator.CloseRequested += () => SetPagePaneOpen(false);
-        PageNavigator.ViewModeChanged += overview =>
+            NavigateToPage, InsertPage, DuplicatePage, DeleteCurrentPage, () => _ = RenameCurrentPageAsync());
+        _pagePane = new Border { Child = PageNavigator, Width = BoardPageNavigator.SidebarWidth, HorizontalAlignment = HorizontalAlignment.Left,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(12) };
+        _pageOverlay = new Grid { Visibility = Visibility.Collapsed };
+        var dismissPages = new Border { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
+        dismissPages.PointerPressed += (_, args) => { SetPagePaneOpen(false); args.Handled = true; };
+        _pageOverlay.Children.Add(dismissPages);
+        _pageOverlay.Children.Add(_pagePane);
+        _pageOverlay.KeyDown += (_, args) =>
         {
-            _pagePane.Width = double.NaN;
-            _pagePane.HorizontalAlignment = overview ? HorizontalAlignment.Stretch : HorizontalAlignment.Left;
+            if (args.Key != Windows.System.VirtualKey.Escape) return;
+            SetPagePaneOpen(false);
+            args.Handled = true;
+        };
+        PageNavigator.CloseRequested += () => SetPagePaneOpen(false);
+        PageNavigator.ViewModeChanged += _ =>
+        {
             UpdatePagePaneLayout();
         };
         _contentRoot.SizeChanged += (_, _) => UpdatePagePaneLayout();
-        _contentRoot.Children.Add(_pagePane);
+        _contentRoot.Children.Add(_pageOverlay);
 
         _board.PageChanged += OnPageChanged;
         _board.BackgroundChanged += RefreshBackground;
@@ -289,6 +311,7 @@ private readonly Grid _surfaceHost;
         _board.ImagePlacementChanged += _images.UpdateElement;
         _board.MediaPlacementChanged += _media.UpdateElement;
         Closed += OnClosed;
+        AppWindow.Closing += OnArchiveClosing;
         Activated += (_, _) => OnActivated();
 
         BindPage();
@@ -339,15 +362,14 @@ private readonly Grid _surfaceHost;
         var canvas = MakeCell(GlyphCanvas, "画布", null, 60, 22, midBorder);
         AttachClickAndHold(canvas.Button, ToggleBoardColor, BuildCanvasFlyout);
         ToolTipService.SetToolTip(canvas.Button, "点击切换黑板/白板；长按选择纸型、缩放与网格间距");
-        _selectCell = MakeCell(GlyphSelect, "选择", SelectOrSelectAll, 60, 22, midBorder,
-            badge: GlyphSelectBadge, badgeSize: 14);
+        _selectCell = MakeCell(GlyphSelect, "选择", SelectOrSelectAll, 60, 22, midBorder);
         _penCell = MakeCell(GlyphPen, "墨迹", () => ActivateToolOptions(InkTool.Pen, ShowPenPalette), 60, 22, midBorder);
         _eraserCell = MakeCell(GlyphEraser, "橡皮", () => ActivateToolOptions(InkTool.Eraser, ShowEraserPalette), 60, 22, midBorder);
         ToolTipService.SetToolTip(_eraserCell.Button, "选择面积擦、墨迹擦、套索擦和橡皮大小");
-        var clear = MakeCell(GlyphClear, "清屏", async () =>
+        var clear = MakeCell(GlyphClear, "清屏", () =>
         {
             DismissBoardFlyout();
-            await ConfirmClearCurrentPageAsync();
+            ClearCurrentPage();
         }, 60, 22, midBorder);
         ToolTipService.SetToolTip(clear.Button, "清除当前页上的全部墨迹、图片和视频");
         _shapeCell = MakeCell(GlyphShape, "图形", () => ActivateToolOptions(InkTool.Shape, () => _shell?.OpenShapePicker()), 60, 22, midBorder);
@@ -403,7 +425,13 @@ private readonly Grid _surfaceHost;
         stack.Children.Add(caption);
         var openPages = new Button { Content = stack, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0),
             BorderThickness = new Thickness(0), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
-        openPages.Click += (_, _) => SetPagePaneOpen(!PagePaneOpen);
+        openPages.Click += (_, _) =>
+        {
+            bool right = ReferenceEquals(indexText, _pageTextR);
+            bool open = !PagePaneOpen || _pagePaneRight != right;
+            _pagePaneRight = right;
+            SetPagePaneOpen(open);
+        };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(openPages, "页面管理与总览");
         var indicator = new Border { Width = 58, Height = 55, BorderThickness = border, Child = openPages };
         ToolTipService.SetToolTip(indicator, "页面管理与总览");
@@ -421,7 +449,7 @@ private readonly Grid _surfaceHost;
         var icon = glyph == Glyphs.Ai ? null
             : new FontIcon { Glyph = glyph, FontFamily = IconFont, FontSize = glyphSize, IsTextScaleFactorEnabled = false };
         FontIcon badgeIcon = null;
-        TextBlock aiLabel = null;
+        FontIcon aiLabel = null;
         UIElement iconHost;
         if (glyph == Glyphs.Ai)
         {
@@ -977,16 +1005,18 @@ private readonly Grid _surfaceHost;
         grid.RowSpacing = 6;
         var items = new (string Glyph, string Label, Action Click, bool Badge)[]
         {
-            ("", "倒计时", () => { HideBoardFlyout(flyout); _shell?.OpenTimer(); }, false),
-            ("", "随机抽选", () => { HideBoardFlyout(flyout); _shell?.OpenLottery(); }, false),
-            ("", "单次抽选", () => { HideBoardFlyout(flyout); _shell?.OpenLotteryQuick(); }, true),
-            ("", "保存墨迹", async () => { HideBoardFlyout(flyout); await SavePageAsync(); }, false),
-            ("", "打开墨迹", async () => { HideBoardFlyout(flyout); await OpenPageAsync(); }, false),
-            ("", "播放墨迹", () => { HideBoardFlyout(flyout); _shell?.OpenReplay(); }, false),
-            ("", "截屏", async () => { HideBoardFlyout(flyout); if (_shell is not null) await _shell.ScreenshotAsync(); }, false),
-            ("", "指南", () => { HideBoardFlyout(flyout); _shell?.OpenGuide(); }, false),
-            ("", "设置", () => { HideBoardFlyout(flyout); _shell?.OpenSettings(); }, false),
+            (Glyphs.TimerWpf, "倒计时", () => { HideBoardFlyout(flyout); _shell?.OpenTimer(); }, false),
+            (Glyphs.Rand, "随机抽选", () => { HideBoardFlyout(flyout); _shell?.OpenLottery(); }, false),
+            (Glyphs.Rand, "单次抽选", () => { HideBoardFlyout(flyout); _shell?.OpenLotteryQuick(); }, true),
+            (Glyphs.SaveStrokes, "保存墨迹", async () => { HideBoardFlyout(flyout); await SavePageAsync(); }, false),
+            (Glyphs.OpenStrokes, "打开墨迹", async () => { HideBoardFlyout(flyout); await OpenPageAsync(); }, false),
+            (Glyphs.ReplayWpf, "播放墨迹", () => { HideBoardFlyout(flyout); _shell?.OpenReplay(); }, false),
+            (Glyphs.Camera, "截屏", async () => { HideBoardFlyout(flyout); if (_shell is not null) await _shell.ScreenshotAsync(); }, false),
+            (Glyphs.Help, "指南", () => { HideBoardFlyout(flyout); _shell?.OpenGuide(); }, false),
+            (Glyphs.Settings, "设置", () => { HideBoardFlyout(flyout); _shell?.OpenSettings(); }, false),
             (Glyphs.Ai, "AI 助教", () => { HideBoardFlyout(flyout); _shell?.OpenAiAssistant(); }, false),
+            (Glyphs.TimeMachine, "时光机", () => { HideBoardFlyout(flyout); _shell?.OpenTimeMachine(); }, false),
+            (Glyphs.InsertMedia, "插入", ShowBoardInsertMenu, false),
         };
         for (int i = 0; i < items.Length; i++)
         {
@@ -1035,6 +1065,7 @@ private readonly Grid _surfaceHost;
             cellButton.Resources["ButtonBackgroundPointerOver"] = _hoverBg;
             cellButton.Resources["ButtonBackgroundPressed"] = _pressedBg;
             ToolTipService.SetToolTip(cellButton, item.Label);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(cellButton, item.Label);
             var click = item.Click;
             cellButton.Click += (_, _) => click();
             Grid.SetRow(cellButton, i / 3);
@@ -1044,7 +1075,7 @@ private readonly Grid _surfaceHost;
 
         // WPF bottom row: retain the original bundled 视频展台 / Desmos artwork.
         var launcherRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 6, 0, 6) };
-        launcherRow.Children.Add(MakeLauncherButton("", "视频展台", async () =>
+        launcherRow.Children.Add(MakeLauncherButton("\uF865", "视频展台", async () =>
         {
             HideBoardFlyout(flyout);
             // Original BoardLaunchEasiCamera_Click first switched back from board mode.
@@ -1054,7 +1085,7 @@ private readonly Grid _surfaceHost;
                 await ShowMessageAsync("未找到希沃视频展台安装路径，或启动器无法运行。");
         }));
         launcherRow.Children.Add(new Border { Width = 1, Height = 25, Margin = new Thickness(4, 0, 4, 0), Background = _barFg, Opacity = 0.6, VerticalAlignment = VerticalAlignment.Center });
-        launcherRow.Children.Add(MakeLauncherButton("", "Desmos", () =>
+        launcherRow.Children.Add(MakeLauncherButton("\uE247", "Desmos", () =>
         {
             HideBoardFlyout(flyout);
             if (_shell is not null) _shell.ToggleBoard();
@@ -1062,14 +1093,9 @@ private readonly Grid _surfaceHost;
         }));
 
         // Port additions beyond WPF, relocated out of the center strip.
-        var extrasRow1 = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2 };
         var extrasRow2 = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Margin = new Thickness(0, 2, 0, 6) };
-        extrasRow1.Children.Add(MakeExtraButton("", "插入视频", async () => { HideBoardFlyout(flyout); await InsertMediaAsync(); }));
-        Button fileButton = null;
-        fileButton = MakeExtraButton("", "文件", () => ShowBoardFlyout(BuildFileFlyout(), _moreCell.Button));
-        extrasRow1.Children.Add(fileButton);
-        extrasRow2.Children.Add(MakeExtraButton("", "删除本页", () => { HideBoardFlyout(flyout); DeleteCurrentPage(); }));
-        extrasRow2.Children.Add(MakeExtraButton("", _isFullscreen ? "窗口模式" : "全屏", () => { HideBoardFlyout(flyout); SetFullscreen(!_isFullscreen); }));
+        extrasRow2.Children.Add(MakeExtraButton("\uF34D", "删除本页", () => { HideBoardFlyout(flyout); DeleteCurrentPage(); }));
+        extrasRow2.Children.Add(MakeExtraButton("\uF8DD", _isFullscreen ? "窗口模式" : "全屏", () => { HideBoardFlyout(flyout); SetFullscreen(!_isFullscreen); }));
         Button canvasButton = null;
         canvasButton = MakeExtraButton(GlyphCanvas, "画布纸型", () => ShowBoardFlyout(BuildCanvasFlyout(), _moreCell.Button));
         extrasRow2.Children.Add(canvasButton);
@@ -1080,7 +1106,6 @@ private readonly Grid _surfaceHost;
         panel.Children.Add(grid);
         panel.Children.Add(launcherRow);
         panel.Children.Add(new Border { Height = 1, Margin = new Thickness(8, 0, 8, 4), Background = _barBorder });
-        panel.Children.Add(extrasRow1);
         panel.Children.Add(extrasRow2);
         var navigation = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2 };
         navigation.Children.Add(MakeExtraButton(Glyphs.GestureTranslate, "单指拖动", () => { HideBoardFlyout(flyout); SetTool(InkTool.Pan); }));
@@ -1089,15 +1114,28 @@ private readonly Grid _surfaceHost;
             HideBoardFlyout(flyout); CurrentController.ViewTransform = Matrix3x2.Identity; CurrentController.Document.Touch();
         }));
         panel.Children.Add(navigation);
-        panel.Children.Add(MakeExtraButton("\uE8A5", "页面管理", () => { HideBoardFlyout(flyout); SetPagePaneOpen(true); }));
+        panel.Children.Add(MakeExtraButton("\uF379", "页面管理", () => { HideBoardFlyout(flyout); SetPagePaneOpen(true); }));
         if (_shell is not null)
-        foreach (var commands in _shell.ExtensionCommands.Chunk(3))
+        foreach (var commands in _shell.ExtensionCommands.Where(command => command.PluginId != "inkcanvas.library"
+            && !(command.PluginId == "inkcanvas.pdf" && command.CommandId == "import")).Chunk(3))
         {
             var extensionRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2 };
             foreach (var command in commands)
                 extensionRow.Children.Add(MakeExtraButton(ExtensionCommandIcons.For(command), command.Title, async () => { HideBoardFlyout(flyout); await _shell.ExecuteExtensionCommandAsync(command); }));
             panel.Children.Add(extensionRow);
         }
+
+        panel.Children.Add(new Border { Height = 1, Margin = new Thickness(8, 6, 8, 4), Background = _barBorder });
+        var files = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2 };
+        files.Children.Add(MakeExtraButton(Glyphs.SaveStrokes, "保存墨迹", async () => { HideBoardFlyout(flyout); await SavePageAsync(); }));
+        files.Children.Add(MakeExtraButton(Glyphs.OpenStrokes, "打开文件", async () => { HideBoardFlyout(flyout); await OpenFileAsync(); }));
+        files.Children.Add(MakeExtraButton(Glyphs.Pages, "文件选项", () => ShowBoardFlyout(BuildFileFlyout(), _moreCell.Button)));
+        panel.Children.Add(files);
+        var application = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2 };
+        application.Children.Add(MakeExtraButton(Glyphs.Settings, "设置", () => { HideBoardFlyout(flyout); _shell?.OpenSettings(); }));
+        if (_services.Settings.Appearance.IsShowExitButton)
+            application.Children.Add(MakeExtraButton(Glyphs.ExitWpf, "退出", () => { HideBoardFlyout(flyout); _shell?.Exit(); }));
+        panel.Children.Add(application);
 
         flyout.Content = new Border
         {
@@ -1150,6 +1188,17 @@ private readonly Grid _surfaceHost;
         return button;
     }
 
+    private void ShowBoardInsertMenu()
+    {
+        var pdf = _shell?.ExtensionCommands.FirstOrDefault(command => command.PluginId == "inkcanvas.pdf" && command.CommandId == "import");
+        InsertFlyout insert = null;
+        insert = new InsertFlyout(_boardTheme,
+            async () => { HideBoardFlyout(insert); await InsertImageAsync(); },
+            async () => { HideBoardFlyout(insert); await InsertMediaAsync(); },
+            pdf is null ? null : async () => { HideBoardFlyout(insert); if (_shell is not null) await _shell.ExecuteExtensionCommandAsync(pdf); });
+        ShowBoardFlyout(insert, _moreCell.Button);
+    }
+
     private Flyout BuildGestureFlyout()
     {
         var panel = new BoardGesturePanel(_services.Settings.Gesture, _boardTheme,
@@ -1164,10 +1213,9 @@ private readonly Grid _surfaceHost;
         var flyout = new MenuFlyout { Placement = FlyoutPlacementMode.Top };
         foreach (var (label, background) in new[]
         {
-            ("黑板", BoardBackground.Black), ("黑板绿", BoardBackground.Green),
-            ("护眼米黄", BoardBackground.Cream), ("纯白", BoardBackground.White),
+            ("黑板", BoardBackground.Black), ("白板", BoardBackground.White),
             ("网格纸", BoardBackground.Grid), ("横线纸", BoardBackground.Lined),
-            ("坐标系", BoardBackground.Coordinate),
+            ("绿板", BoardBackground.Green), ("米色纸", BoardBackground.Cream), ("坐标纸", BoardBackground.Coordinate),
         })
         {
             var item = new MenuFlyoutItem { Text = label };
@@ -1263,7 +1311,7 @@ private readonly Grid _surfaceHost;
             }
             float width = (float)Math.Min(_selectionDesiredSize.Width + 10, _contentRoot.ActualWidth - 16);
             float height = (float)Math.Min(_selectionDesiredSize.Height + 10, _contentRoot.ActualHeight - 16);
-            float left = PagePaneOpen && !PageNavigator.IsOverview ? (float)_pagePane.ActualWidth + 8 : 8;
+            float left = PagePaneOpen && !PageNavigator.IsOverview && !_pagePaneRight ? (float)_pagePane.ActualWidth + 16 : 8;
             var work = new Rect(left, 8, (float)_contentRoot.ActualWidth - 8, (float)_contentRoot.ActualHeight - 8);
             var dock = new Rect(0, (float)(_contentRoot.ActualHeight - _dock.ActualHeight), (float)_contentRoot.ActualWidth, (float)_contentRoot.ActualHeight);
             var place = FloatingToolbarLayout.Place(work, CurrentController.SelectionVisualBounds, dock,
@@ -1379,7 +1427,8 @@ private readonly Grid _surfaceHost;
     private void SetBackground(BoardBackground background)
     {
         _board.SetBackground(background);
-        _services.Settings.Canvas.UsingWhiteboard = !IsDarkBackground(background);
+        bool white = background != BoardBackground.Black;
+        _services.Settings.Canvas.UsingWhiteboard = white;
         _services.SaveSettings();
         PageNavigator?.InvalidateAll();
     }
@@ -1431,36 +1480,54 @@ private readonly Grid _surfaceHost;
         foreach (var panel in _toolPanels.Values) panel.Fit();
     }
 
-    /// <summary>本地多页画板：重命名当前页（供页导航/菜单入口调用）。</summary>
-    private async Task RenameCurrentPageAsync()
+    internal void RefreshToolSettings() => _boardPenPalette?.RefreshSettings();
+
+    internal void RestoreFromAnnotation()
     {
-        if (Content is not FrameworkElement root || root.XamlRoot is null) return;
-        var input = new TextBox { Text = _board.PageName(_board.CurrentIndex), PlaceholderText = "页面名称" };
-        var dialog = new ContentDialog
-        {
-            Title = "重命名页面",
-            Content = input,
-            PrimaryButtonText = "确定",
-            CloseButtonText = "取消",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = root.XamlRoot,
-        };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-            _board.RenamePage(_board.CurrentIndex, input.Text);
+        _services.ConfigureController(CurrentController);
+        ApplyEraserSize();
+        RefreshBackground();
     }
 
+    internal async Task<bool> HideForAnnotationAsync()
+    {
+        if (_closed || _archiveClosing || CurrentController.HasActiveInteraction) return false;
+        try
+        {
+            await SaveArchiveBeforeCloseAsync("退出白板");
+            if (_closed) return false;
+            CurrentController.EndPlayback();
+            CurrentController.HideEraserPreview();
+            foreach (var panel in _toolPanels.Values.ToArray()) panel.Close();
+            DismissBoardFlyout();
+            SetPagePaneOpen(false);
+            _media.PausePlayers();
+            AutoSaveCurrentPage("board-exit");
+            AppWindow.Hide();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (!_closed) await ShowMessageAsync("白板存档失败，内容已保留。\n" + ex.GetBaseException().Message);
+            return false;
+        }
+    }
 
-    internal void RefreshToolSettings() => _boardPenPalette?.RefreshNibMode();
+    internal void CloseForShutdown() => base.Close();
 
     private void RefreshBackground()
     {
         DismissBoardFlyout();
-        bool dark = _board.Background == BoardBackground.Black;
+        bool dark = _board.Background is BoardBackground.Black or BoardBackground.Green;
         PageNavigator.ApplyTheme(dark ? 2 : 1);
         // WPF board cover: neutral #1F1F1F / #F2F2F2, independent of the application theme.
-        _background.Background = new SolidColorBrush(dark
-            ? Windows.UI.Color.FromArgb(255, 31, 31, 31)
-            : Windows.UI.Color.FromArgb(255, 242, 242, 242));
+        _background.Background = new SolidColorBrush(_board.Background switch
+        {
+            BoardBackground.Black => Windows.UI.Color.FromArgb(255, 31, 31, 31),
+            BoardBackground.Green => Windows.UI.Color.FromArgb(255, 0x1E, 0x3B, 0x2F),
+            BoardBackground.Cream => Windows.UI.Color.FromArgb(255, 0xF5, 0xEF, 0xDC),
+            _ => Windows.UI.Color.FromArgb(255, 242, 242, 242),
+        });
         _boardTheme = dark ? 2 : 1;
         WindowChrome.ApplyTheme(this, _boardTheme);
 
@@ -1492,7 +1559,7 @@ private readonly Grid _surfaceHost;
         _paper.Invalidate();
     }
 
-private static bool IsDarkBackground(BoardBackground background)
+    private static bool IsDarkBackground(BoardBackground background)
         => background is BoardBackground.Black or BoardBackground.Green;
 
     private static Windows.UI.Color PageBackgroundColor(BoardBackground background) => background switch
@@ -1512,7 +1579,7 @@ private static bool IsDarkBackground(BoardBackground background)
     private void OnDrawPaper(CanvasControl sender, CanvasDrawEventArgs args)
     {
         var background = _board.Background;
-        bool dark = IsDarkBackground(background);
+        bool dark = background is BoardBackground.Black or BoardBackground.Green;
         float spacing = Math.Clamp(_board.GridSpacing, 12f, 160f);
         float width = (float)sender.ActualWidth;
         float height = (float)sender.ActualHeight;
@@ -1799,14 +1866,13 @@ private static bool IsDarkBackground(BoardBackground background)
         if (index < 0) return;
         var automation = _services.Settings.Automation;
         if (automation.IsAutoSaveStrokesAtClear && target.Document.Count > automation.MinimumAutomationStrokeNumber)
-            _services.AutoSave.SaveSnapshot(target.Document.Strokes, "board-delete");
+            _ = _services.AutoSave.SaveSnapshotAsync(target.Document.Strokes, "board-delete");
         _board.RemovePage(index);
         UpdatePageNavigation();
     }
 
-    private async Task ConfirmClearCurrentPageAsync()
+    private void ClearCurrentPage()
     {
-        if (!await ConfirmAsync("清除当前页", "清除当前页上的全部墨迹、图片和视频？")) return;
         AutoSaveCurrentPage("board-clear");
         // WPF BoardSymbolIconDelete_Click switches back to the pen before clearing (MW_BoardIcons.cs:106-110).
         SetTool(InkTool.Pen);
@@ -1820,7 +1886,7 @@ private static bool IsDarkBackground(BoardBackground background)
         if (!automation.IsAutoSaveStrokesAtClear) return;
         if (_board.Current.Document.Count <= automation.MinimumAutomationStrokeNumber) return;
         if (reason == "board-clear" && _shell is not null) _ = _shell.ScreenshotAsync();
-        _services.AutoSave.SaveSnapshot(_board.Current.Document.Strokes, reason);
+        _ = _services.AutoSave.SaveSnapshotAsync(_board.Current.Document.Strokes, reason);
     }
 
     private void UpdatePageNavigation()
@@ -1838,6 +1904,8 @@ private static bool IsDarkBackground(BoardBackground background)
         _nextR.Label.Text = nextLabel;
         ToolTipService.SetToolTip(_nextL.Button, nextLabel);
         ToolTipService.SetToolTip(_nextR.Button, nextLabel);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_nextL.Button, nextLabel);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_nextR.Button, nextLabel);
         bool canNext = !atLast || _board.CanAddPages();
         SetCellEnabled(_prevL, _board.CurrentIndex > 0);
         SetCellEnabled(_prevR, _board.CurrentIndex > 0);
@@ -1850,20 +1918,99 @@ private static bool IsDarkBackground(BoardBackground background)
     {
         if (_closed) return;
         DismissBoardFlyout();
-        _pagePane.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
-        if (!open) PageNavigator.SetOverview(false);
+        _pagePaneOpen = open;
+        _pagePane.IsHitTestVisible = open;
+        int generation = ++_pagePaneAnimation;
+        if (open) _pageOverlay.Visibility = Visibility.Visible;
         PageNavigator.SetOpen(open);
         UpdatePagePaneLayout();
         PlaceSelectionPanel();
+        _ = AnimatePagePaneAsync(open, generation);
     }
 
     private void UpdatePagePaneLayout()
     {
         if (_pagePane is null) return;
-        _pagePane.Width = PageNavigator.IsOverview ? double.NaN : Math.Min(244, Math.Max(120, _contentRoot.ActualWidth));
-        _pagePane.MaxHeight = Math.Max(120, _contentRoot.ActualHeight - Math.Max(60, _dock.ActualHeight) - 8);
-        _pagePane.VerticalAlignment = VerticalAlignment.Top;
-        _pagePane.BorderBrush = _barBorder;
+        bool overview = PageNavigator.IsOverview;
+        _pagePane.Width = overview ? double.NaN : Math.Min(BoardPageNavigator.SidebarWidth, Math.Max(120, _contentRoot.ActualWidth - 16));
+        _pagePane.Height = overview ? double.NaN : Math.Max(120, _contentRoot.ActualHeight - Math.Max(60, _dock.ActualHeight) - 28);
+        _pagePane.MaxHeight = double.PositiveInfinity;
+        _pagePane.HorizontalAlignment = overview ? HorizontalAlignment.Stretch : _pagePaneRight ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+        _pagePane.VerticalAlignment = overview ? VerticalAlignment.Stretch : VerticalAlignment.Bottom;
+        _pagePane.Margin = overview ? new Thickness(0) : new Thickness(8, 8, 8, Math.Max(60, _dock.ActualHeight) + 12);
+        _pagePane.CornerRadius = new CornerRadius(overview ? 0 : 12);
+        _pagePane.BorderBrush = PopupBrushes.ToolPanelBorder(_boardTheme);
+        UpdatePageMaterialClip();
+    }
+
+    private void UpdatePageMaterialClip()
+    {
+        var visual = ElementCompositionPreview.GetElementVisual(_surfaceHost);
+        if (_pageOverlay.Visibility != Visibility.Visible)
+        {
+            visual.Clip = null;
+            _pageClip?.Dispose(); _pageClip = null;
+            _pageClipGeometry?.Dispose(); _pageClipGeometry = null;
+            _pageClipSource?.Dispose(); _pageClipSource = null;
+            _dock.Visibility = Visibility.Visible;
+            return;
+        }
+        bool overview = PageNavigator.IsOverview;
+        _dock.Visibility = overview ? Visibility.Collapsed : Visibility.Visible;
+        float width = (float)_contentRoot.ActualWidth, height = (float)_contentRoot.ActualHeight;
+        if (width <= 0 || height <= 0) return;
+        // Expose the window's native Mica only beneath the page surface.
+        // Ink stays opaque everywhere else, including on Windows' solid-material fallback.
+        using var board = CanvasGeometry.CreateRectangle(CanvasDevice.GetSharedDevice(), 0, 0, width, height);
+        float paneWidth = overview ? width : (float)_pagePane.Width;
+        float paneHeight = overview ? height : (float)_pagePane.Height;
+        float x = overview ? 0 : _pagePaneRight ? width - paneWidth - 8 : 8;
+        float y = overview ? 0 : height - (float)_pagePane.Margin.Bottom - paneHeight;
+        using var panel = CanvasGeometry.CreateRoundedRectangle(CanvasDevice.GetSharedDevice(), x, y, paneWidth, paneHeight,
+            overview ? 0 : 12, overview ? 0 : 12);
+        var remaining = board.CombineWith(panel, Matrix3x2.Identity, CanvasGeometryCombine.Exclude);
+        var path = new Microsoft.UI.Composition.CompositionPath(remaining);
+        _pageClipGeometry ??= visual.Compositor.CreatePathGeometry();
+        _pageClipGeometry.Path = path;
+        _pageClip ??= visual.Compositor.CreateGeometricClip(_pageClipGeometry);
+        visual.Clip = _pageClip;
+        _pageClipSource?.Dispose();
+        _pageClipSource = remaining;
+    }
+
+    private async Task AnimatePagePaneAsync(bool open, int generation)
+    {
+        ElementCompositionPreview.SetIsTranslationEnabled(_pagePane, true);
+        var visual = ElementCompositionPreview.GetElementVisual(_pagePane);
+        visual.StopAnimation("Translation");
+        visual.StopAnimation("Opacity");
+        if (Motion.AnimationsEnabled)
+        {
+            float distance = PageNavigator.IsOverview ? 0 : (float)(_pagePane.Width + 16) * (_pagePaneRight ? 1 : -1);
+            var slide = visual.Compositor.CreateVector3KeyFrameAnimation();
+            slide.InsertKeyFrame(0, new Vector3(open ? distance : 0, 0, 0));
+            slide.InsertKeyFrame(1, new Vector3(open ? 0 : distance, 0, 0),
+                visual.Compositor.CreateCubicBezierEasingFunction(new(.16f, 1), new(.3f, 1)));
+            slide.Duration = Motion.Normal;
+            var fade = visual.Compositor.CreateScalarKeyFrameAnimation();
+            fade.InsertKeyFrame(0, open ? 0 : 1);
+            fade.InsertKeyFrame(1, open ? 1 : 0);
+            fade.Duration = Motion.Fast;
+            visual.StartAnimation("Translation", slide);
+            visual.StartAnimation("Opacity", fade);
+            await Task.Delay(Motion.Normal);
+        }
+        if (_closed || generation != _pagePaneAnimation) return;
+        visual.StopAnimation("Translation");
+        visual.StopAnimation("Opacity");
+        visual.Properties.InsertVector3("Translation", Vector3.Zero);
+        visual.Opacity = 1;
+        if (!open)
+        {
+            _pageOverlay.Visibility = Visibility.Collapsed;
+            PageNavigator.SetOverview(false);
+            UpdatePageMaterialClip();
+        }
     }
 
     private void NavigateToPage(int index)
@@ -1878,6 +2025,21 @@ private static bool IsDarkBackground(BoardBackground background)
         if (CurrentController.HasActiveInteraction) return;
         AutoSaveCurrentPage("board-page-duplicate");
         _board.DuplicateCurrentPage();
+    }
+
+    private async Task RenameCurrentPageAsync()
+    {
+        if (_contentRoot.XamlRoot is null) return;
+        var page = _board.Current;
+        var input = new TextBox { Text = _board.PageName(_board.CurrentIndex), PlaceholderText = "页面名称" };
+        var dialog = new ContentDialog
+        {
+            Title = "重命名页面", Content = input, PrimaryButtonText = "保存", CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Primary, XamlRoot = _contentRoot.XamlRoot,
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        int index = _board.Pages.ToList().IndexOf(page);
+        _board.RenamePage(index, input.Text);
     }
 
     private void UpdateUndoRedo()
@@ -1970,7 +2132,12 @@ private static bool IsDarkBackground(BoardBackground background)
 
     private void OnPageChanged()
     {
-        _services.ApplySettings();
+        if (ReferenceEquals(_boundController, _board.Current))
+        {
+            UpdatePageNavigation();
+            return;
+        }
+        _services.ConfigureController(_board.Current);
         BindPage();
         RefreshBackground();
         CurrentPageChanged?.Invoke();
@@ -2138,11 +2305,20 @@ private static bool IsDarkBackground(BoardBackground background)
             + $"id={hit.Id} nearestDistance={distance}，等待释放确认（不拦截拖动）",
             InkCanvas.Core.Diagnostics.LogType.Trace);
     }
+    private static List<string> ContentLines(AiPasteMetadata metadata)
+    {
+        if (metadata.Kind == AiPasteKind.Formula)
+            return new List<string> { metadata.Latex };
+        if (metadata.Lines.Count > 0) return metadata.Lines.ToList();
+        return SplitCardLines(metadata.Text);
+    }
 
-    /// <summary>
-    /// WPF GridInkCanvasSelectionCover_MouseWheel (MW_SelectionGestures.cs:386-414): wheel zooms the
-    /// selection 1.1/0.9 about its center, scaling stroke widths and transforming elements too.
-    /// </summary>
+    private static List<string> SplitCardLines(string text)
+        => (text ?? "").Replace("\r", "").Split('\n')
+            .Select(line => line.TrimEnd())
+            .Where(line => line.Length > 0)
+            .ToList();
+
     private void OnSurfaceHostPointerWheelChanged(object sender, PointerRoutedEventArgs e)
     {
         if (_board.Current.Tool != InkTool.Select) return;
@@ -2259,6 +2435,7 @@ private static bool IsDarkBackground(BoardBackground background)
             return;
         }
         _isFullscreen = fullscreen;
+        SystemBackdrop ??= new MicaBackdrop { Kind = Microsoft.UI.Composition.SystemBackdrops.MicaKind.BaseAlt };
         WindowChrome.ApplyTheme(this, _boardTheme);
         UpdatePageNavigation();
     }
@@ -2274,6 +2451,9 @@ private static bool IsDarkBackground(BoardBackground background)
         foreach (var window in _toolPanels.Values.ToArray()) window.Close();
         CurrentController.EndPlayback();
         _closed = true;
+        _pageOverlay.Visibility = Visibility.Collapsed;
+        UpdatePageMaterialClip();
+        SystemBackdrop = null;
         PageNavigator.Dispose();
         _imageImportCancellation?.Cancel();
         _mediaImportCancellation?.Cancel();
@@ -2377,25 +2557,45 @@ private static bool IsDarkBackground(BoardBackground background)
 
     private async Task SavePageAsync()
     {
-        var picker = CreateSavePicker("画板页面", ".icink", $"Page-{_board.CurrentIndex + 1}.icink");
-        var file = await picker.PickSaveFileAsync();
-        if (file is null) return;
-        try { await _board.SavePageAsync(file.Path); }
+        try
+        {
+            string name = ArchivePolicy.FileName(_services.Settings.Archive, DateTimeOffset.Now, 1, "当前页");
+            var library = _services.Modules.GetExport<InkCanvas.Host.Contracts.IBoardLibraryService>();
+            string path = library is not null ? await library.PickSaveAsync(name) : await ImageFilePicker.SaveArchiveAsync(WindowChrome.GetWorkArea(this),
+                ArchivePolicy.ResolveDirectory(_services.Settings.Archive.DefaultDirectory), name);
+            if (path is null || _closed) return;
+            await _services.Archives.SaveManualAsync(_board, path, entireBoard: false);
+        }
         catch (Exception ex) { await ShowMessageAsync($"页面保存失败：{ex.Message}"); }
     }
 
     private async Task SaveBoardAsync()
     {
-        var picker = CreateSavePicker("画板文件", ".icink", "InkCanvas-Board.icink");
-        var file = await picker.PickSaveFileAsync();
-        if (file is null) return;
-        try { await _board.SaveBoardAsync(file.Path); }
+        try
+        {
+            string name = ArchivePolicy.FileName(_services.Settings.Archive, DateTimeOffset.Now, _board.PageCount, "整板");
+            var library = _services.Modules.GetExport<InkCanvas.Host.Contracts.IBoardLibraryService>();
+            string path = library is not null ? await library.PickSaveAsync(name) : await ImageFilePicker.SaveArchiveAsync(WindowChrome.GetWorkArea(this),
+                ArchivePolicy.ResolveDirectory(_services.Settings.Archive.DefaultDirectory), name);
+            if (path is null || _closed) return;
+            await _services.Archives.SaveManualAsync(_board, path, entireBoard: true);
+        }
         catch (Exception ex) { await ShowMessageAsync($"画板保存失败：{ex.Message}"); }
     }
 
     private Task OpenPageAsync() => OpenInkAsync(false);
 
     private Task OpenBoardAsync() => OpenInkAsync(true);
+
+    private Task OpenFileAsync()
+    {
+        if (_services.Modules.GetExport<InkCanvas.Host.Contracts.IBoardLibraryService>() is { } library)
+        {
+            library.Open();
+            return Task.CompletedTask;
+        }
+        return OpenPageAsync();
+    }
 
     private async Task OpenInkAsync(bool entireBoard)
     {
@@ -2425,11 +2625,11 @@ private static bool IsDarkBackground(BoardBackground background)
 
     private async Task<StorageFile> PickInkFileAsync()
     {
-        var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
-        picker.FileTypeFilter.Add(".icink");
-        foreach (string extension in _services.Plugins.ImportExtensions) picker.FileTypeFilter.Add(extension);
-        InitializeWithWindow.Initialize(picker, WindowChrome.GetHwnd(this));
-        return await picker.PickSingleFileAsync();
+        var extensions = new[] { ".icink" }.Concat(_services.Plugins.ImportExtensions).Distinct().ToArray();
+        var library = _services.Modules.GetExport<InkCanvas.Host.Contracts.IBoardLibraryService>();
+        string path = library is not null ? await library.PickOpenAsync(extensions) : await ImageFilePicker.OpenArchiveAsync(WindowChrome.GetWorkArea(this),
+            ArchivePolicy.ResolveDirectory(_services.Settings.Archive.DefaultDirectory), extensions);
+        return path is null ? null : await StorageFile.GetFileFromPathAsync(path);
     }
 
     private async Task ShowMessageAsync(string message)
@@ -2475,7 +2675,7 @@ private static bool IsDarkBackground(BoardBackground background)
         public Border Face { get; init; }
         public bool Selected, Hovered, Pressed;
         public FontIcon Icon { get; init; }
-        public TextBlock AiLabel { get; init; }
+        public FontIcon AiLabel { get; init; }
         public FontIcon BadgeIcon { get; init; }
         public TextBlock Label { get; init; }
         public Grid Content { get; init; }

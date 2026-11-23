@@ -1,4 +1,4 @@
-﻿using InkCanvas.App.Services;
+using InkCanvas.App.Services;
 using InkCanvas.Controls.Animation;
 using InkCanvas.Controls.Controls;
 using InkCanvas.Controls.Theming;
@@ -8,10 +8,9 @@ using Microsoft.UI.Xaml.Media;
 
 namespace InkCanvas.App.Views;
 
-/// <summary>Guide and release notes with left navigation and a shared WinUI title bar.</summary>
+/// <summary>Release notes with left navigation and a shared WinUI title bar.</summary>
 public sealed class InfoWindow : Window
 {
-    private static readonly FontFamily IconFont = new("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons");
     private readonly List<Action<int>> _themed = new();
     private bool _entranceShown;
     private MinSizeHook _minSize;
@@ -26,7 +25,7 @@ public sealed class InfoWindow : Window
         body.SetMarkdown(markdown, new Uri("https://github.com/QiXinia/Ink-Canvas-HEHS/blob/v" + version + "/"));
 
         var workspace = new WindowWorkspace { IsTitleBarAutoPaddingEnabled = false };
-        workspace.AddPage("版本更新", "", () => body);
+        workspace.AddPage("版本更新", "\uF379", () => body);
         workspace.SelectPage("版本更新");
         FinishChrome(workspace, theme, 980, 680);
     }
@@ -55,8 +54,8 @@ public sealed class InfoWindow : Window
         rows.Children.Add(Paragraph("撤销、重做、清屏与工具快捷键仅在书写或选择状态下生效。鼠标模式和输入框中的按键由当前应用或输入框处理。"));
 
         var workspace = new WindowWorkspace { IsTitleBarAutoPaddingEnabled = false };
-        workspace.AddPage("快捷键", "", () => rows);
-        workspace.AddPage("书写与选择", "", () => new StackPanel { Spacing = 16, Children =
+        workspace.AddPage("快捷键", "\uF4C3", () => rows);
+        workspace.AddPage("书写与选择", "\uF3DD", () => new StackPanel { Spacing = 16, Children =
         {
             Paragraph("选择画笔或荧光笔即可书写，再次点击工具可调整颜色、粗细、笔尖与笔锋。"),
             Paragraph("使用选择工具拖出选框。选中后可拖动移动，使用边角控制柄缩放，拖动顶部旋转柄旋转。"),
@@ -91,6 +90,7 @@ public sealed class InfoWindow : Window
         };
         Closed += (_, _) => { _minSize?.Dispose(); _minSize = null; };
     }
+
 
     private void AddRow(StackPanel parent, string key, string second, bool global, string description, bool extraTop = false)
     {

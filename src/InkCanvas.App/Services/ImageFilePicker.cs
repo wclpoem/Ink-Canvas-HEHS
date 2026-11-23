@@ -17,10 +17,23 @@ internal static class ImageFilePicker
         => PickAsync(workArea, ImageImport.SupportedExtensions, "插入图片", "图片文件", token);
 
     public static Task<string> PickAsync(ScreenRect workArea, IReadOnlyList<string> extensions, string title, string filterName, CancellationToken token)
+        => StartPicker(workArea, extensions, title, filterName, token);
+
+    public static Task<string> SaveArchiveAsync(Windows.Graphics.RectInt32 workArea, string directory, string name, CancellationToken token = default)
+        => StartPicker(new(workArea.X, workArea.Y, workArea.Width, workArea.Height), new[] { ".icink" }, "保存 Ink Canvas 存档", "Ink Canvas 存档", token, directory, name, save: true);
+
+    public static Task<string> PickFolderAsync(Windows.Graphics.RectInt32 workArea, string directory, CancellationToken token = default)
+        => StartPicker(new(workArea.X, workArea.Y, workArea.Width, workArea.Height), Array.Empty<string>(), "选择存档目录", "", token, directory, folder: true);
+
+    public static Task<string> OpenArchiveAsync(Windows.Graphics.RectInt32 workArea, string directory, IReadOnlyList<string> extensions, CancellationToken token = default)
+        => StartPicker(new(workArea.X, workArea.Y, workArea.Width, workArea.Height), extensions, "打开 Ink Canvas 存档", "画板与导入文件", token, directory);
+
+    private static Task<string> StartPicker(ScreenRect workArea, IReadOnlyList<string> extensions, string title, string filterName,
+        CancellationToken token, string directory = null, string name = null, bool save = false, bool folder = false)
     {
         if (Interlocked.CompareExchange(ref _active, 1, 0) != 0) return Task.FromResult<string>(null);
         var completion = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var thread = new Thread(() => Run(workArea, extensions, title, filterName, token, completion)) { IsBackground = true, Name = "InkCanvas media picker" };
+        var thread = new Thread(() => Run(workArea, extensions, title, filterName, token, completion, directory, name, save, folder)) { IsBackground = true, Name = "InkCanvas file picker" };
         thread.SetApartmentState(ApartmentState.STA);
         try { thread.Start(); }
         catch (Exception ex) { Interlocked.Exchange(ref _active, 0); completion.TrySetException(ex); }
@@ -42,7 +55,8 @@ internal static class ImageFilePicker
         }
     }
 
-    private static void Run(ScreenRect work, IReadOnlyList<string> extensions, string title, string filterName, CancellationToken token, TaskCompletionSource<string> completion)
+    private static void Run(ScreenRect work, IReadOnlyList<string> extensions, string title, string filterName, CancellationToken token,
+        TaskCompletionSource<string> completion, string directory, string name, bool save, bool folder)
     {
         IntPtr owner = IntPtr.Zero;
         IFileDialog dialog = null;
@@ -74,22 +88,28 @@ internal static class ImageFilePicker
                 var popup = GetLastActivePopup(owner);
                 if (popup != IntPtr.Zero && popup != owner) PostMessageW(popup, 0x0010 /* WM_CLOSE */, IntPtr.Zero, IntPtr.Zero);
             });
-            dialog = (IFileDialog)Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7"), true));
+            dialog = (IFileDialog)Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid(save
+                ? "C0B4E2F3-BA21-4773-8DBA-335EC946EB8B" : "DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7"), true));
             dialog.GetOptions(out uint options);
-            dialog.SetOptions(options | 0x40 /* FORCEFILESYSTEM */ | 0x1000 /* FILEMUSTEXIST */ | 0x800 /* PATHMUSTEXIST */ | 0x8 /* NOCHANGEDIR */);
+            dialog.SetOptions(options | 0x40 /* FORCEFILESYSTEM */ | (save ? 0x2u /* OVERWRITEPROMPT */ : folder ? 0 : 0x1000u /* FILEMUSTEXIST */)
+                | (folder ? 0x20u /* PICKFOLDERS */ : 0) | 0x800 /* PATHMUSTEXIST */ | 0x8 /* NOCHANGEDIR */);
             dialog.SetTitle(title);
-            dialog.SetFileTypes(1, new[] { new FilterSpec { Name = filterName, Pattern = string.Join(';', extensions.Select(extension => "*" + extension)) } });
+            if (!folder) dialog.SetFileTypes(1, new[] { new FilterSpec { Name = filterName, Pattern = string.Join(';', extensions.Select(extension => "*" + extension)) } });
+            if (save) { dialog.SetFileName(Path.GetFileNameWithoutExtension(name)); dialog.SetDefaultExtension("icink"); }
             bool video = filterName == "视频文件";
-            var clientId = new Guid(video ? "B21DB3DB-7994-4752-9124-132F0A3B659B" : "0C64EAE6-C610-4F23-974F-290DD5B6F12D");
+            var clientId = new Guid(directory is not null
+                ? "71ED3AE4-9253-4CBC-8925-CDE0744013E1"
+                : video ? "B21DB3DB-7994-4752-9124-132F0A3B659B" : "0C64EAE6-C610-4F23-974F-290DD5B6F12D");
             dialog.SetClientGuid(ref clientId);
-            string pictures = Environment.GetFolderPath(video ? Environment.SpecialFolder.MyVideos : Environment.SpecialFolder.MyPictures);
+            string pictures = directory ?? Environment.GetFolderPath(video ? Environment.SpecialFolder.MyVideos : Environment.SpecialFolder.MyPictures);
+            if (save) Directory.CreateDirectory(pictures);
             if (Directory.Exists(pictures))
             {
                 Guid itemId = typeof(IShellItem).GUID;
-                if (SHCreateItemFromParsingName(pictures, IntPtr.Zero, ref itemId, out var folder) >= 0)
+                if (SHCreateItemFromParsingName(pictures, IntPtr.Zero, ref itemId, out var folderItem) >= 0)
                 {
-                    try { dialog.SetDefaultFolder(folder); }
-                    finally { Marshal.ReleaseComObject(folder); }
+                    try { if (directory is null) dialog.SetDefaultFolder(folderItem); else dialog.SetFolder(folderItem); }
+                    finally { Marshal.ReleaseComObject(folderItem); }
                 }
             }
             token.ThrowIfCancellationRequested();

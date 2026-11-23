@@ -8,7 +8,9 @@ Ink Canvas 从 `QiXinia/Ink-Canvas-HEHS` 的 GitHub Releases 获取公开稳定�
 
 更新包必须带有 GitHub Release 提供的 SHA256 digest，或同一 Release 中 `SHA256SUMS.txt` 对应文件名的校验值。下载过程中同时检查发布的文件大小，只有长度与 SHA256 均匹配时才会将 `.partial` 文件移为可安装 ZIP。API、下载内容、超时和校验失败会继续尝试下一个 HTTPS 来源。传输每获得 64 KiB 数据才续期二十秒的进度超时，避免持续返回少量数据的慢连接阻塞切源。
 
-版本列表、校验清单和安装包均先访问 GitHub 官方源，再按以下顺序切换镜像。每个镜像前缀后直接拼接包含 `https://` 的完整 GitHub 原始链接。
+主程序更新、插件仓库列表、校验清单和安装包共用每批 3 个源的并发检测。第一批同时探测 GitHub 官方源及下列前两个镜像，全部失败后再探测后三个镜像。版本列表和校验清单采用最先完成内容校验的响应。下载采用最先返回成功响应且大小符合发布信息的源，并复用该连接传输文件。选定后取消其余探测，释放未使用的响应。下载中断或 SHA256 校验失败时，继续尝试该批剩余源，再切换下一批。
+
+每个镜像前缀后直接拼接包含 `https://` 的完整 GitHub 原始链接。
 
 1. `https://ghfile.geekertao.top/`
 2. `https://github.dpik.top/`
@@ -53,3 +55,8 @@ Ink Canvas 从 `QiXinia/Ink-Canvas-HEHS` 的 GitHub Releases 获取公开稳定�
 以 GitHub 仓库发布的 `v3.5.0` 真实 ZIP 在隔离目录执行了完整流程，涵盖版本列表识别、GitHub 下载和 SHA256 校验、GitHub 断连后的镜像列表及 ZIP 下载、ZIP 暂存、外部辅助进程替换、用户插件和 `.icink` 保留，以及更新后程序启动。镜像访问在部分轮次返回 403 或出现 TLS/连接超时，成功轮次的真实包已通过 SHA256 校验。
 
 2026-11-20 更换镜像后的验收使用仓库 `v3.7.1` 的真实更新包，大小为 42,431,373 字节。GitHub 官方源下载及屏蔽 GitHub 直连后的 `ghfile.geekertao.top` 镜像下载均通过 SHA256 校验，校验值为 `2f5c28a052d39bf6d1f4c83625f25e511abfe9f20f8ebdf3499cdcca57b85d7a`。屏蔽直连时，版本 API 在前两个镜像失败后继续从 `gh-proxy.com` 获取列表。单元测试共 775 项通过，覆盖默认源顺序、API 与页面回退、仅附件镜像、主动取消，以及底层流不响应取消时的超时切源。
+
+
+## MSI 安装版更新
+
+从 3.10.0 起，Release 同时提供 MSI 和 ZIP。程序检测安装目录的 .inkcanvas-msi 标记，安装版仅选择匹配版本的 MSI，便携版选择 ZIP。MSI 在下载及暂存时核对 SHA256，并校验产品名称、稳定 UpgradeCode、安装范围和版本。退出前保存画布，辅助进程等待主程序结束后调用 Windows Installer 执行无重启升级。Windows Installer 的事务处理负责文件回滚，结果和日志写入当前更新暂存目录。安装说明见 INSTALLATION.md。

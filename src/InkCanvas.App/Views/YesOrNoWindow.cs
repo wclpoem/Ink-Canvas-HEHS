@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.UI;
+using InkCanvas.Controls.Controls;
 
 namespace InkCanvas.App.Views;
 
@@ -17,7 +18,7 @@ namespace InkCanvas.App.Views;
 /// </summary>
 public sealed class YesOrNoWindow : Window
 {
-    private static readonly FontFamily IconFont = new("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons");
+    private static FontFamily IconFont => IconFontStyle.Font;
     private readonly Action _yesAction;
     private readonly Action _noAction;
     private bool _entranceShown;
@@ -37,7 +38,7 @@ public sealed class YesOrNoWindow : Window
 
         var icon = new FontIcon
         {
-            Glyph = "",
+            Glyph = "",
             FontFamily = IconFont,
             FontSize = 20,
             Foreground = foreground,

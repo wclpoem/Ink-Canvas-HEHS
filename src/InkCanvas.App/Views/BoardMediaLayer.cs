@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using InkCanvas.Controls.Controls;
 using InkCanvas.Features.Board;
 using Microsoft.UI.Xaml;
@@ -165,7 +165,7 @@ internal sealed class BoardMediaLayer : Canvas, IDisposable
             Progress = new ProgressRing { Width = 28, Height = 28, IsActive = true, IsHitTestVisible = false },
             Message = new TextBlock { Text = "正在载入视频…", Foreground = new SolidColorBrush(Microsoft.UI.Colors.White),
                 FontSize = 12, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, MaxWidth = 280 },
-            Retry = new TouchIconButton { Glyph = "\uE72C", Label = "重试", Width = 48, Height = 48,
+            Retry = new TouchIconButton { Glyph = "\uF1A0", Label = "重试", Width = 48, Height = 48,
                 ContentForeground = new SolidColorBrush(Microsoft.UI.Colors.White), Visibility = Visibility.Collapsed },
             Status = new Grid { Background = new SolidColorBrush(Windows.UI.Color.FromArgb(140, 0, 0, 0)) },
         };
@@ -277,6 +277,17 @@ internal sealed class BoardMediaLayer : Canvas, IDisposable
         var entries = _entries.Values.ToArray();
         _entries.Clear();
         foreach (var entry in entries) DisposeEntry(entry);
+    }
+
+    public void PausePlayers()
+    {
+        foreach (var entry in _entries.Values) entry.Player.Pause();
+    }
+
+    public void ReleasePlayers()
+    {
+        ClearEntries();
+        _posters.Clear();
     }
 
     internal static bool IsPlaybackControl(DependencyObject source)

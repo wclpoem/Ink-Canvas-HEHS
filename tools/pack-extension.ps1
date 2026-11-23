@@ -20,7 +20,7 @@ $published = Join-Path $stageRoot 'published'
 $package = Join-Path $stageRoot $manifest.Id
 New-Item -ItemType Directory -Path $published,$package -Force | Out-Null
 try {
-    & dotnet publish $projectPath -c $Configuration -p:Platform=x64 -o $published --nologo
+    & dotnet publish $projectPath -c $Configuration -p:Platform=x64 -m:1 -p:BuildInParallel=false -o $published --nologo
     if ($LASTEXITCODE -ne 0) { throw 'Extension publish failed.' }
     if ($Kind -eq 'Module') {
         $files = @($manifestName, $manifest.EntryAssembly, ([IO.Path]::GetFileNameWithoutExtension($manifest.EntryAssembly) + '.deps.json')) + @($manifest.PackageFiles)

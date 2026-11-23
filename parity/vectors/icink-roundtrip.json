@@ -6,7 +6,7 @@
       "id": "icink-roundtrip",
       "fn": "icinkRoundtrip",
       "input": [
-        "{\"Version\":1,\"Strokes\":[{\"LayerOrder\":null,\"Color\":4279312947,\"Width\":2.5,\"Highlighter\":true,\"HighlighterAlpha\":140,\"Taper\":0,\"Nib\":0,\"NibRotation\":0,\"Shape\":true,\"ShapeSource\":null,\"ObjectFrame\":[5,6,25,26,0.87758255,0.47942555,-0.47942555,0.87758255,0,0],\"Points\":[[10,20,0.5,2.5,0],[30,40,0.7,2.5,16]]},{\"LayerOrder\":null,\"Color\":2164195328,\"Width\":7.5,\"Highlighter\":false,\"HighlighterAlpha\":96,\"Taper\":2,\"Nib\":0,\"NibRotation\":0,\"Shape\":false,\"ShapeSource\":null,\"ObjectFrame\":null,\"Points\":[[0,0,0.5,7.5,0],[5,2,0.5,7.5,10],[10,4,0.5,6.605563,20],[15,6,0.5,6.605563,30],[20,8,0.5,6.605563,40]]}]}"
+        "{\"Version\":1,\"Strokes\":[{\"Id\":\"abcb53ff-e4fe-4c97-934d-86a87e0df89c\",\"InkWash\":{\"Dryness\":0.42,\"Angle\":44,\"Flatness\":0.44},\"InkWashSeed\":0,\"LayerOrder\":null,\"Color\":4279312947,\"Width\":2.5,\"Highlighter\":true,\"HighlighterAlpha\":140,\"Taper\":0,\"Nib\":0,\"NibRotation\":0,\"Shape\":true,\"ShapeSource\":null,\"ObjectFrame\":[5,6,25,26,0.87758255,0.47942555,-0.47942555,0.87758255,0,0],\"Points\":[[10,20,0.5,2.5,0],[30,40,0.7,2.5,16]]},{\"Id\":\"ee32ebb3-a150-47e5-a82c-17db3bb9023b\",\"InkWash\":{\"Dryness\":0.42,\"Angle\":44,\"Flatness\":0.44},\"InkWashSeed\":0,\"LayerOrder\":null,\"Color\":2164195328,\"Width\":7.5,\"Highlighter\":false,\"HighlighterAlpha\":96,\"Taper\":2,\"Nib\":0,\"NibRotation\":0,\"Shape\":false,\"ShapeSource\":null,\"ObjectFrame\":null,\"Points\":[[0,0,0.5,7.5,0],[5,2,0.5,7.5,10],[10,4,0.5,6.605563,20],[15,6,0.5,6.605563,30],[20,8,0.5,6.605563,40]]}]}"
       ],
       "expected": [
         {

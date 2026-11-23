@@ -25,7 +25,7 @@ public sealed class UpdatePipelineTests
     }
 
     [Fact]
-    public async Task DefaultSourcesTryOfficialGitHubThenEachRequestedMirrorInOrder()
+    public async Task DefaultSourceBatchesIncludeOfficialGitHubAndAllRequestedMirrors()
     {
         const string url = "https://api.github.com/repos/QiXinia/Ink-Canvas-HEHS/releases?per_page=100";
         var handler = new Handler(request => request.RequestUri.Host == "gh.acmsz.top"
@@ -38,7 +38,7 @@ public sealed class UpdatePipelineTests
     }
 
     [Fact]
-    public async Task DefaultDownloadSourcesUseTheSameOrderAndVerifyTheSuccessfulPackage()
+    public async Task DefaultDownloadBatchesIncludeTheSameSourcesAndVerifyTheSuccessfulPackage()
     {
         string directory = Temporary();
         try

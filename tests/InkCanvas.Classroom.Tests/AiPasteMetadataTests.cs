@@ -129,7 +129,12 @@ public sealed class AiPasteMetadataTests
 
             board.SaveBoard(path);
 
-            Assert.Contains("\"Version\": 4", File.ReadAllText(path));
+Assert.Contains("\"Version\": 4", File.ReadAllText(path));
+
+            using (var package = System.IO.Compression.ZipFile.OpenRead(path))
+            using (var manifest = package.GetEntry("board.json")!.Open())
+            using (var jsonDocument = System.Text.Json.JsonDocument.Parse(manifest))
+                Assert.Equal(4, jsonDocument.RootElement.GetProperty("Version").GetInt32());
 
             var loaded = new BoardService();
             loaded.LoadBoard(path);

@@ -8,6 +8,12 @@
     "deliveryWithInstall": true,
     "installationFree": false,
     "pages": "$profile:main_pages",
+    // InkCast 局域网墨迹同步（TCP）。
+    "requestPermissions": [
+      {
+        "name": "ohos.permission.INTERNET"
+      }
+    ],
     "abilities": [
       {
         "name": "EntryAbility",
@@ -18,6 +24,11 @@
         "startWindowIcon": "$media:app_icon",
         "startWindowBackground": "$color:start_window_background",
         "exported": true,
+        // 多形态：跟随传感器横竖屏，允许全屏 / 分屏 / 悬浮窗（自由多窗）。
+        "orientation": "auto_rotation",
+        "supportWindowMode": ["fullscreen", "split", "floating"],
+        "minWindowWidth": 320,
+        "minWindowHeight": 240,
         "skills": [
           {
             "entities": ["entity.system.home"],

@@ -1,5 +1,8 @@
 using System.Numerics;
 using InkCanvas.Core.Ink;
+using InkCanvas.Core.History;
+using InkCanvas.Ink;
+using InkCanvas.Platform.Windows;
 using Xunit;
 
 namespace InkCanvas.Core.Tests;
@@ -87,5 +90,79 @@ public sealed class StrokeEraserTests
         stroke.AddPoint(200, 50);
         stroke.Complete();
         return stroke;
+    }
+
+    [Fact]
+    public void AreaErasePreservesStrokeIdentityAcrossEarlierUndoAndRedo()
+    {
+        using var controller = new InkController { Tool = InkTool.Eraser, EraserMode = InkEraserMode.Area, EraserRadius = 10 };
+        var original = Line();
+        var other = Line();
+        other.Transform(Matrix3x2.CreateTranslation(0, 400));
+        controller.Document.Add(other);
+        controller.Document.Add(original);
+        controller.History.Push(new DelegateAction("add", () => controller.Document.Add(original), () => controller.Document.Remove(original)));
+        var pointer = new OverlayPointer(1, 100, 50, .5f, 1, 1, OverlayPointerKind.Mouse, 0);
+        controller.OnPointerDown(pointer);
+        controller.OnPointerUp(pointer);
+        var fragments = controller.Document.Strokes.Skip(1).ToArray();
+        Assert.Equal(2, fragments.Length);
+        Assert.Same(other, controller.Document.Strokes[0]);
+        controller.Undo();
+        Assert.Same(original, controller.Document.Strokes[1]);
+        controller.Undo();
+        Assert.Same(other, Assert.Single(controller.Document.Strokes));
+        controller.Redo();
+        controller.Redo();
+        Assert.Equal(new[] { other }.Concat(fragments), controller.Document.Strokes);
+        controller.SelectAll();
+        controller.TransformSelectionUndoable(Matrix3x2.CreateTranslation(20, 30), "move");
+        controller.Undo();
+        controller.Undo();
+        Assert.Same(original, controller.Document.Strokes[1]);
+        Assert.Equal(0, original.Points[0].X);
+    }
+
+    [Fact]
+    public void FastAreaEraseNotifiesOncePerPointerSample()
+    {
+        using var controller = new InkController { Tool = InkTool.Eraser, EraserMode = InkEraserMode.Area, EraserRadius = 20 };
+        controller.Document.AddRange(Enumerable.Range(0, 20).Select(index =>
+        {
+            var stroke = Line();
+            stroke.Transform(Matrix3x2.CreateTranslation(0, index));
+            return stroke;
+        }));
+        var pointer = new OverlayPointer(1, -100, 50, .5f, 1, 1, OverlayPointerKind.Mouse, 0);
+        controller.OnPointerDown(pointer);
+        int changes = 0;
+        controller.Document.Changed += () => changes++;
+        controller.OnPointerMove(pointer with { X = 300 });
+        Assert.Equal(1, changes);
+        controller.OnPointerUp(pointer with { X = 300 });
+        Assert.Empty(controller.Document.Strokes);
+        controller.Undo();
+        Assert.Equal(20, controller.Document.Count);
+    }
+
+    [Fact]
+    public void EmptyAreaEraseDoesNotCopyDensePageIntoHistory()
+    {
+        using var controller = new InkController { Tool = InkTool.Eraser, EraserMode = InkEraserMode.Area, EraserRadius = 10 };
+        controller.Document.AddRange(Enumerable.Range(0, 250).Select(index =>
+        {
+            var stroke = new InkStroke(new StrokeAttributes { TaperKind = TaperKind.None });
+            for (int point = 0; point < 400; point++) stroke.AddPoint(point, index);
+            stroke.Complete();
+            return stroke;
+        }));
+        var pointer = new OverlayPointer(1, 1000, 1000, .5f, 1, 1, OverlayPointerKind.Mouse, 0);
+        controller.OnPointerDown(pointer);
+        controller.OnPointerUp(pointer);
+        long allocated = GC.GetAllocatedBytesForCurrentThread();
+        controller.OnPointerDown(pointer);
+        controller.OnPointerUp(pointer);
+        Assert.InRange(GC.GetAllocatedBytesForCurrentThread() - allocated, 0, 512 * 1024);
+        Assert.False(controller.History.CanUndo);
     }
 }

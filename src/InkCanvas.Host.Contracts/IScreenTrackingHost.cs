@@ -25,4 +25,6 @@ public interface IScreenTrackingService
 {
     void Refresh();
     void ApplySnapshot(ScreenViewSnapshot snapshot);
+    (IReadOnlyList<InkCanvas.Core.Ink.InkStroke> Strokes, System.Numerics.Matrix3x2 WorldToContent)?
+        CapturePowerPointInk(string fullName, int slideId) => null;
 }

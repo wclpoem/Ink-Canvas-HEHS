@@ -1,5 +1,6 @@
 using InkCanvas.Controls.Controls;
 using Microsoft.UI.Xaml;
+using InkCanvas.Controls.Lifecycle;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
@@ -41,9 +42,11 @@ public sealed class FormulaKeyboard : UserControl
         for (int index = 0; index < pageNames.Length; index++)
             selector.SetOptionContent(index, new TextBlock { Text = pageNames[index], VerticalAlignment = VerticalAlignment.Center }, 44);
         var host = new ContentControl { HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+        int renderedColumns = 0;
         void ShowPage()
         {
             int columns = ActualWidth >= 720 ? 10 : 7;
+            renderedColumns = columns;
             var keys = selector.SelectedIndex == 0 && columns == 10 ? WideBasic : Pages[Math.Clamp(selector.SelectedIndex, 0, Pages.Length - 1)];
             var grid = new Grid { ColumnSpacing = 4, RowSpacing = 4, HorizontalAlignment = HorizontalAlignment.Stretch };
             for (int column = 0; column < columns; column++)
@@ -74,7 +77,7 @@ public sealed class FormulaKeyboard : UserControl
             host.Content = grid;
         }
         selector.SelectionChanged += ShowPage;
-        SizeChanged += (_, args) => { if ((args.PreviousSize.Width >= 720) != (args.NewSize.Width >= 720)) ShowPage(); };
+        DeferredLayout.Observe(this, () => { if (renderedColumns != (ActualWidth >= 720 ? 10 : 7)) ShowPage(); });
         panel.Children.Add(selector);
         panel.Children.Add(host);
         Content = panel;

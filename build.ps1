@@ -52,7 +52,8 @@ switch ($Task) {
             'tests\InkCanvas.Core.Tests\InkCanvas.Core.Tests.csproj',
             'tests\InkCanvas.Ai.Tests\InkCanvas.Ai.Tests.csproj',
             'tests\InkCanvas.P0.Tests\InkCanvas.P0.Tests.csproj',
-            'tests\InkCanvas.Classroom.Tests\InkCanvas.Classroom.Tests.csproj')) {
+            'tests\InkCanvas.Classroom.Tests\InkCanvas.Classroom.Tests.csproj',
+            'tests\InkCanvas.TimeMachine.Tests\InkCanvas.TimeMachine.Tests.csproj')) {
             Invoke-Dotnet @('test', (Join-Path $repo $project), '-c', $Configuration, '-p:Platform=x64', '--nologo')
         }
     }

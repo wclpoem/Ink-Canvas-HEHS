@@ -31,6 +31,8 @@ public sealed class PptInteropService : IDisposable
     // FullName/path/page-setup are stable for one COM presentation identity; reuse them
     // across polls (Name is re-checked live) instead of re-reading every property per tick.
     private PptPresentationInfo _cachedInfo;
+    private PptPresentationDetails _cachedDetails;
+    private long _detailsExpireAt;
     private nint _presentationIdentity;
 
     public string[] ProgIds { get; set; } = { "PowerPoint.Application", "KWPP.Application" };
@@ -144,6 +146,7 @@ public sealed class PptInteropService : IDisposable
                 _slideIndexById.Clear();
                 _slideIndexKey = null;
                 _cachedInfo = null;
+                _cachedDetails = null;
                 ReleasePresentationIdentity();
                 return Publish(PptSnapshot.Detached);
             }
@@ -151,34 +154,60 @@ public sealed class PptInteropService : IDisposable
         }
     }
 
-    public PptPresentationDetails GetPresentationDetails()
+    public PptPresentationDetails GetPresentationDetails() => ReadPresentationDetailsAsync(false, default).GetAwaiter().GetResult();
+
+    public Task<PptPresentationDetails> GetPresentationDetailsAsync(CancellationToken token) => ReadPresentationDetailsAsync(true, token);
+
+    private async Task<PptPresentationDetails> ReadPresentationDetailsAsync(bool yieldBetweenBatches, CancellationToken token)
     {
         VerifyThread();
         if (_app is null || !_snapshot.IsAttached) return null;
+        if (_cachedDetails?.Presentation.Identity == _snapshot.Presentation?.Identity
+            && _cachedDetails.Presentation.SlideCount == _snapshot.Presentation.SlideCount
+            && Environment.TickCount64 < _detailsExpireAt) return _cachedDetails;
+        var info = _snapshot.Presentation;
+        if (yieldBetweenBatches) await Task.Delay(1, token);
         using var scope = new ComScope();
         try
         {
+            token.ThrowIfCancellationRequested();
+            VerifyThread();
+            if (_snapshot.Presentation?.Identity != info.Identity) return null;
             dynamic app = _app;
             object p = _snapshot.IsSlideShowRunning ? GetShowPresentation(scope, app) : GetActivePresentation(scope, app);
             if (p is null) return null;
             dynamic presentation = p;
             dynamic slides = scope.Own((object)presentation.Slides);
             var list = new List<PptSlideInfo>();
-            for (int index = 1; index <= (int)slides.Count; index++)
+            int count = (int)slides.Count;
+            var batch = Stopwatch.StartNew();
+            for (int index = 1; index <= count; index++)
             {
-                dynamic slide = scope.Own((object)slides[index]);
+                token.ThrowIfCancellationRequested();
+                if (_snapshot.Presentation?.Identity != info.Identity || _snapshot.Presentation.SlideCount != count) return null;
+                using var slideScope = new ComScope();
+                dynamic slide = slideScope.Own((object)slides[index]);
                 int id = (int)slide.SlideID;
                 if (id > 0) _slideIndexById[id] = index;
-                dynamic transition = SafeCom(scope, () => (object)slide.SlideShowTransition);
+                dynamic transition = SafeCom(slideScope, () => (object)slide.SlideShowTransition);
                 list.Add(new PptSlideInfo(id, index, SafeString(() => (string)slide.Name),
                     transition is null ? null : SafeTriState(() => (int)transition.Hidden),
                     transition is null ? null : SafeTriState(() => (int)transition.AdvanceOnTime),
                     transition is null ? null : SafeDouble(() => (double)transition.AdvanceTime)));
+                if (yieldBetweenBatches && batch.ElapsedMilliseconds >= 6)
+                {
+                    await Task.Delay(1, token);
+                    VerifyThread();
+                    batch.Restart();
+                }
             }
             dynamic settings = scope.Own((object)presentation.SlideShowSettings);
-            return new PptPresentationDetails(_snapshot.Presentation, list,
+            _cachedDetails = new PptPresentationDetails(info, list,
                 SafeInt(() => (int)settings.AdvanceMode));
+            _detailsExpireAt = Environment.TickCount64 + 2000;
+            return _cachedDetails;
         }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex) { Fail("Read presentation details", ex.Message, Marshal.GetHRForException(ex)); return null; }
     }
 
@@ -198,15 +227,7 @@ public sealed class PptInteropService : IDisposable
 
             dynamic presentation = p;
             dynamic slides = scope.Own((object)presentation.Slides);
-            int count = (int)slides.Count;
-            dynamic slide = null;
-            for (int index = 1; index <= count; index++)
-            {
-                dynamic candidate = scope.Own((object)slides[index]);
-                if (slideId > 0 && (int)candidate.SlideID != slideId) continue;
-                slide = candidate;
-                break;
-            }
+            dynamic slide = scope.Own(slideId > 0 ? (object)slides.FindBySlideID(slideId) : (object)slides[1]);
 
             if (slide is null) return "";
 
@@ -305,13 +326,96 @@ public sealed class PptInteropService : IDisposable
         }
     }
 
-    public bool Next() => InvokeShow("Next", view => view.Next(), activateWindow: true);
+public bool Next() => InvokeShow("Next", view => view.Next(), activateWindow: true);
     public bool Previous() => InvokeShow("Previous", view => view.Previous(), activateWindow: true);
     public bool ExitSlideShow() => InvokeShow("Exit slideshow", view => view.Exit());
 
     /// <summary>Show PowerPoint's built-in slide navigation pane, as the original page-number control did.</summary>
     public bool ShowSlideNavigationPane()
         => InvokeShow("Show slide navigation pane", view => view.SlideNavigation.Visible = true, activateWindow: true);
+
+    /// <summary>Export a slide without changing the current editing or slideshow page.</summary>
+    public bool ExportSlidePreview(PptPresentationInfo requested, int slideId, string path, int maximumDimension = 512)
+    {
+        VerifyThread();
+        if (_app is null || slideId <= 0 || requested is null) return false;
+        using var scope = new ComScope();
+        try
+        {
+            Poll();
+            if (!MatchesPresentation(requested, _snapshot.Presentation)) return false;
+            dynamic app = _app;
+            object p = _snapshot.IsSlideShowRunning ? GetShowPresentation(scope, app) : GetActivePresentation(scope, app);
+            if (p is null) return false;
+            dynamic slides = scope.Own((object)((dynamic)p).Slides);
+            dynamic slide = scope.Own((object)slides.FindBySlideID(slideId));
+            double width = Math.Max(1, requested.SlideWidth), height = Math.Max(1, requested.SlideHeight);
+            double scale = Math.Clamp(maximumDimension, 64, 1024) / Math.Max(width, height);
+            slide.Export(Path.GetFullPath(path), "PNG", Math.Max(1, (int)Math.Round(width * scale)), Math.Max(1, (int)Math.Round(height * scale)));
+            return File.Exists(path);
+        }
+        catch (Exception ex) { Fail("Export slide preview", ex.Message, Marshal.GetHRForException(ex)); return false; }
+    }
+
+    public IReadOnlyList<PptSlideInfo> GetPreviewSlides(PptPresentationInfo requested, CancellationToken token)
+    {
+        VerifyThread();
+        Poll();
+        if (_app is null || !MatchesPresentation(requested, _snapshot.Presentation))
+            throw new InvalidOperationException("当前课件已切换，请重新打开预览。");
+        using var scope = new ComScope();
+        dynamic app = _app;
+        object p = _snapshot.IsSlideShowRunning ? GetShowPresentation(scope, app) : GetActivePresentation(scope, app);
+        if (p is null) throw new InvalidOperationException("尚未连接到当前课件。");
+        dynamic slides = scope.Own((object)((dynamic)p).Slides);
+        int count = (int)slides.Count;
+        var result = new List<PptSlideInfo>(count);
+        for (int index = 1; index <= count; index++)
+        {
+            token.ThrowIfCancellationRequested();
+            using var itemScope = new ComScope();
+            dynamic slide = itemScope.Own((object)slides[index]);
+            result.Add(new((int)slide.SlideID, index, "", null, null, null));
+        }
+        return result;
+    }
+
+    public bool GoToSlideId(int slideId)
+    {
+        VerifyThread();
+        if (_app is null || slideId <= 0) return false;
+        using var scope = new ComScope();
+        try
+        {
+            dynamic app = _app;
+            object p = _snapshot.IsSlideShowRunning ? GetShowPresentation(scope, app) : GetActivePresentation(scope, app);
+            if (p is null) return false;
+            dynamic slides = scope.Own((object)((dynamic)p).Slides);
+            dynamic slide = scope.Own((object)slides.FindBySlideID(slideId));
+            return GoToSlide((int)slide.SlideIndex);
+        }
+        catch (Exception ex) { Fail("Go to slide ID", ex.Message, Marshal.GetHRForException(ex)); return false; }
+    }
+
+    public PptSlideInfo GetPreviewSlide(PptPresentationInfo requested, int index)
+    {
+        VerifyThread();
+        Poll();
+        if (_app is null || !MatchesPresentation(requested, _snapshot.Presentation))
+            throw new InvalidOperationException("当前课件已切换，请重新打开预览。");
+        using var scope = new ComScope();
+        dynamic app = _app;
+        object p = _snapshot.IsSlideShowRunning ? GetShowPresentation(scope, app) : GetActivePresentation(scope, app);
+        if (p is null) throw new InvalidOperationException("尚未连接到当前课件。");
+        dynamic slides = scope.Own((object)((dynamic)p).Slides);
+        dynamic slide = scope.Own((object)slides[index]);
+        return new((int)slide.SlideID, index, "", null, null, null);
+    }
+
+    internal static bool MatchesPresentation(PptPresentationInfo requested, PptPresentationInfo current) => requested is not null && current is not null
+        && string.Equals(requested.ApplicationProgId, current.ApplicationProgId, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(requested.FullName, current.FullName, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(requested.Name, current.Name, StringComparison.Ordinal);
 
     /// <summary>Navigate by one-based presentation slide index, not SlideID/show position.</summary>
     public bool GoToSlide(int slideIndex)
@@ -471,6 +575,7 @@ public sealed class PptInteropService : IDisposable
         _slideIndexById.Clear();
         _slideIndexKey = null;
         _cachedInfo = null;
+        _cachedDetails = null;
         ReleasePresentationIdentity();
         LastFailure = null;
         Publish(PptSnapshot.Detached);

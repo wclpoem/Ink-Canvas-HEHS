@@ -61,7 +61,6 @@ public sealed partial class SettingsWindow
         if (_searchIndexed) return;
         var content = _content;
         var refresh = _refreshControls.ToArray();
-        var tracking = _screenTrackingStatus;
         var updateStatus = _updateStatus;
         string category = _buildingCategory;
         _indexingSearch = true;
@@ -78,7 +77,6 @@ public sealed partial class SettingsWindow
             _indexingSearch = false;
             _content = content;
             _refreshControls.Clear(); _refreshControls.AddRange(refresh);
-            _screenTrackingStatus = tracking;
             _updateStatus = updateStatus;
             _buildingCategory = category;
         }
@@ -86,7 +84,9 @@ public sealed partial class SettingsWindow
 
     private Border Searchable(Border card, string title, string keywords = null)
     {
-        var entry = new SettingsSearchEntry(_buildingCategory, title, keywords);
+        string categoryTerms = _moduleSettingsPages.FirstOrDefault(page => page.Name == _buildingCategory)?.SearchTerms
+            ?? SettingsCategoryCatalog.SearchTerms(_buildingCategory);
+        var entry = new SettingsSearchEntry(_buildingCategory, title, string.Join(" ", keywords, categoryTerms));
         if (_indexingSearch) _searchEntries.Add(entry);
         else _searchTargets[entry.Key] = card;
         return card;
@@ -94,6 +94,7 @@ public sealed partial class SettingsWindow
 
     internal bool NavigateToSetting(SettingsSearchEntry entry)
     {
+        if (!Categories.Contains(entry.Category)) return false;
         _workspace.SelectPage(entry.Category);
         if (!_searchTargets.TryGetValue(entry.Key, out var target)) return false;
         _workspace.RevealContent();

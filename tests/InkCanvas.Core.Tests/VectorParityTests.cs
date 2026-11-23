@@ -1,3 +1,4 @@
+#nullable enable annotations
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using InkCanvas.Core.Imaging;
@@ -119,7 +120,49 @@ public sealed class VectorParityTests
     }
 
     [Fact]
+    public void EraserVectorsMatch()
+    {
+        using var doc = Load("stroke-eraser.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var input = c.GetProperty("input");
+            var stroke = MakeStroke(input[0]);
+            var touched = StrokeEraser.EraseDisc(
+                stroke,
+                new System.Numerics.Vector2(input[1].GetSingle(), input[2].GetSingle()),
+                input[3].GetSingle(),
+                out var remaining);
+            var expected = c.GetProperty("expected");
+            Assert.Equal(expected.GetProperty("touched").GetBoolean(), touched);
+            var fragments = expected.GetProperty("fragments");
+            Assert.Equal(fragments.GetArrayLength(), remaining.Count);
+            for (var fi = 0; fi < remaining.Count; fi++)
+            {
+                var exp = fragments[fi];
+                var fragment = remaining[fi];
+                Assert.Equal(exp.GetProperty("ColorPacked").GetUInt32(), fragment.Attributes.Color.PackedArgb);
+                Assert.Equal(exp.GetProperty("BaseWidth").GetDouble(), (double)fragment.Attributes.BaseWidth, 4);
+                Assert.Equal(exp.GetProperty("IsHighlighter").GetBoolean(), fragment.Attributes.IsHighlighter);
+                Assert.Equal(exp.GetProperty("HighlighterAlpha").GetInt32(), (int)fragment.Attributes.HighlighterAlpha);
+                Assert.Equal(exp.GetProperty("TaperKind").GetInt32(), (int)fragment.Attributes.TaperKind);
+                Assert.Equal(exp.GetProperty("IsRecognizedShape").GetBoolean(), fragment.IsRecognizedShape);
+                var points = exp.GetProperty("Points");
+                Assert.Equal(points.GetArrayLength(), fragment.Count);
+                for (var pi = 0; pi < fragment.Count; pi++)
+                {
+                    var ep = points[pi];
+                    var ap = fragment.Points[pi];
+                    Assert.Equal(ep.GetProperty("X").GetDouble(), ap.X, 4);
+                    Assert.Equal(ep.GetProperty("Y").GetDouble(), ap.Y, 4);
+                    Assert.Equal(ep.GetProperty("Pressure").GetDouble(), ap.Pressure, 4);
+                    Assert.Equal(ep.GetProperty("Width").GetDouble(), ap.Width, 4);
+                    Assert.Equal(ep.GetProperty("TimeMs").GetDouble(), ap.TimeMs, 4);
+                }
+            }
+        }
+    }
 
+    [Fact]
     public void UndoVectorsMatch()
     {
         using var doc = Load("undo.json");
@@ -231,7 +274,7 @@ public sealed class VectorParityTests
                 default:
                     throw new InvalidOperationException("unknown selection fn");
             }
-            AssertCase(c, actual, c.GetProperty("tolerance").GetDouble());
+            AssertNear(c.GetProperty("expected"), Node(actual), c.GetProperty("tolerance").GetDouble());
         }
     }
 
@@ -303,15 +346,25 @@ public sealed class VectorParityTests
                     break;
                 }
                 case "generateCuboidDepth":
+                    actual = ShapeSummaries(ShapeGenerator.GenerateCuboidDepth(
+                        Vec(input[0], input[1]), Vec(input[2], input[3]),
+                        input[4].GetSingle(), ShapeAttrs(input[5])));
+                    break;
                 case "generateHyperbolaBranches":
+                    actual = ShapeSummaries(ShapeGenerator.GenerateHyperbolaBranches(
+                        Vec(input[0], input[1]), input[2].GetSingle(), Vec(input[3], input[4]),
+                        input[5].GetBoolean(), ShapeAttrs(input[6])));
+                    break;
                 case "snapParallelEnd":
-                    // 这些几何生成函数在当前 C# 实现中不存在（鸿蒙 parity 端已调整）：
-                    // 保留向量文件，但跳过未实现的用例，不伪造期望。
-                    continue;
+                {
+                    var p = ShapeGenerator.SnapParallelEnd(Vec(input[0], input[1]), Vec(input[2], input[3]));
+                    actual = new { p.X, p.Y };
+                    break;
+                }
                 default:
                     throw new InvalidOperationException("unknown shape fn " + fn);
             }
-            AssertCase(c, actual, c.GetProperty("tolerance").GetDouble());
+            AssertNear(c.GetProperty("expected"), Node(actual), c.GetProperty("tolerance").GetDouble());
         }
     }
 
@@ -344,20 +397,11 @@ public sealed class VectorParityTests
                 confidence = result.Confidence,
                 corners = result.Corners.Select(p => new { p.X, p.Y }).ToArray()
             };
-            AssertCase(c, actual, c.GetProperty("tolerance").GetDouble());
+            AssertNear(c.GetProperty("expected"), Node(actual), c.GetProperty("tolerance").GetDouble());
         }
     }
 
     private static Vector2 Vec(JsonElement x, JsonElement y) => new(x.GetSingle(), y.GetSingle());
-
-    private static InkStroke BuildRecognizerStroke(JsonElement points)
-    {
-        var stroke = new InkStroke(new StrokeAttributes { BaseWidth = 3f });
-        foreach (JsonElement point in points.EnumerateArray())
-            stroke.AddPoint(point.GetProperty("X").GetSingle(), point.GetProperty("Y").GetSingle());
-        stroke.Complete();
-        return stroke;
-    }
 
     private static StrokeAttributes ShapeAttrs(JsonElement e) => new()
     {
@@ -379,6 +423,15 @@ public sealed class VectorParityTests
         IsRecognizedShape = s.IsRecognizedShape
     }).ToArray();
 
+    private static InkStroke BuildRecognizerStroke(JsonElement points)
+    {
+        var stroke = new InkStroke(new StrokeAttributes { BaseWidth = 3f });
+        foreach (JsonElement point in points.EnumerateArray())
+            stroke.AddPoint(point.GetProperty("X").GetSingle(), point.GetProperty("Y").GetSingle());
+        stroke.Complete();
+        return stroke;
+    }
+
     private static System.Numerics.Matrix3x2 Mat(JsonElement e) => new(
         e[0].GetSingle(), e[1].GetSingle(), e[2].GetSingle(),
         e[3].GetSingle(), e[4].GetSingle(), e[5].GetSingle());
@@ -394,184 +447,72 @@ public sealed class VectorParityTests
 
     private static JsonNode Node(object value) => JsonNode.Parse(JsonSerializer.Serialize(value))!;
 
-    /// <summary>
-    /// 已核实的迁移差异（caseId|JSON 路径）。逐值比较仍执行，仅这些已登记项按当前 C# 实现接受，
-    /// 其余字段继续严格断言；新增/未登记差异会直接失败。
-    /// </summary>
-    private static readonly HashSet<string> KnownMigrationDiffs = new(StringComparer.Ordinal)
+    private static void AssertNear(JsonNode? expected, JsonNode? actual, double tolerance)
     {
-        "dashed-line|$",            // 虚线分段步长与鸿蒙向量不同（C# dash12/gap8）
-        "reject-hook|$.kind",       // 识别器对钩形判定的类别号不同
-        "drag-top|$[3]",            // 顶部手柄拖动矩阵的分量差异
-        "drag-right|$[0]",          // 右侧手柄拖动矩阵的分量差异
-        "reject-back-over|$.kind",  // 回环钩形拒绝判定的类别号差异
-        "dashed-line-negative|$",   // 反向虚线分段数与鸿蒙向量不同
-        "dot-line|$",               // 点线分段数与鸿蒙向量不同
-        "dot-line-negative|$",      // 反向点线分段数与鸿蒙向量不同
-        "arrow|$[0].Points[2].X",   // 箭头侧翼采样位置与鸿蒙向量不同
-        "parallel-horizontal|$",    // 平行线辅助线数量与鸿蒙向量不同
-        "parallel-30|$",            // 同上的 30 度用例
-        "parallel-vertical|$",      // 同上的垂直线用例
-        "coordinate-both|$[0].Points[2].X", // 坐标轴箭头侧翼位置差异
-        "coordinate-both-degenerate|$[0].Points[2].X",
-        "coordinate-x-one-way|$[0].Points[2].X",
-        "coordinate-y-one-way|$[0].Points[2].X",
-        "coordinate-first-quadrant|$[0].Points[2].X",
-        "coordinate-3d|$[0].Points[2].X",
-        "coordinate-3d-negative|$[0].Points[2].X",
-        "rectangle-from-center|$",  // 中心矩形生成笔画数与鸿蒙向量不同
-        "circle|$[0].Points[0].Y",   // 圆采样起始相位差异
-        "ellipse|$[0].Points[0].Y",  // 椭圆采样起始相位差异
-        "ellipse-from-center|$",    // 中心椭圆生成笔画数与鸿蒙向量不同
-        "ellipse-foci-wide|$[1].Points", // 焦点椭圆弧段采样差异
-        "ellipse-foci-tall|$[1].Points", // 焦点椭圆弧段采样差异（纵向）
-        "ellipse-foci-round|$",     // 等焦椭圆笔画数与鸿蒙向量不同
-        "dashed-circle|$",          // 虚线圆分段数与鸿蒙向量不同
-        "dot-circle|$",             // 点线圆分段数与鸿蒙向量不同
-        "hyperbola-step1|$",        // 双曲线按步长采样 vs 单笔差异
-        "hyperbola-step2|$",
-        "hyperbola-step3|$",
-        "hyperbola-step1-degenerate|$", // 退化双曲线输入的处理差异
-        "hyperbola-step2-degenerate|$",
-        "hyperbola-step3-degenerate|$",
-        "hyperbola-foci-step1|$",   // 焦点双曲线采样差异
-        "hyperbola-foci-step2|$",
-        "hyperbola-foci-step3|$",
-        "hyperbola-foci-step1-degenerate|$",
-        "hyperbola-foci-step2-degenerate|$",
-        "hyperbola-foci-step3-degenerate|$",
-        "parabola-right|$",         // 抛物线分支笔画数与鸿蒙向量不同
-        "parabola-left|$",
-        "parabola-up|$",
-        "parabola-down|$",
-        "parabola-right-negative|$",
-        "parabola-left-negative|$",
-        "parabola-up-negative|$",
-        "parabola-down-negative|$",
-        "parabola-foci|$",
-        "parabola-foci-negative|$",
-        "parabola-foci-degenerate|$",
-        "parabola-right-degenerate|$",
-        "parabola-left-degenerate|$",
-        "parabola-up-degenerate|$",
-        "parabola-down-degenerate|$",
-        "cylinder|$",
-        "cylinder-swapped|$",
-        "cone|$",
-        "cone-swapped|$",
-        "cuboid|$",
-        "cylinder-normal|$",
-        "cone-normal|$",
-        "cuboid-normal|$",
-        "cuboid-step1|$",
-        "cuboid-step2|$",
-        "cuboid-step3|$",
-        "cuboid-step1-degenerate|$",
-        "cuboid-step2-degenerate|$",
-        "cuboid-step3-degenerate|$",
-        "bounds-zero-width|$[0]",   // 零宽笔画的边界宽度取整差异
-    };
-
-    private static void AssertCase(JsonElement c, object actual, double tolerance)
-    {
-        JsonNode expected = JsonNode.Parse(c.GetProperty("expected").GetRawText())!;
-        AssertCaseNode(c, expected, Node(actual), tolerance);
+        using var document = JsonDocument.Parse(expected?.ToJsonString() ?? "null");
+        AssertNear(document.RootElement, actual, tolerance);
     }
 
-    private static void AssertCaseNode(
-        JsonElement c, JsonNode expected, JsonNode actual, double tolerance)
+    /// <summary>Drop actual-only fields (settings added after the reference vector was captured).</summary>
+    private static void TrimToExpected(JsonNode actual, JsonNode expected)
     {
-        string id = c.TryGetProperty("id", out JsonElement idElement)
-            ? idElement.GetString()
-            : "?";
-        try
+        if (actual is not JsonObject actualObject || expected is not JsonObject expectedObject) return;
+        foreach (var name in actualObject.Select(pair => pair.Key).ToArray())
         {
-            AssertNear(expected, actual, tolerance);
-        }
-        catch (Xunit.Sdk.XunitException ex)
-        {
-            string message = ex.Message ?? "";
-            int start = message.IndexOf('$');
-            string path = start >= 0 ? message.Substring(start).Split(':')[0].Trim() : message;
-            string key = id + "|" + path;
-            if (KnownMigrationDiffs.Contains(key)) return;
-            throw new Xunit.Sdk.XunitException(key + " :: " + message);
-        }
-    }
-
-    private static void AssertNear(JsonNode expected, JsonNode actual, double tolerance)
-    {
-        using var doc = JsonDocument.Parse(expected.ToJsonString());
-        AssertNear(doc.RootElement, actual, tolerance);
-    }
-
-    private static void StripKey(JsonNode node, string key)
-    {
-        if (node is JsonObject obj)
-        {
-            obj.Remove(key);
-            foreach (var pair in obj) StripKey(pair.Value, key);
-        }
-        else if (node is JsonArray array)
-        {
-            foreach (JsonNode item in array)
+            if (!expectedObject.TryGetPropertyValue(name, out var expectedValue))
             {
-                if (item is not null) StripKey(item, key);
+                actualObject.Remove(name);
+                continue;
             }
+            TrimToExpected(actualObject[name], expectedValue);
         }
     }
 
-    private static void AssertNear(JsonElement expected, JsonNode? actual, double tolerance, string path = "$")
+    private static void AssertNear(JsonElement expected, JsonNode? actual, double tolerance)
     {
         var precision = tolerance <= 0 ? -1 : (int)Math.Max(0, Math.Round(-Math.Log10(tolerance)));
         switch (expected.ValueKind)
         {
             case JsonValueKind.Number:
                 Assert.NotNull(actual);
-                double expectedValue = expected.GetDouble();
-                double actualValue = actual!.GetValue<double>();
                 if (precision >= 0)
                 {
-                    if (Math.Round(expectedValue, precision) != Math.Round(actualValue, precision))
-                    {
-                        throw new Xunit.Sdk.XunitException(
-                            path + ": expected " + expectedValue + " actual " + actualValue);
-                    }
+                    Assert.Equal(expected.GetDouble(), actual!.GetValue<double>(), precision);
                 }
                 else
                 {
-                    Assert.Equal(expectedValue, actualValue);
+                    Assert.Equal(expected.GetDouble(), actual!.GetValue<double>());
                 }
                 break;
             case JsonValueKind.True:
             case JsonValueKind.False:
-                Assert.True(expected.GetBoolean() == actual!.GetValue<bool>(), path);
+                Assert.Equal(expected.GetBoolean(), actual!.GetValue<bool>());
                 break;
             case JsonValueKind.String:
-                Assert.True(expected.GetString() == actual!.GetValue<string>(),
-                    path + ": expected '" + expected.GetString() + "' actual '" + actual!.GetValue<string>() + "'");
+                Assert.Equal(expected.GetString(), actual!.GetValue<string>());
                 break;
             case JsonValueKind.Null:
-                Assert.True(actual is null, path + ": expected null");
+                Assert.Null(actual);
                 break;
             case JsonValueKind.Array:
             {
                 var array = actual!.AsArray();
-                Assert.True(expected.GetArrayLength() == array.Count,
-                    path + ": length expected " + expected.GetArrayLength() + " actual " + array.Count);
+                Assert.Equal(expected.GetArrayLength(), array.Count);
                 for (var i = 0; i < expected.GetArrayLength(); i++)
                 {
-                    AssertNear(expected[i], array[i], tolerance, path + "[" + i + "]");
+                    AssertNear(expected[i], array[i], tolerance);
                 }
                 break;
             }
             case JsonValueKind.Object:
             {
                 var obj = actual!.AsObject();
-                foreach (var p in expected.EnumerateObject())
+                var props = expected.EnumerateObject().ToArray();
+                Assert.Equal(props.Length, obj.Count);
+                foreach (var p in props)
                 {
-                    Assert.True(obj.ContainsKey(p.Name), path + ": missing property " + p.Name);
-                    AssertNear(p.Value, obj[p.Name], tolerance, path + "." + p.Name);
+                    Assert.True(obj.ContainsKey(p.Name), "missing property " + p.Name);
+                    AssertNear(p.Value, obj[p.Name], tolerance);
                 }
                 break;
             }
@@ -871,20 +812,13 @@ public sealed class VectorParityTests
                 s.LayerOrder,
                 s.ShapeSource,
                 Shape = s.IsRecognizedShape,
-
+                ObjectFrame = s.ExportObjectFrame(),
                 Points = s.Points.Select(p => new double[]
                 {
                     (double)p.X, (double)p.Y, (double)p.Pressure, (double)p.Width, (double)p.TimeMs
                 }).ToArray()
             }).ToArray();
-            JsonNode expected = JsonNode.Parse(c.GetProperty("expected").GetRawText())!;
-            // 迁移后 C# 端不再导出这些旧格式字段，未导出字段不参与本轮比较，其余字段仍逐项断言。
-            StripKey(expected, "ObjectFrame");
-            StripKey(expected, "Nib");
-            StripKey(expected, "NibRotation");
-            StripKey(expected, "ShapeSource");
-            StripKey(expected, "LayerOrder");
-            AssertCaseNode(c, expected, Node(actual), c.GetProperty("tolerance").GetDouble());
+            AssertNear(c.GetProperty("expected"), Node(actual), c.GetProperty("tolerance").GetDouble());
         }
     }
 
@@ -938,7 +872,7 @@ public sealed class VectorParityTests
                 var stroke = BuildStrokeFromPoints(points, input[1].GetSingle());
                 var b = stroke.Bounds;
                 var expected = new double[] { b.Left, b.Top, b.Right, b.Bottom };
-                AssertCase(c, expected, c.GetProperty("tolerance").GetDouble());
+                AssertNear(c.GetProperty("expected"), Node(expected), c.GetProperty("tolerance").GetDouble());
             }
             else
             {
@@ -946,7 +880,7 @@ public sealed class VectorParityTests
                 stroke.Complete();
                 stroke.TaperKind = (TaperKind)input[2].GetInt32();
                 var widths = stroke.Points.Select(p => (double)p.Width).ToArray();
-                AssertCase(c, widths, c.GetProperty("tolerance").GetDouble());
+                AssertNear(c.GetProperty("expected"), Node(widths), c.GetProperty("tolerance").GetDouble());
             }
         }
     }
@@ -1038,6 +972,44 @@ public sealed class VectorParityTests
         return hits.Select(h => all.IndexOf(h)).ToArray();
     }
 
+    [Fact]
+    public void BoardElementVectorsMatch()
+    {
+        using var doc = Load("board-element.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var input = c.GetProperty("input");
+            object actual;
+            switch (c.GetProperty("fn").GetString())
+            {
+                case "readTransformArray":
+                    actual = Arr(InkCanvas.Features.Board.BoardElementMath.Read(FloatArray(input[0])));
+                    break;
+                case "appendTransform":
+                    actual = InkCanvas.Features.Board.BoardElementMath.Append(
+                        FloatArray(input[0]), Mat(input[1]));
+                    break;
+                case "sameTransform":
+                    actual = InkCanvas.Features.Board.BoardElementMath.Same(FloatArray(input[0]), FloatArray(input[1]));
+                    break;
+                case "transformedBounds":
+                {
+                    var bounds = InkCanvas.Features.Board.BoardElementMath.TransformedBounds(
+                        input[0].GetSingle(), input[1].GetSingle(), input[2].GetSingle(), input[3].GetSingle(),
+                        FloatArray(input[4]));
+                    actual = new double[] { bounds.Left, bounds.Top, bounds.Right, bounds.Bottom };
+                    break;
+                }
+                case "renderMatrix":
+                    actual = Arr(InkCanvas.Features.Board.BoardElementMath.RenderMatrix(
+                        input[0].GetSingle(), input[1].GetSingle(), FloatArray(input[2])));
+                    break;
+                default:
+                    throw new InvalidOperationException("unknown board fn");
+            }
+            AssertNear(c.GetProperty("expected"), Node(actual), c.GetProperty("tolerance").GetDouble());
+        }
+    }
 
     private static float[]? FloatArray(JsonElement element)
     {
@@ -1118,10 +1090,45 @@ public sealed class VectorParityTests
             var settings = JsonSerializer.Deserialize<AppSettings>(input, CaseInsensitive)!;
             var actual = JsonNode.Parse(JsonSerializer.Serialize(settings))!;
             var expected = JsonNode.Parse(c.GetProperty("expected").GetRawText())!;
+// WinUI defaults to Regular icons when older settings omit the style choice.
+            if (JsonNode.Parse(input)?["appearance"]?["isIconRegularStyle"] is null
+                && expected["appearance"] is JsonObject appearance) appearance["isIconRegularStyle"] = true;
+            // WPF vectors predate the WinUI screen-follow extension, covered by ScreenTrackingTests.
+            if (expected["experimental"] is null) actual.AsObject().Remove("experimental");
+            // Monitor selection is a Windows extension with its own persistence coverage.
+            if (expected["display"] is null) actual.AsObject().Remove("display");
+            // Cache retention is a WinUI extension, covered by StorageManagementTests.
+            if (expected["storage"] is null) actual.AsObject().Remove("storage");
+            // WinUI archive paths and schedules have dedicated BoardArchiveTests coverage.
+            if (expected["archive"] is null) actual.AsObject().Remove("archive");
+            // Local hotkey / side-board settings extend the shared schema with their own persistence coverage.
+            if (expected["hotkey"] is null) actual.AsObject().Remove("hotkey");
+            if (expected["sideBoard"] is null) actual.AsObject().Remove("sideBoard");
+            if (expected["ai"]?["Documents"] is null) actual["ai"]?.AsObject().Remove("Documents");
+            // Soft cooldown settings extend the WPF schema and have dedicated persistence tests.
+            foreach (string field in new[] { "samplingMode", "cooldownHalfLifeDays", "cooldownPenaltyStrength" })
+                if (expected["randSettings"]?[field] is null) actual["randSettings"]?.AsObject().Remove(field);
+            // Native pressure, palm routing and hold-to-shape settings extend the legacy schema.
+            foreach (string field in new[] { "UseHardwarePressure", "UsePenTilt", "InkWash", "InkWashWidth" })
+                if (expected["canvas"]?[field] is null) actual["canvas"]?.AsObject().Remove(field);
+            foreach (string field in new[] { "PenHasPriority", "PalmErases" })
+                if (expected["gesture"]?[field] is null) actual["gesture"]?.AsObject().Remove(field);
+            foreach (string field in new[] { "HoldMilliseconds", "AutoAlign", "AlignmentAngle", "RecognizePolygons",
+                "RecognizeRoundShapes", "RecognizeCube", "RecognizeAxes" })
+                if (expected["inkToShape"]?[field] is null) actual["inkToShape"]?.AsObject().Remove(field);
+            // Teaching settings extend the shared settings schema.
+            foreach (string field in new[] { "ai", "classroom", "features" })
+                if (expected[field] is null) actual.AsObject().Remove(field);
+
             // 旧向量未包含后续新增的配置节点（如 classroom）；逐字段比较，忽略新增字段。
+            TrimToExpected(actual, expected);
             AssertNear(expected, actual, 0);
-            // The retired WPF stylus-gesture switch is intentionally absent from WinUI settings.
-            expected["gesture"]?.AsObject().Remove("isEnableStylusGesture");
+
+
+            foreach (var section in expected.AsObject())
+                Assert.True(JsonNode.DeepEquals(actual[section.Key], section.Value),
+                    $"settings case {id} section {section.Key} mismatch\nactual={actual[section.Key]}\nexpected={section.Value}");
+            Assert.True(JsonNode.DeepEquals(actual, expected), $"settings case {id} has unexpected root sections");
         }
     }
 
