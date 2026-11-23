@@ -141,6 +141,71 @@ public sealed class BoardHandoutExportTests
         }
     }
 
+    /// <summary>
+    /// 无 PPT（空课件索引）时仅导出板书页：PDF 1 页、PNG 非空且与渲染注入逐字节一致，
+    /// 导出过程不改写源白板文件。
+    /// </summary>
+    [Fact]
+    public async Task Export_WithoutPresentation_ExportsOnlyBoardPageAndKeepsSourceFileUnchanged()
+    {
+        string dir = TempDir();
+        try
+        {
+            string sourcePath = Path.Combine(dir, "board.icink");
+            var authored = BoardWithAiCard();
+            await authored.SaveBoardAsync(sourcePath);
+            byte[] sourceBytes = await File.ReadAllBytesAsync(sourcePath);
+
+            var board = new BoardService();
+            await board.LoadBoardAsync(sourcePath);
+
+            const int boardWidth = 640;
+            const int boardHeight = 360;
+            byte[] injectedPng = await CreateDeterministicPngAsync(boardWidth, boardHeight);
+            var request = new HandoutRenderRequest
+            {
+                Index = new SlideContentIndex { Version = 1, Slides = new List<SlideContentEntry>() },
+                Options = new HandoutOptions
+                {
+                    Content = HandoutContentMode.AnnotationsWithTeacherNotes,
+                    SelectedSlideIds = new List<int>(),
+                },
+                Board = board,
+                PageWidthPx = PageWidth,
+                BoardPageRender = (_, _, _, _) => Task.FromResult(new BoardPageRenderResult
+                {
+                    Png = injectedPng,
+                    WidthPx = boardWidth,
+                    HeightPx = boardHeight,
+                }),
+            };
+
+            HandoutExportResult result = await HandoutExportService.ExportAsync(request, dir);
+
+            Assert.True(result.Success, string.Join("；", result.Warnings));
+            HandoutPageResult boardPage = Assert.Single(result.Pages);
+            Assert.True(boardPage.SlideId < 0, "无 PPT 时唯一页面必须是板书页。");
+            Assert.Equal(1, boardPage.Index);
+            Assert.True(File.Exists(boardPage.PageImagePath), "板书讲义 PNG 不存在。");
+
+            byte[] handoutPng = await File.ReadAllBytesAsync(boardPage.PageImagePath);
+            Assert.NotEmpty(handoutPng);
+            Assert.Equal(injectedPng, handoutPng);
+            Assert.Equal(boardWidth, PngWidth(handoutPng));
+            Assert.Equal(boardHeight, PngHeight(handoutPng));
+
+            Assert.False(string.IsNullOrEmpty(result.PdfPath));
+            Assert.Equal(1, CountPdfPages(result.PdfPath));
+
+            // 原白板文件在导出前后逐字节一致。
+            Assert.Equal(sourceBytes, await File.ReadAllBytesAsync(sourcePath));
+        }
+        finally
+        {
+            RemoveDir(dir);
+        }
+    }
+
     private static async Task<byte[]> CreateDeterministicPngAsync(int width, int height)
     {
         using var stream = new InMemoryRandomAccessStream();

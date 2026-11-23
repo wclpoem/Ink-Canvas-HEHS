@@ -103,4 +103,12 @@ public sealed record ClassroomContext {
 - 预设窗口：板书笔色/页面背景/页面模板/练习时长/AI 指令等新控件完整、布局无裁切。- 练习变式：板内画一笔→选择→AI 助教→基础变式，修复后实机弹出「基础变式 · 随堂练习」对话框；点击「开始练习」自动新建第 2 页并写入可编辑题目/知识点/参考答案（非图片），提示“倒计时已开始（3 分钟）”，倒计时窗口正常。
 - ContentDialog 宿主：修复旧实现将对话框渲染进已隐藏浮条窗口的问题；统一按当前目标窗口选择 XamlRoot（主展板/侧板/文档/浮条兜底），弹窗期间暂收 AI 浮窗，结束后恢复；日志 `[UI] ContentDialog 宿主：surface=...` 可核对。
 - 已知轻微瑕疵：练习页名未在底部页码区显示（仅页码 2/2）；AI 浮窗在弹窗期间存在短暂黑色矩形（层级/渲染过渡），功能不受影响，记入待优化。
+- 兼容与资源诊断（`--compatcheck`，本机真实运行 7/7，exit=0）：
+  - v3 包（移除 PageId/TextObjects/FormulaObjects）→ 加载并运行期生成 PageId → 写回 v4；
+  - v2 无 ZIP 签名单页 JSON 加载笔画；
+  - schema=2 AI 载荷 identity 回退、不抛；
+  - 主/子板录制（boardId 0/1）合并后 `BuildFrame/BuildObjectFrame` 按板过滤、回放不触网；
+  - 资源包真实目录四类来源打包/解包不覆盖、无 `.restore-*` 残留、失败回滚、源文件只读；
+  - 无 PPT 时讲义仅板书页：PDF 页数=板书页数、PNG 非空、源文件不改。
+- 最终回归：构建 0 警告 0 错误；**2090 项测试全通过**（Core 1279 / Ai 283 / P0 52 / Classroom 389 / TimeMachine 84 / LegacyImport 3）。
 - 压测判据：`LongPlaybackStressTests` 已恢复原判据“峰值−结束 < 256MB”（仅测量前 GC 稳定，阈值/帧数/180s 预算未改）；Debug 内存差 0.0MB、耗时 185s（超 80ms，机器性能边界）；Release 147s、371/371 通过。不声称 Debug 环境通过。

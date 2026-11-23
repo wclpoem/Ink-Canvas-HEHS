@@ -102,6 +102,8 @@ public partial class App : Application
         if (aiCheck is not null) { _ = Diagnostics.AssistantRegression.Run(aiCheck["--aicheck=".Length..]); return; }
         var aiBoardCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--aiboardcheck=", StringComparison.OrdinalIgnoreCase));
         if (aiBoardCheck is not null) { _ = Diagnostics.AiBoardRegression.Run(aiBoardCheck["--aiboardcheck=".Length..]); return; }
+        var compatCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--compatcheck=", StringComparison.OrdinalIgnoreCase));
+        if (compatCheck is not null) { _ = Diagnostics.CompatibilityRegression.Run(compatCheck["--compatcheck=".Length..]); return; }
 
         var inkWashCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--inkwashcheck=", StringComparison.OrdinalIgnoreCase));
         if (inkWashCheck is not null) { _ = Diagnostics.InkWashRegression.Run(inkWashCheck["--inkwashcheck=".Length..]); return; }

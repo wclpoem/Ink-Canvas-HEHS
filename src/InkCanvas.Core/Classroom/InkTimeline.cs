@@ -62,6 +62,10 @@ public sealed class InkTimeline
     // 笔画 id -> 所属页码。注册 StrokeAdded 时只读取事件的 PageIndex，不解析 StrokeJson。
     private readonly Dictionary<string, int> _strokePages = new();
 
+    // 笔画 id -> 所属画板（0 = 主展板，1 = 板中板）。合并录制回放时按板过滤，
+    // 旧事件缺 BoardId 时默认 0，保持单板会话完全兼容。
+    private readonly Dictionary<string, int> _strokeBoards = new();
+
     // 笔画 id -> 首次登记的事件索引，用于保持帧内笔画顺序，也作为按需解析时查找 JSON 的起点。
     private readonly Dictionary<string, int> _strokeOrder = new();
 
@@ -183,8 +187,14 @@ public sealed class InkTimeline
     /// <summary>录制总时长（毫秒），等于最后一个事件的时间。</summary>
     public long Duration => _events.Count == 0 ? 0 : Math.Max(0, _events[^1].TimeMs);
 
-    /// <summary>目标时刻应显示的当前页笔画（按添加顺序）。</summary>
-    public IReadOnlyList<InkStroke> BuildFrame(long timeMs)
+    /// <summary>目标时刻当前页、主展板（boardId=0）应显示的笔画（按添加顺序）。</summary>
+    public IReadOnlyList<InkStroke> BuildFrame(long timeMs) => BuildFrame(timeMs, 0);
+
+    /// <summary>
+    /// 目标时刻当前页、指定画板（0 = 主展板，1 = 板中板）应显示的笔画（按添加顺序）。
+    /// 合并录制中主/子板笔画共用页码，必须按事件 BoardId 区分，避免两板画面互相串入。
+    /// </summary>
+    public IReadOnlyList<InkStroke> BuildFrame(long timeMs, int boardId)
     {
         EnsureCheckpoints();
         EnsureRegistry();
@@ -214,8 +224,9 @@ public sealed class InkTimeline
         var frameIds = new HashSet<string>();
         foreach (var id in alive)
         {
-            // 先用轻量页码索引过滤，避免为其它页的笔画做无谓的反序列化。
+            // 先用轻量页码索引过滤，避免为其它页/其它板的笔画做无谓的反序列化。
             if (!_strokePages.TryGetValue(id, out int strokePage) || strokePage != page) continue;
+            if (_strokeBoards.TryGetValue(id, out int strokeBoard) && strokeBoard != boardId) continue;
 
             // 按需解析：仅对当前帧真正需要的笔画反序列化，成功后进入缓存。
             InkStroke stroke = ResolveStroke(id);
@@ -1031,9 +1042,10 @@ public sealed class InkTimeline
         if (e is null) return;
         if (e.Kind == TimelineEventKind.StrokeAdded && !string.IsNullOrEmpty(e.StrokeId))
         {
-            // 只登记页码与顺序，不解析 StrokeJson：长会话首次定位不再全量反序列化。
+            // 只登记页码、画板与顺序，不解析 StrokeJson：长会话首次定位不再全量反序列化。
             if (_strokePages.ContainsKey(e.StrokeId)) return;
             _strokePages[e.StrokeId] = e.PageIndex;
+            _strokeBoards[e.StrokeId] = e.BoardId;
             _strokeOrder[e.StrokeId] = index;
         }
         else if (e.Kind is TimelineEventKind.Undo or TimelineEventKind.Redo)
@@ -1046,6 +1058,7 @@ public sealed class InkTimeline
                 if (!known)
                 {
                     _strokePages[id] = e.PageIndex;
+                    _strokeBoards[id] = e.BoardId;
                     _strokeOrder[id] = index;
                 }
 

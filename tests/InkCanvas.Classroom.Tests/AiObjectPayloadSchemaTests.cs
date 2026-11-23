@@ -198,6 +198,101 @@ public sealed class AiObjectPayloadSchemaTests
     }
 
     [Fact]
+    public void BuildObjectFrame_Schema2Payload_FallsBackToIdentityWithoutThrowing()
+    {
+        const string schema2Main = """
+        {
+          "objectId": "legacy-image",
+          "action": "add",
+          "schema": 2,
+          "pageIndex": 0,
+          "boardId": 0,
+          "objects": [
+            { "id": "legacy-image", "kind": "image", "left": 1, "top": 2, "width": 30, "height": 40 }
+          ],
+          "nativeObjects": [
+            { "id": "legacy-text", "type": "text", "content": "旧板书" }
+          ]
+        }
+        """;
+        const string schema2Side = """
+        {
+          "objectId": "legacy-side",
+          "action": "add",
+          "schema": 2,
+          "pageIndex": 0,
+          "boardId": 1,
+          "objects": [
+            { "id": "legacy-side", "kind": "image", "left": 5, "top": 6, "width": 7, "height": 8 }
+          ],
+          "nativeObjects": []
+        }
+        """;
+
+        Assert.True(AiObjectPayloadCodec.TryDecode(schema2Main, out _));
+        Assert.True(AiObjectPayloadCodec.TryDecode(schema2Side, out _));
+
+        var session = new ClassroomSession
+        {
+            Id = "schema2-identity",
+            Events = new List<TimelineEvent>
+            {
+                new() { TimeMs = 10, PageIndex = 0, BoardId = 0, Kind = TimelineEventKind.AiStep, Payload = schema2Main },
+                new() { TimeMs = 20, PageIndex = 0, BoardId = 1, Kind = TimelineEventKind.AiStep, Payload = schema2Side },
+            },
+            Checkpoints = new List<SessionCheckpoint>(),
+            Bookmarks = new List<SessionBookmark>(),
+        };
+
+        var timeline = new InkTimeline(session, eventsPerCheckpoint: 2, checkpointIntervalMs: 20);
+        IReadOnlyList<TimelineAiObject> mainFrame = timeline.BuildObjectFrame(30, 0);
+        IReadOnlyList<TimelineAiObject> sideFrame = timeline.BuildObjectFrame(30, 1);
+
+        Assert.Equal(new[] { "legacy-image", "legacy-text" }, mainFrame.Select(item => item.Id).ToArray());
+        Assert.Equal("legacy-side", Assert.Single(sideFrame).Id);
+
+        TimelineAiObject image = mainFrame.Single(item => item.Id == "legacy-image");
+        Assert.False(image.HasTransform);
+        Assert.Null(image.Transform);
+        Assert.Equal("", image.Source);
+        Assert.Null(image.SlideId);
+        Assert.Equal("", image.RequestId);
+        Assert.Equal(0, image.BoardId);
+
+        TimelineAiObject text = mainFrame.Single(item => item.Id == "legacy-text");
+        Assert.True(text.IsNative);
+        Assert.False(text.HasTransform);
+        Assert.Null(text.Transform);
+        Assert.Equal("旧板书", text.Content);
+
+        // 反复取帧与冷启动重建都不得抛异常，且对象集合保持不变。
+        for (int round = 0; round < 3; round++)
+        {
+            Assert.Equal(2, timeline.BuildObjectFrame(30, 0).Count);
+            Assert.Single(timeline.BuildObjectFrame(30, 1));
+        }
+
+        var cold = new InkTimeline(new ClassroomSession
+        {
+            Id = session.Id,
+            Events = session.Events.Select(ev => new TimelineEvent
+            {
+                SessionId = ev.SessionId,
+                Seq = ev.Seq,
+                TimeMs = ev.TimeMs,
+                PageIndex = ev.PageIndex,
+                BoardId = ev.BoardId,
+                Kind = ev.Kind,
+                Payload = ev.Payload,
+            }).ToList(),
+            Checkpoints = new List<SessionCheckpoint>(),
+            Bookmarks = new List<SessionBookmark>(),
+        }, eventsPerCheckpoint: 2, checkpointIntervalMs: 20);
+        Assert.Equal(2, cold.BuildObjectFrame(30, 0).Count);
+        Assert.Single(cold.BuildObjectFrame(30, 1));
+    }
+
+    [Fact]
     public void EmptyOrMalformedPayload_ReturnsFalse()
     {
         Assert.False(AiObjectPayloadCodec.TryDecode(null, out _));

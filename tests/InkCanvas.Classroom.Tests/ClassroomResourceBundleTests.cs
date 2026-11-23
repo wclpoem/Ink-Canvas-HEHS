@@ -238,6 +238,121 @@ public sealed class ClassroomResourceBundleTests : IDisposable
         Assert.Equal("课堂录制", File.ReadAllText(recording));
     }
 
+    /// <summary>
+    /// 真实目录四类来源（白板 / 课件批注 / 例题库 / 录制）→ 打包 → 解包到已有目录：
+    /// 既有同名文件与同名目录必须保留，新文件追加后缀，全程无 .tmp 与 .restore-* 残留，
+    /// 源文件内容与哈希保持不变。
+    /// </summary>
+    [Fact]
+    public void RealDirectorySources_ArchiveThenRestore_NoOverwriteNoResidueAndSourceUnchanged()
+    {
+        string board = WriteSource("real/whiteboard/board.icink", "白板存档");
+        string lessonRoot = Path.Combine(_root, "real", "ppt");
+        string lessonDirectory = Path.Combine(lessonRoot, "Auto Saved - Presentations", "函数_3");
+        Directory.CreateDirectory(lessonDirectory);
+        string pptManifest = Path.Combine(lessonDirectory, "InkCanvas-Ppt.json");
+        File.WriteAllText(pptManifest,
+            "{\"version\":2,\"slides\":[{\"slideId\":101,\"slideIndex\":1,\"file\":\"slide-101.icink\"}]}");
+        string slide = Path.Combine(lessonDirectory, "slide-101.icink");
+        File.WriteAllText(slide, "课件批注");
+        string examples = WriteSource("real/examples/examples.json", "{\"version\":1,\"examples\":[]}");
+        string recording = WriteSource("real/recordings/session-a.icink", "课堂录制");
+
+        ClassroomBundleSourcePlan plan = ClassroomBundleSourceCollector.Collect(new ClassroomBundleSourceOptions
+        {
+            WhiteboardDirectory = Path.Combine(_root, "real", "whiteboard"),
+            PptAnnotationRoot = lessonRoot,
+            ExampleLibraryDirectory = Path.Combine(_root, "real", "examples"),
+            RecordingDirectory = Path.Combine(_root, "real", "recordings"),
+        });
+
+        Assert.Equal(4, plan.Files.Select(file => file.Kind).Distinct().Count());
+        Assert.Equal(5, plan.Files.Count);
+        var paths = plan.Files.Select(file => file.SourcePath).ToList();
+        var sourceHashes = paths.ToDictionary(path => path, Sha256Of);
+
+        IReadOnlyList<string> entryNames = ClassroomResourceBundle.PlanEntryNames(paths);
+        string manifestJson = JsonSerializer.Serialize(new
+        {
+            version = 1,
+            createdAt = "2026-11-23T00:00:00.0000000+08:00",
+            files = entryNames,
+            app = "InkCanvas",
+        });
+
+        string zipPath = Path.Combine(_root, "real-out", "bundle.zip");
+        ClassroomResourceBundle.Archive(paths, manifestJson, zipPath);
+        Assert.True(File.Exists(zipPath));
+
+        // 目标目录预置同名文件与同名目录，解包不得覆盖。
+        string restoreDirectory = Path.Combine(_root, "real-restored");
+        Directory.CreateDirectory(restoreDirectory);
+        string existingBoard = Path.Combine(restoreDirectory, "board.icink");
+        File.WriteAllText(existingBoard, "既有白板文件");
+        string existingManifestDirectory = Path.Combine(restoreDirectory, "InkCanvas-Ppt.json");
+        Directory.CreateDirectory(existingManifestDirectory);
+
+        ClassroomBundleRestoreResult result = ClassroomResourceBundle.Restore(zipPath, restoreDirectory);
+
+        Assert.Equal(entryNames.Count, result.Files.Count);
+        Assert.Equal(manifestJson, result.ManifestJson);
+        Assert.Equal("既有白板文件", File.ReadAllText(existingBoard));
+        Assert.True(Directory.Exists(existingManifestDirectory), "既有同名目录必须保留。");
+        Assert.DoesNotContain(existingBoard, result.Files);
+        Assert.Contains(result.Files, path => Path.GetFileName(path) == "board-1.icink");
+        Assert.Contains(result.Files, path => Path.GetFileName(path) == "InkCanvas-Ppt-1.json");
+        Assert.Equal("白板存档", File.ReadAllText(Path.Combine(restoreDirectory, "board-1.icink")));
+
+        // 源文件只读：四类来源内容与哈希均不变。
+        Assert.All(paths, path => Assert.Equal(sourceHashes[path], Sha256Of(path)));
+        Assert.Equal("白板存档", File.ReadAllText(board));
+        Assert.Equal("课件批注", File.ReadAllText(slide));
+        Assert.Equal("{\"version\":1,\"examples\":[]}", File.ReadAllText(examples));
+        Assert.Equal("课堂录制", File.ReadAllText(recording));
+
+        Assert.Empty(Directory.GetDirectories(restoreDirectory, ".restore-*", SearchOption.TopDirectoryOnly));
+        Assert.Empty(Directory.GetFiles(_root, "*.tmp", SearchOption.AllDirectories));
+    }
+
+    /// <summary>
+    /// 真实目录四类来源收集完成后源文件被删除：打包必须回滚，
+    /// 不留下正式 zip、.tmp 半成品或任何残留文件。
+    /// </summary>
+    [Fact]
+    public void RealDirectorySources_ArchiveWhenCollectedFileDisappears_RollsBackWithoutResidue()
+    {
+        WriteSource("rollback/whiteboard/board.icink", "白板存档");
+        string lessonRoot = Path.Combine(_root, "rollback", "ppt");
+        string lessonDirectory = Path.Combine(lessonRoot, "Auto Saved - Presentations", "函数_3");
+        Directory.CreateDirectory(lessonDirectory);
+        File.WriteAllText(Path.Combine(lessonDirectory, "InkCanvas-Ppt.json"),
+            "{\"version\":2,\"slides\":[{\"slideId\":101,\"slideIndex\":1,\"file\":\"slide-101.icink\"}]}");
+        WriteSource("rollback/ppt/Auto Saved - Presentations/函数_3/slide-101.icink", "课件批注");
+        WriteSource("rollback/examples/examples.json", "{\"version\":1,\"examples\":[]}");
+        string recording = WriteSource("rollback/recordings/session-a.icink", "课堂录制");
+
+        ClassroomBundleSourcePlan plan = ClassroomBundleSourceCollector.Collect(new ClassroomBundleSourceOptions
+        {
+            WhiteboardDirectory = Path.Combine(_root, "rollback", "whiteboard"),
+            PptAnnotationRoot = lessonRoot,
+            ExampleLibraryDirectory = Path.Combine(_root, "rollback", "examples"),
+            RecordingDirectory = Path.Combine(_root, "rollback", "recordings"),
+        });
+        var paths = plan.Files.Select(file => file.SourcePath).ToList();
+        Assert.Equal(4, plan.Files.Select(file => file.Kind).Distinct().Count());
+
+        // 收集后删除最后一个来源，模拟打包中途源文件消失。
+        File.Delete(recording);
+
+        string zipPath = Path.Combine(_root, "rollback-out", "bundle.zip");
+        Assert.Throws<FileNotFoundException>(
+            () => ClassroomResourceBundle.Archive(paths, "{\"version\":1,\"files\":[],\"app\":\"InkCanvas\"}", zipPath));
+
+        Assert.False(File.Exists(zipPath), "打包失败不应留下正式资源包。");
+        Assert.False(File.Exists(zipPath + ".tmp"), "打包失败应清理 .tmp 半成品。");
+        Assert.Empty(Directory.GetFiles(_root, "*.tmp", SearchOption.AllDirectories));
+    }
+
     /// <summary>解包成功或失败后临时目录都必须被清理。</summary>
     [Fact]
     public void Restore_LeavesNoTemporaryDirectory()
