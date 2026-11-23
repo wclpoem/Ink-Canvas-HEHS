@@ -206,7 +206,8 @@ public sealed class RecorderTests
         {
             host.RaiseSignal(new ClassroomSignal(ClassroomSignalKind.PracticeFinished, "练习结束"));
             Assert.Contains(recorder.Session.Events, e => e.Kind == TimelineEventKind.TimerEnded);
-            Assert.Contains(recorder.Session.Bookmarks, b => b.Kind == "timer");
+            Assert.Contains(recorder.Session.Bookmarks, b => b.Kind == "practice");
+            Assert.Contains(recorder.Session.Bookmarks, b => b.Name == "练习结束");
         }
         finally
         {

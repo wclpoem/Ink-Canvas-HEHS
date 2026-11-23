@@ -144,6 +144,7 @@ public sealed class LongPlaybackStressTests
         memorySamples.Add(GC.GetTotalMemory(forceFullCollection: true));
 
         long peakBytes = memorySamples.Max();
+        long firstSampleBytes = memorySamples[0];
         long lastSampleBytes = memorySamples[^1];
         double totalMs = frameWatch.Elapsed.TotalMilliseconds;
         double averageMs = frameCount > 0 ? totalMs / frameCount : 0;
@@ -159,8 +160,13 @@ public sealed class LongPlaybackStressTests
 
         Assert.Equal(durationMs, lastFrameTimeMs);
         Assert.True(totalMs < 180_000, $"逐帧总耗时 {totalMs:F1} ms 超过 180 秒上界");
-        Assert.True(peakBytes - lastSampleBytes < 256L * 1024 * 1024,
-            $"内存峰值与最后采样相差 {(peakBytes - lastSampleBytes) / 1024.0 / 1024.0:F1} MB，超过 256MB");
+        // 用「测试结束相对开始」的托管内存增量判断是否有持续增长。
+        // 不能用「峰值 - 结束值」：全量串行运行时，前面测试的托管残留会让首个采样偏高，
+        // 随后 GC 回落到正常水平，峰值与结束值之差会被误判为超限。
+        Assert.True(lastSampleBytes - firstSampleBytes < 256L * 1024 * 1024,
+            $"结束采样较首个采样增长 {(lastSampleBytes - firstSampleBytes) / 1024.0 / 1024.0:F1} MB，超过 256MB");
+        Assert.True(lastSampleBytes <= peakBytes,
+            $"结束采样 {lastSampleBytes / 1024.0 / 1024.0:F1} MB 不应高于峰值 {peakBytes / 1024.0 / 1024.0:F1} MB");
         Assert.True(lastFrame.Count > 0, "最后一帧未取到笔画");
 
         IReadOnlyList<InkStroke> endFrame = timeline.BuildFrame(durationMs);

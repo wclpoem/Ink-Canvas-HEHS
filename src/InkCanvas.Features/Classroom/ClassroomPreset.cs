@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace InkCanvas.Features.Classroom;
 
@@ -48,6 +49,26 @@ public sealed class ClassroomPreset
 
     public bool CollapseToolkit { get; set; }
 
+    /// <summary>
+    /// 个人教学预设的扩展字段，全部可空：旧配置缺少这些键时保持 null，行为与 v1 完全一致。
+    /// 这些字段只描述「开课时用什么笔色 / 背景 / 模板 / AI 指令 / 练习时长」，
+    /// 不复制任何工具自身的执行逻辑；<see cref="ClassroomPresetLibrary.Plan"/> 也不会读取它们。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string PenColor { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string Background { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string TemplateId { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string Prompt { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? PracticeMinutes { get; set; }
+
     public ClassroomPreset Clone() => new()
     {
         Version = Version,
@@ -59,6 +80,11 @@ public sealed class ClassroomPreset
         Hidden = new List<ClassroomTool>(Hidden),
         CountdownMinutes = CountdownMinutes,
         CollapseToolkit = CollapseToolkit,
+        PenColor = PenColor,
+        Background = Background,
+        TemplateId = TemplateId,
+        Prompt = Prompt,
+        PracticeMinutes = PracticeMinutes,
     };
 
     public bool Shows(ClassroomTool tool) => Tools.Contains(tool);
@@ -197,10 +223,22 @@ public static class ClassroomPresetLibrary
         preset.Id = string.IsNullOrWhiteSpace(preset.Id) ? (idFallback ?? "custom") : preset.Id;
         preset.Name = string.IsNullOrWhiteSpace(preset.Name) ? "自定义场景" : preset.Name.Trim();
         if (preset.CountdownMinutes < 0) preset.CountdownMinutes = 0;
+        preset.PenColor = NormalizeOptional(preset.PenColor);
+        preset.Background = NormalizeOptional(preset.Background);
+        preset.TemplateId = NormalizeOptional(preset.TemplateId);
+        preset.Prompt = NormalizeOptional(preset.Prompt);
+        if (preset.PracticeMinutes is < 0) preset.PracticeMinutes = null;
         return preset;
     }
 
-    /// <summary>把预设翻译成「打开/收起哪些工具」的动作清单；不直接操作窗口。</summary>
+    private static string NormalizeOptional(string value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    /// <summary>
+    /// 把预设翻译成「打开/收起哪些工具」的动作清单；不直接操作窗口。
+    /// 笔色 / 背景 / 模板 / AI 指令 / 练习时长属于个人教学偏好，故意不进入动作清单，
+    /// 避免预设承担工具自身的行为逻辑。
+    /// </summary>
     public static PresetAction Plan(ClassroomPreset preset)
     {
         var action = new PresetAction();
@@ -223,7 +261,11 @@ public static class ClassroomPresetLibrary
         return action;
     }
 
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
 
     public static string Serialize(IReadOnlyList<ClassroomPreset> presets)
         => JsonSerializer.Serialize(presets ?? Array.Empty<ClassroomPreset>(), JsonOptions);

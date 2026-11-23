@@ -13,7 +13,14 @@ namespace InkCanvas.Features.Ppt;
 public sealed class PptInkFileStore : IPptInkStore
 {
     public const int CurrentManifestVersion = 2;
-    private const string ManifestName = "InkCanvas-Ppt.json";
+
+    /// <summary>课件批注目录名；资源包收集器按同一结构定位 manifest 与 <c>.icink</c>。</summary>
+    public const string PresentationsDirectoryName = "Auto Saved - Presentations";
+
+    /// <summary>课件批注 manifest 文件名；只读取，不改写既有存档格式。</summary>
+    public const string ManifestFileName = "InkCanvas-Ppt.json";
+
+    private const string ManifestName = ManifestFileName;
     private const string PositionName = "Position";
     private const string SlideFilePrefix = "slide-";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
@@ -539,7 +546,7 @@ public sealed class PptInkFileStore : IPptInkStore
 
     /// <summary>Public so callers can back up or migrate exactly the directory Load reads.</summary>
     public string GetPresentationDirectory(PptPresentationInfo presentation) =>
-        Path.Combine(_root, "Auto Saved - Presentations",
+        Path.Combine(_root, PresentationsDirectoryName,
             $"{SafeFilePart(presentation.Name)}_{Math.Max(0, presentation.SlideCount)}");
 
     /// <summary>

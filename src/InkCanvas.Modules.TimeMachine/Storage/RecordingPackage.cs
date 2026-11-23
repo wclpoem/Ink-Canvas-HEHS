@@ -52,48 +52,76 @@ public static class RecordingPackage
         string path = PathFor(session.Id, dir);
         string tmp = path + ".tmp";
 
-        // 落盘前补齐自动书签，保证容器内时间轴与规则一致。
-        new InkTimeline(session).ApplyAutoBookmarks();
+        // 上次中断可能留下半包：先清理，避免 ZipFile 以 CreateNew 打开时失败。
+        TryDeleteTemporary(tmp);
 
-        var screenshotEntries = EmbedScreenshots(session);
-
-        using (var archive = ZipFile.Open(tmp, ZipArchiveMode.Create))
+        try
         {
-            WriteEntry(archive, ClassroomRecordingFormat.ManifestEntry, JsonSerializer.Serialize(new ManifestDto
+            // 落盘前补齐自动书签，保证容器内时间轴与规则一致。
+            new InkTimeline(session).ApplyAutoBookmarks();
+
+            var screenshotEntries = EmbedScreenshots(session);
+
+            using (var archive = ZipFile.Open(tmp, ZipArchiveMode.Create))
             {
-                Format = ClassroomRecordingFormat.Format,
-                Version = ClassroomRecordingFormat.Version,
-                Id = session.Id,
-                Name = session.Name,
-                CreatedAt = session.CreatedAt,
-                Timeline = TimelineEntry,
-                HistoryDir = HistoryPrefix,
-                ScreenshotsDir = ScreenshotsPrefix,
-            }, JsonOptions));
+                WriteEntry(archive, ClassroomRecordingFormat.ManifestEntry, JsonSerializer.Serialize(new ManifestDto
+                {
+                    Format = ClassroomRecordingFormat.Format,
+                    Version = ClassroomRecordingFormat.Version,
+                    Id = session.Id,
+                    Name = session.Name,
+                    CreatedAt = session.CreatedAt,
+                    Timeline = TimelineEntry,
+                    HistoryDir = HistoryPrefix,
+                    ScreenshotsDir = ScreenshotsPrefix,
+                }, JsonOptions));
 
-            WriteEntry(archive, TimelineEntry, JsonSerializer.Serialize(session, JsonOptions));
+                WriteEntry(archive, TimelineEntry, JsonSerializer.Serialize(session, JsonOptions));
 
-            // 即使没有检查点 / 截图，也保留固定目录条目，便于本体按结构识别容器。
-            archive.CreateEntry(HistoryPrefix);
-            archive.CreateEntry(ScreenshotsPrefix);
+                // 即使没有检查点 / 截图，也保留固定目录条目，便于本体按结构识别容器。
+                archive.CreateEntry(HistoryPrefix);
+                archive.CreateEntry(ScreenshotsPrefix);
 
-            for (int i = 0; i < session.Checkpoints.Count; i++)
-            {
-                var checkpoint = session.Checkpoints[i];
-                WriteEntry(archive, HistoryPrefix + $"checkpoint-{i:D4}.json",
-                    JsonSerializer.Serialize(checkpoint, JsonOptions));
+                for (int i = 0; i < session.Checkpoints.Count; i++)
+                {
+                    var checkpoint = session.Checkpoints[i];
+                    WriteEntry(archive, HistoryPrefix + $"checkpoint-{i:D4}.json",
+                        JsonSerializer.Serialize(checkpoint, JsonOptions));
+                }
+
+                foreach (var (entryName, bytes) in screenshotEntries)
+                {
+                    var entry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
+                    using var stream = entry.Open();
+                    stream.Write(bytes, 0, bytes.Length);
+                }
             }
 
-            foreach (var (entryName, bytes) in screenshotEntries)
-            {
-                var entry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
-                using var stream = entry.Open();
-                stream.Write(bytes, 0, bytes.Length);
-            }
+            File.Move(tmp, path, overwrite: true);
+            return path;
         }
+        catch
+        {
+            // 保存失败不留下可被误认为录制的半成品；调用方仍收到原始异常。
+            TryDeleteTemporary(tmp);
+            throw;
+        }
+    }
 
-        File.Move(tmp, path, overwrite: true);
-        return path;
+    /// <summary>清理同一录制路径下的 <c>.tmp</c> 半成品；失败时留给启动期临时文件清理。</summary>
+    public static bool TryDeleteTemporary(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        try
+        {
+            if (!File.Exists(path)) return false;
+            File.Delete(path);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>

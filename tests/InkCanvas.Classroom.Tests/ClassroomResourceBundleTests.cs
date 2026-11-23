@@ -2,6 +2,7 @@ using InkCanvas.Core.Settings;
 using InkCanvas.Features.Classroom;
 using System.IO.Compression;
 using System.Security.Cryptography;
+using System.Text.Json;
 using Xunit;
 
 namespace InkCanvas.Classroom.Tests;
@@ -157,6 +158,144 @@ public sealed class ClassroomResourceBundleTests : IDisposable
 
         Assert.Throws<InvalidDataException>(
             () => ClassroomResourceBundle.Restore(zipPath, Path.Combine(_root, "restore-missing")));
+    }
+
+    /// <summary>
+    /// 资源包扩展：白板 + 课件批注（manifest/按 slideId 的 .icink）+ 例题 + 录制全部入包，
+    /// zip 内新增条目而 <c>bundle.json</c> 仍只含 version / createdAt / files / app。
+    /// </summary>
+    [Fact]
+    public void Archive_CollectedSources_AddsAllCategoriesAndKeepsManifestShape()
+    {
+        string board = WriteSource("whiteboard/board.icink", "白板存档");
+        string lessonRoot = Path.Combine(_root, "ppt");
+        string lessonDir = Path.Combine(lessonRoot, "Auto Saved - Presentations", "函数_3");
+        Directory.CreateDirectory(lessonDir);
+        string manifest = Path.Combine(lessonDir, "InkCanvas-Ppt.json");
+        File.WriteAllText(manifest,
+            "{\"version\":2,\"slides\":[{\"slideId\":101,\"slideIndex\":1,\"file\":\"slide-101.icink\"}]}");
+        string slide = Path.Combine(lessonDir, "slide-101.icink");
+        File.WriteAllText(slide, "课件批注");
+        string examples = WriteSource("examples/examples.json", "{\"version\":1,\"examples\":[]}");
+        string recording = WriteSource("recordings/session-a.icink", "课堂录制");
+
+        ClassroomBundleSourcePlan plan = ClassroomBundleSourceCollector.Collect(new ClassroomBundleSourceOptions
+        {
+            WhiteboardDirectory = Path.Combine(_root, "whiteboard"),
+            PptAnnotationRoot = lessonRoot,
+            ExampleLibraryDirectory = Path.Combine(_root, "examples"),
+            RecordingDirectory = Path.Combine(_root, "recordings"),
+        });
+
+        Assert.False(plan.IsEmpty);
+        Assert.Contains(plan.Files, file => file.SourcePath == board);
+        Assert.Contains(plan.Files, file => file.SourcePath == manifest);
+        Assert.Contains(plan.Files, file => file.SourcePath == slide);
+        Assert.Contains(plan.Files, file => file.SourcePath == examples);
+        Assert.Contains(plan.Files, file => file.SourcePath == recording);
+
+        var paths = plan.Files.Select(file => file.SourcePath).ToList();
+        IReadOnlyList<string> entryNames = ClassroomResourceBundle.PlanEntryNames(paths);
+        string manifestJson = JsonSerializer.Serialize(new
+        {
+            version = 1,
+            createdAt = "2026-11-23T00:00:00.0000000+08:00",
+            files = entryNames,
+            app = "InkCanvas",
+        });
+
+        string zipPath = Path.Combine(_root, "extended", "bundle.zip");
+        ClassroomResourceBundle.Archive(paths, manifestJson, zipPath);
+
+        using (ZipArchive zip = ZipFile.OpenRead(zipPath))
+        {
+            var entries = zip.Entries.Select(entry => entry.FullName).ToList();
+            Assert.Contains(ClassroomResourceBundle.ManifestEntryName, entries);
+            Assert.Equal(entryNames.Count + 1, entries.Count);
+            Assert.All(entryNames, name => Assert.Contains(name, entries));
+
+            ZipArchiveEntry manifestEntry = zip.GetEntry(ClassroomResourceBundle.ManifestEntryName)!;
+            using var reader = new StreamReader(manifestEntry.Open());
+            using JsonDocument document = JsonDocument.Parse(reader.ReadToEnd());
+            JsonElement root = document.RootElement;
+
+            // 结构保持不变：仍只有 version / createdAt / files / app 四个字段。
+            Assert.Equal(4, root.EnumerateObject().Count());
+            Assert.Equal(1, root.GetProperty("version").GetInt32());
+            Assert.Equal("InkCanvas", root.GetProperty("app").GetString());
+            Assert.True(root.TryGetProperty("createdAt", out _));
+            Assert.Equal(entryNames,
+                root.GetProperty("files").EnumerateArray().Select(item => item.GetString()).ToArray());
+        }
+
+        string restored = Path.Combine(_root, "restored-extended");
+        ClassroomBundleRestoreResult result = ClassroomResourceBundle.Restore(zipPath, restored);
+
+        Assert.Equal(entryNames.Count, result.Files.Count);
+        Assert.Equal(manifestJson, result.ManifestJson);
+        // 源文件只读：打包后哈希不变。
+        Assert.Equal("白板存档", File.ReadAllText(board));
+        Assert.Equal("课堂录制", File.ReadAllText(recording));
+    }
+
+    /// <summary>解包成功或失败后临时目录都必须被清理。</summary>
+    [Fact]
+    public void Restore_LeavesNoTemporaryDirectory()
+    {
+        string lesson = WriteSource("source/lesson.txt", "临时目录");
+        string zipPath = Path.Combine(_root, "temp-clean.zip");
+        ClassroomResourceBundle.Archive(new[] { lesson }, ManifestJson, zipPath);
+
+        string restoreDirectory = Path.Combine(_root, "restored-temp");
+        ClassroomResourceBundle.Restore(zipPath, restoreDirectory);
+
+        string[] leftovers = Directory.GetDirectories(restoreDirectory)
+            .Where(path => Path.GetFileName(path).StartsWith(".restore-", StringComparison.Ordinal))
+            .ToArray();
+        Assert.Empty(leftovers);
+    }
+
+    [Fact]
+    public void Restore_WithoutManifest_CleansUpNewlyCreatedTargetDirectory()
+    {
+        string zipPath = Path.Combine(_root, "no-manifest-cleanup.zip");
+        using (var stream = new FileStream(zipPath, FileMode.Create, FileAccess.ReadWrite, FileShare.None))
+        using (var zip = new ZipArchive(stream, ZipArchiveMode.Create))
+        {
+            using var writer = new StreamWriter(zip.CreateEntry("readme.txt").Open());
+            writer.Write("缺少 bundle.json");
+        }
+
+        string target = Path.Combine(_root, "cleanup-target");
+        Assert.Throws<InvalidDataException>(() => ClassroomResourceBundle.Restore(zipPath, target));
+        Assert.False(Directory.Exists(target), "解包失败时应清理本次新建的空目标目录。");
+    }
+
+    /// <summary>目标目录中同名项是「目录」时也必须追加后缀，绝不覆盖或抛错。</summary>
+    [Fact]
+    public void Restore_WhenTargetNameIsDirectory_AppendsSuffixInsteadOfOverwriting()
+    {
+        string lesson = WriteSource("source/lesson.txt", "同名目录测试");
+        string zipPath = Path.Combine(_root, "dir-collision.zip");
+        ClassroomResourceBundle.Archive(new[] { lesson }, ManifestJson, zipPath);
+
+        string restoreDirectory = Path.Combine(_root, "restored-dir-collision");
+        Directory.CreateDirectory(Path.Combine(restoreDirectory, "lesson.txt"));
+
+        ClassroomBundleRestoreResult result = ClassroomResourceBundle.Restore(zipPath, restoreDirectory);
+
+        string written = Assert.Single(result.Files);
+        Assert.Equal(Path.Combine(restoreDirectory, "lesson-1.txt"), written);
+        Assert.True(Directory.Exists(Path.Combine(restoreDirectory, "lesson.txt")), "既有同名目录必须保留。");
+        Assert.Equal("同名目录测试", File.ReadAllText(written));
+    }
+
+    private string WriteSource(string relativePath, string content)
+    {
+        string path = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, content);
+        return path;
     }
 
     private static string Sha256Of(string path)

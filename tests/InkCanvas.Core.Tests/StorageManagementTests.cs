@@ -130,6 +130,46 @@ public sealed class StorageManagementTests
         Assert.Equal("package", File.ReadAllText(archive));
     }
 
+    [Fact]
+    public void CleanupRemovesExpiredAtomicWriteLeftoversAndBundleTempDirectories()
+    {
+        using var directory = new TestDirectory();
+        var store = new SettingsStore(directory.Path);
+        store.Save(new());
+
+        var expiredFiles = new[]
+        {
+            directory.File("sessions/" + Guid.NewGuid().ToString("N") + ".json.tmp", "session"),
+            directory.File("examples.json.tmp", "examples"),
+            directory.File("export.icink.tmp", "export"),
+            directory.File("Recordings/lesson.icink.tmp", "recordings"),
+            directory.File("PluginData/inkcanvas.time-machine/Recordings/demo.icink.tmp", "plugin"),
+        };
+        foreach (string path in expiredFiles)
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddDays(-2));
+
+        string recentSession = directory.File("sessions/recent.json.tmp", "recent");
+        string savedSession = directory.File("sessions/keep.json", "{}");
+        string expiredBundle = directory.File("bundles/20250101-000000.tmp/board.json", "{}");
+        string completedBundle = directory.File("bundles/20260101-000000/board.json", "{}");
+        string stagedRestore = directory.File("bundles/20260101-000000/.restore-" + Guid.NewGuid().ToString("N") + "/partial.bin", "partial");
+        File.SetLastWriteTimeUtc(expiredBundle, DateTime.UtcNow.AddDays(-2));
+        File.SetLastWriteTimeUtc(stagedRestore, DateTime.UtcNow.AddDays(-2));
+        string expiredBundleDir = System.IO.Path.Combine(directory.Path, "bundles", "20250101-000000.tmp");
+        string stagedRestoreDir = System.IO.Path.GetDirectoryName(stagedRestore);
+        Directory.SetLastWriteTimeUtc(expiredBundleDir, DateTime.UtcNow.AddDays(-2));
+        Directory.SetLastWriteTimeUtc(stagedRestoreDir, DateTime.UtcNow.AddDays(-2));
+
+        var storage = new AppStorage(store, new UpdateCache(System.IO.Path.Combine(directory.Path, "Updates")));
+        var result = storage.CleanupTemporaryFiles();
+
+        Assert.All(expiredFiles, path => Assert.False(File.Exists(path)));
+        Assert.False(Directory.Exists(expiredBundleDir));
+        Assert.False(Directory.Exists(stagedRestoreDir));
+        Assert.Equal(expiredFiles.Length + 2, result.RemovedItems);
+        Assert.All(new[] { recentSession, savedSession, completedBundle }, path => Assert.True(File.Exists(path)));
+    }
+
     private sealed class PackageHandler : HttpMessageHandler
     {
         public int Requests;

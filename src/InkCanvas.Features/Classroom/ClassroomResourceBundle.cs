@@ -59,22 +59,10 @@ public static class ClassroomResourceBundle
             {
                 WriteTextEntry(zip, ManifestEntryName, manifestJson ?? "");
 
-                var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ManifestEntryName };
-                foreach (string file in files)
+                foreach ((string file, string entryName) in BuildEntryPlan(files))
                 {
-                    if (string.IsNullOrWhiteSpace(file))
-                    {
-                        continue;
-                    }
-
-                    string name = Path.GetFileName(file);
-                    if (string.IsNullOrEmpty(name))
-                    {
-                        continue;
-                    }
-
                     // 文件不存在时 CreateEntryFromFile 会抛 FileNotFoundException，交由调用方感知。
-                    zip.CreateEntryFromFile(file, MakeUniqueEntryName(name, used), CompressionLevel.Optimal);
+                    zip.CreateEntryFromFile(file, entryName, CompressionLevel.Optimal);
                 }
             }
 
@@ -88,8 +76,48 @@ public static class ClassroomResourceBundle
     }
 
     /// <summary>
+    /// 预演打包后的 zip 条目名（与 <see cref="Archive"/> 完全一致），供调用方生成
+    /// <c>bundle.json</c> 中的 <c>files</c> 列表：既有结构不变，但名称包含同名文件的 <c>-1</c> 后缀。
+    /// 无效/空白路径按打包规则跳过。
+    /// </summary>
+    public static IReadOnlyList<string> PlanEntryNames(IReadOnlyList<string> files)
+        => BuildEntryPlan(files).Select(item => item.EntryName).ToList();
+
+    private static List<(string File, string EntryName)> BuildEntryPlan(IReadOnlyList<string> files)
+    {
+        var plan = new List<(string, string)>();
+        if (files is null)
+        {
+            return plan;
+        }
+
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ManifestEntryName };
+        foreach (string file in files)
+        {
+            if (string.IsNullOrWhiteSpace(file))
+            {
+                continue;
+            }
+
+            string name = Path.GetFileName(file);
+            if (string.IsNullOrEmpty(name))
+            {
+                continue;
+            }
+
+            plan.Add((file, MakeUniqueEntryName(name, used)));
+        }
+
+        return plan;
+    }
+
+    /// <summary>
     /// 解包资源包到 <paramref name="targetDir"/>。目标目录不存在会自动创建；
     /// 同名文件按 <c>-1</c> / <c>-2</c> 递增后缀改名，既有文件与源资源包均不会被改写。
+    /// <para>
+    /// 解包先落到目标目录下的临时子目录，全部条目读写成功后才逐个移动到目标目录；
+    /// 任一步失败都会删除临时目录并回滚本次已移动的文件，绝不覆盖既有数据。
+    /// </para>
     /// 资源包缺少 <c>bundle.json</c> 时抛出 <see cref="InvalidDataException"/>。
     /// </summary>
     public static ClassroomBundleRestoreResult Restore(string zipPath, string targetDir)
@@ -111,39 +139,87 @@ public static class ClassroomResourceBundle
         }
 
         string root = Path.GetFullPath(targetDir);
+        bool rootCreated = !Directory.Exists(root);
         Directory.CreateDirectory(root);
 
-        using var stream = new FileStream(fullZip, FileMode.Open, FileAccess.Read, FileShare.Read);
-        using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
-
-        ZipArchiveEntry manifestEntry = zip.Entries.FirstOrDefault(entry =>
-            string.Equals(entry.FullName, ManifestEntryName, StringComparison.OrdinalIgnoreCase));
-        if (manifestEntry is null)
+        try
         {
-            throw new InvalidDataException("课堂资源包缺少 bundle.json。");
-        }
+            using var stream = new FileStream(fullZip, FileMode.Open, FileAccess.Read, FileShare.Read);
+            using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
 
-        string manifestJson = ReadEntryText(manifestEntry);
-
-        var written = new List<string>();
-        foreach (ZipArchiveEntry entry in zip.Entries)
-        {
-            if (string.Equals(entry.FullName, ManifestEntryName, StringComparison.OrdinalIgnoreCase))
+            ZipArchiveEntry manifestEntry = zip.Entries.FirstOrDefault(entry =>
+                string.Equals(entry.FullName, ManifestEntryName, StringComparison.OrdinalIgnoreCase));
+            if (manifestEntry is null)
             {
-                continue;
+                throw new InvalidDataException("课堂资源包缺少 bundle.json。");
             }
 
-            // 只取文件名，丢弃包内目录段：既保持打包时的扁平结构，也避免 zip 路径穿越。
-            string fileName = entry.Name;
-            if (string.IsNullOrEmpty(fileName))
+            string manifestJson = ReadEntryText(manifestEntry);
+
+            string tempDirectory = Path.Combine(root, ".restore-" + Guid.NewGuid().ToString("N"));
+            var moved = new List<string>();
+            try
             {
-                continue;
+                Directory.CreateDirectory(tempDirectory);
+                var staged = new List<(string Path, string FileName)>();
+                var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (ZipArchiveEntry entry in zip.Entries)
+                {
+                    if (string.Equals(entry.FullName, ManifestEntryName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    // 只取文件名，丢弃包内目录段：既保持打包时的扁平结构，也避免 zip 路径穿越。
+                    string fileName = entry.Name;
+                    if (string.IsNullOrEmpty(fileName))
+                    {
+                        continue;
+                    }
+
+                    // 包内可能包含同名条目（外部工具产出）；临时目录内也先分配唯一名。
+                    string tempName = MakeUniqueEntryName(fileName, usedNames);
+                    string tempPath = Path.Combine(tempDirectory, tempName);
+                    using (Stream input = entry.Open())
+                    using (var output = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                    {
+                        input.CopyTo(output);
+                    }
+                    staged.Add((tempPath, fileName));
+                }
+
+                var written = new List<string>();
+                foreach ((string tempPath, string fileName) in staged)
+                {
+                    string destination = MoveUnique(tempPath, root, fileName);
+                    moved.Add(destination);
+                    written.Add(destination);
+                }
+
+                return new ClassroomBundleRestoreResult(written, manifestJson);
             }
-
-            written.Add(ExtractUnique(entry, root, fileName));
+            catch
+            {
+                foreach (string path in moved)
+                {
+                    TryDelete(path);
+                }
+                throw;
+            }
+            finally
+            {
+                TryDeleteDirectory(tempDirectory);
+            }
         }
-
-        return new ClassroomBundleRestoreResult(written, manifestJson);
+        catch
+        {
+            // 解包失败时若目标目录是本次新建的，清理空目录；已存在目录保持不动。
+            if (rootCreated)
+            {
+                TryDeleteDirectoryIfEmpty(root);
+            }
+            throw;
+        }
     }
 
     private static bool IsDisabled(FeatureSettings settings)
@@ -186,9 +262,10 @@ public static class ClassroomResourceBundle
     }
 
     /// <summary>
-    /// 以 <see cref="FileMode.CreateNew"/> 写入，确保不覆盖任何既有文件；命中同名时尝试下一个后缀。
+    /// 从临时目录移动文件到目标目录，命中同名文件或同名目录时尝试下一个后缀。
+    /// 使用 <see cref="File.Move(string, string, bool)"/> 的非覆盖语义确保既有数据不被改写。
     /// </summary>
-    private static string ExtractUnique(ZipArchiveEntry entry, string root, string fileName)
+    private static string MoveUnique(string sourcePath, string root, string fileName)
     {
         string stem = Path.GetFileNameWithoutExtension(fileName);
         string extension = Path.GetExtension(fileName);
@@ -196,20 +273,46 @@ public static class ClassroomResourceBundle
         {
             string candidate = index == 0 ? fileName : $"{stem}-{index}{extension}";
             string path = Path.Combine(root, candidate);
-            try
+            if (File.Exists(path) || Directory.Exists(path))
             {
-                using Stream input = entry.Open();
-                using var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-                input.CopyTo(output);
-                return path;
+                continue;
             }
-            catch (IOException) when (File.Exists(path))
-            {
-                // 目标已存在：换下一个后缀继续尝试，绝不覆盖。
-            }
+
+            File.Move(sourcePath, path, overwrite: false);
+            return path;
         }
 
         throw new IOException("无法为解包文件分配唯一名称：" + fileName);
+    }
+
+    private static void TryDeleteDirectory(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+            }
+        }
+        catch
+        {
+            // 临时目录清理失败不影响异常传播；残留目录以 .restore- 前缀隔离，不参与业务。
+        }
+    }
+
+    private static void TryDeleteDirectoryIfEmpty(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path) && !Directory.EnumerateFileSystemEntries(path).Any())
+            {
+                Directory.Delete(path);
+            }
+        }
+        catch
+        {
+            // 空目录清理失败不影响异常传播。
+        }
     }
 
     private static void TryDelete(string path)

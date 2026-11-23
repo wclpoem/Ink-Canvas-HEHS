@@ -14,6 +14,9 @@ public static class ClassroomSessionStore
     /// <summary>会话列表默认最多加载的条数；只影响内存列表，不删除磁盘文件。</summary>
     public const int MaxSessionsLoaded = 20;
 
+    /// <summary>会话默认保留天数；启动清理只删除早于该天数且不在最近保留范围内的会话。</summary>
+    public const int DefaultRetentionDays = 90;
+
     private static readonly JsonSerializerOptions Options = new()
     {
         WriteIndented = true,
@@ -272,15 +275,46 @@ public static class ClassroomSessionStore
         int removed = 0;
         foreach (string id in PruneOldSessions(keep, directory))
         {
-            string path = PathFor(id, directory);
-            bool removedAny = TryDelete(path);
-            removedAny |= TryDelete(PathForChecksum(path));
-            removedAny |= TryDelete(PathForBackup(path));
-            removedAny |= TryDelete(PathForSnapshot(id, directory));
-            removedAny |= TryDelete(SessionJournal.PathFor(id, directory));
-            if (removedAny) removed++;
+            if (DeleteSessionFiles(id, directory)) removed++;
         }
         return removed;
+    }
+
+    /// <summary>
+    /// 按保留天数清理旧会话：最近 <paramref name="minimumKeep"/> 条永不自动删除；
+    /// 其余仅在创建时间早于保留天数时才删除。返回实际删除的会话数量。
+    /// </summary>
+    public static int DeleteExpiredSessions(int retentionDays = DefaultRetentionDays,
+        int minimumKeep = MaxSessionsLoaded, string directory = null)
+    {
+        if (retentionDays <= 0) return 0;
+        DateTime cutoffUtc = DateTime.UtcNow.AddDays(-retentionDays);
+        var sessions = LoadAllCore(directory);
+        int keep = Math.Max(0, minimumKeep);
+        int removed = 0;
+        for (int index = 0; index < sessions.Count; index++)
+        {
+            // 列表按创建时间降序，前 keep 条是最近会话，永不自动删除。
+            if (index < keep) continue;
+            ClassroomSession session = sessions[index];
+            if (session is null || string.IsNullOrWhiteSpace(session.Id)) continue;
+            if (session.CreatedAt.ToUniversalTime() >= cutoffUtc) continue;
+            // 未完成录制（仍有 journal）留给启动恢复提示，不能当作过期历史会话删除。
+            if (HasPendingJournal(session.Id, directory)) continue;
+            if (DeleteSessionFiles(session.Id, directory)) removed++;
+        }
+        return removed;
+    }
+
+    private static bool DeleteSessionFiles(string id, string directory)
+    {
+        string path = PathFor(id, directory);
+        bool removedAny = TryDelete(path);
+        removedAny |= TryDelete(PathForChecksum(path));
+        removedAny |= TryDelete(PathForBackup(path));
+        removedAny |= TryDelete(PathForSnapshot(id, directory));
+        removedAny |= TryDelete(SessionJournal.PathFor(id, directory));
+        return removedAny;
     }
 
     private static List<ClassroomSession> LoadAllCore(string directory)

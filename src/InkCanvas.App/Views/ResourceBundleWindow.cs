@@ -14,9 +14,9 @@ using WinRT.Interop;
 namespace InkCanvas.App.Views;
 
 /// <summary>
-/// 课堂资源包窗口：把最近课堂会话（会话 JSON、快照、增量日志）打包成 zip，
-/// 也可以把已有资源包解包到 <c>%APPDATA%\InkCanvas\bundles\&lt;时间戳&gt;</c>。
-/// 打包与解包都只读源文件，解包遇到同名文件追加后缀，绝不覆盖既有数据。
+/// 课堂资源包窗口：把最近课堂会话相关的只读文件打包成 zip，也可以在解包时追加后缀、
+/// 绝不覆盖既有数据。可打包内容：白板存档（.icink）、课件批注目录（按 slideId 的
+/// manifest 与 .icink）、例题库（examples.json）以及插件录制包（Recordings/*.icink）。
 /// 关闭按钮只隐藏窗口（<see cref="Microsoft.UI.Windowing.AppWindow.Hide"/>），保留实例便于再次打开。
 /// </summary>
 public sealed class ResourceBundleWindow : Window
@@ -24,7 +24,7 @@ public sealed class ResourceBundleWindow : Window
     private const int MaxListedFiles = 8;
 
     private readonly FeatureSettings _features;
-    private readonly string _sourceDirectory;
+    private readonly ClassroomBundleSourceOptions _sourceOptions;
     private readonly bool _enabled;
     private readonly ListView _list = new()
     {
@@ -58,19 +58,38 @@ public sealed class ResourceBundleWindow : Window
     private readonly Button _archive;
     private readonly Button _restore;
     private readonly int _theme;
-    private IReadOnlyList<FileInfo> _files = Array.Empty<FileInfo>();
+    private ClassroomBundleSourcePlan _plan = ClassroomBundleSourcePlan.Empty;
 
+    /// <summary>兼容旧调用：只收集白板存档目录。</summary>
     public ResourceBundleWindow(FeatureSettings features, int theme, string sourceDirectory)
+        : this(features, theme, sourceDirectory, pptAnnotationRoot: null,
+            exampleLibraryDirectory: null, recordingDirectory: null)
+    {
+    }
+
+    /// <summary>
+    /// 创建资源包窗口。<paramref name="pptAnnotationRoot"/> 是课件批注根目录（其下为
+    /// <c>Auto Saved - Presentations</c>）；<paramref name="exampleLibraryDirectory"/> 是例题库目录；
+    /// <paramref name="recordingDirectory"/> 是插件录制目录。任一为空表示本机没有该类数据。
+    /// </summary>
+    public ResourceBundleWindow(FeatureSettings features, int theme, string sourceDirectory,
+        string pptAnnotationRoot, string exampleLibraryDirectory, string recordingDirectory)
     {
         _features = features;
-        _sourceDirectory = sourceDirectory;
+        _sourceOptions = new ClassroomBundleSourceOptions
+        {
+            WhiteboardDirectory = sourceDirectory,
+            PptAnnotationRoot = pptAnnotationRoot,
+            ExampleLibraryDirectory = exampleLibraryDirectory,
+            RecordingDirectory = recordingDirectory,
+        };
         _enabled = features?.EnableResourceBundle ?? true;
         _theme = theme;
         Title = "课堂资源包";
 
         var description = new TextBlock
         {
-            Text = "把最近的板书存档（.icink）打包；解包不覆盖已有文件。",
+            Text = "把最近的板书存档（.icink）、课件批注、例题库与课堂录制一起打包；解包不覆盖已有文件。",
             FontSize = 12,
             Opacity = 0.78,
             TextWrapping = TextWrapping.Wrap,
@@ -148,44 +167,28 @@ public sealed class ResourceBundleWindow : Window
     }
 
     /// <summary>
-    /// 板书存档目录下最近的 <c>*.icink</c>，按修改时间倒序，最多 <see cref="MaxListedFiles"/> 个；
-    /// 不读取文件内容，只列元数据。时光机课堂录制数据属插件私有，不在本体打包范围内。
+    /// 收集本次可打包的会话文件：白板存档 + 课件批注 + 例题库 + 插件录制。
+    /// 只读取目录元数据与 PPT manifest，不解码笔画、不加载录制时间轴；源文件始终只读。
     /// </summary>
-    private IReadOnlyList<FileInfo> CollectSessionFiles()
-    {
-        if (string.IsNullOrWhiteSpace(_sourceDirectory) || !Directory.Exists(_sourceDirectory))
-            return Array.Empty<FileInfo>();
-
-        var files = new List<FileInfo>();
-        foreach (string path in Directory.EnumerateFiles(_sourceDirectory))
-        {
-            if (!path.EndsWith(".icink", StringComparison.OrdinalIgnoreCase)) continue;
-            try { files.Add(new FileInfo(path)); }
-            catch { /* 单个文件元数据不可读时跳过，不影响其它存档。 */ }
-        }
-
-        return files
-            .OrderByDescending(file => file.LastWriteTimeUtc)
-            .Take(MaxListedFiles)
-            .ToList();
-    }
+    private ClassroomBundleSourcePlan CollectSessionFiles()
+        => ClassroomBundleSourceCollector.Collect(_sourceOptions);
 
     private void RefreshFiles()
     {
-        _files = _enabled ? CollectSessionFiles() : Array.Empty<FileInfo>();
+        _plan = _enabled ? CollectSessionFiles() : ClassroomBundleSourcePlan.Empty;
         _list.Items.Clear();
 
-        foreach (FileInfo file in _files)
+        foreach (ClassroomBundleSourceFile file in _plan.Files.Take(MaxListedFiles))
         {
             var name = new TextBlock
             {
-                Text = file.Name,
+                Text = KindLabel(file.Kind) + " · " + Path.GetFileName(file.FileName),
                 FontSize = 12,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             };
             var time = new TextBlock
             {
-                Text = file.LastWriteTime.ToString("MM-dd HH:mm"),
+                Text = $"{FormatBytes(file.SizeBytes)}",
                 FontSize = 11,
                 Opacity = 0.65,
             };
@@ -198,7 +201,7 @@ public sealed class ResourceBundleWindow : Window
                 Content = row,
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
             };
-            ToolTipService.SetToolTip(item, file.FullName);
+            ToolTipService.SetToolTip(item, file.SourcePath);
             _list.Items.Add(item);
         }
 
@@ -207,14 +210,14 @@ public sealed class ResourceBundleWindow : Window
 
     private void ApplyState()
     {
-        bool hasFiles = _enabled && _files.Count > 0;
+        bool hasFiles = _enabled && !_plan.IsEmpty;
 
         _archive.IsEnabled = hasFiles;
         _restore.IsEnabled = _enabled;
         _list.Visibility = _enabled ? Visibility.Visible : Visibility.Collapsed;
         _summary.Visibility = _enabled ? Visibility.Visible : Visibility.Collapsed;
         _disabledHint.Visibility = _enabled ? Visibility.Collapsed : Visibility.Visible;
-        _emptyHint.Visibility = _enabled && _files.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _emptyHint.Visibility = _enabled && _plan.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
 
         if (!_enabled)
         {
@@ -222,18 +225,47 @@ public sealed class ResourceBundleWindow : Window
             return;
         }
 
-        _summary.Text = _files.Count == 0
-            ? ""
-            : $"将打包最近 {_files.Count} 个文件（按修改时间倒序）";
+        if (_plan.IsEmpty)
+        {
+            _summary.Text = "";
+            return;
+        }
+
+        int whiteboard = _plan.Files.Count(file => file.Kind == ClassroomBundleSourceKind.Whiteboard);
+        int ppt = _plan.Files.Count(file => file.Kind == ClassroomBundleSourceKind.PptAnnotation);
+        int examples = _plan.Files.Count(file => file.Kind == ClassroomBundleSourceKind.ExampleLibrary);
+        int recordings = _plan.Files.Count(file => file.Kind == ClassroomBundleSourceKind.Recording);
+        string text = $"将打包 {_plan.Files.Count} 个文件（白板 {whiteboard}、课件批注 {ppt}、例题 {examples}、" +
+            $"录制 {recordings}，共 {FormatBytes(_plan.TotalBytes)}）";
+        if (_plan.Truncated)
+            text += $"；已按上限跳过 {_plan.SkippedByLimit + _plan.SkippedBySize} 个文件";
+        _summary.Text = text;
     }
 
-    private static string BuildManifest(IReadOnlyList<FileInfo> files)
+    private static string KindLabel(ClassroomBundleSourceKind kind) => kind switch
     {
+        ClassroomBundleSourceKind.Whiteboard => "白板",
+        ClassroomBundleSourceKind.PptAnnotation => "课件批注",
+        ClassroomBundleSourceKind.ExampleLibrary => "例题",
+        ClassroomBundleSourceKind.Recording => "录制",
+        _ => "文件",
+    };
+
+    private static string FormatBytes(long bytes)
+        => bytes >= 1024 * 1024
+            ? (bytes / 1024.0 / 1024.0).ToString("0.0") + " MB"
+            : Math.Max(1, bytes / 1024).ToString() + " KB";
+
+    private static string BuildManifest(IReadOnlyList<ClassroomBundleSourceFile> files)
+    {
+        // 结构保持 version / createdAt / files / app；files 使用与 zip 条目一致的唯一名。
+        IReadOnlyList<string> entryNames = ClassroomResourceBundle.PlanEntryNames(
+            files.Select(file => file.SourcePath).ToList());
         var manifest = new
         {
             version = 1,
             createdAt = DateTime.Now.ToString("o"),
-            files = files.Select(file => file.Name).ToArray(),
+            files = entryNames.ToArray(),
             app = "InkCanvas",
         };
         return JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true });
@@ -241,10 +273,10 @@ public sealed class ResourceBundleWindow : Window
 
     private async Task ArchiveAsync()
     {
-        IReadOnlyList<FileInfo> files = CollectSessionFiles();
-        _files = files;
+        ClassroomBundleSourcePlan plan = CollectSessionFiles();
+        _plan = plan;
         ApplyState();
-        if (!_enabled || files.Count == 0) return;
+        if (!_enabled || plan.IsEmpty) return;
 
         var picker = new FileSavePicker
         {
@@ -260,11 +292,14 @@ public sealed class ResourceBundleWindow : Window
         try
         {
             ClassroomResourceBundle.Archive(
-                files.Select(item => item.FullName).ToList(),
-                BuildManifest(files),
+                plan.Files.Select(item => item.SourcePath).ToList(),
+                BuildManifest(plan.Files),
                 file.Path,
                 _features);
-            SetStatus($"已保存资源包：{file.Path}", isError: false);
+            string skipped = plan.Truncated
+                ? $"（已按上限跳过 {plan.SkippedByLimit + plan.SkippedBySize} 个文件）"
+                : "";
+            SetStatus($"已保存资源包：{file.Path}{skipped}", isError: false);
         }
         catch (Exception ex)
         {
